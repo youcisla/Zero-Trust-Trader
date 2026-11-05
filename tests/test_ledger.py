@@ -77,5 +77,33 @@ class TestFailureRow(unittest.TestCase):
         self.assertEqual(tail("", 3), "")
 
 
+class TestNoCompounding(unittest.TestCase):
+    def test_two_scans_add_their_own_tests_only(self):
+        """Logging the running total made trials_total sum it again, so the
+        significance bar doubled every scan until nothing could clear it."""
+        import tempfile
+
+        import tier3_deep as t3
+        import trials_total as tt
+
+        with tempfile.TemporaryDirectory() as d:
+            tmp = pathlib.Path(d)
+            old_here, old_log = t3.HERE, tt.LOG
+            t3.HERE, tt.LOG = tmp, tmp / "funnel_history.log"
+            try:
+                src = {"symbols_in": 50, "symbols_tested": 44, "strategies_tested": 3,
+                       "total_tests": 132, "triggering": 5, "deduped": []}
+                payload = {"stood_down": True, "survivors": [], "results": [1, 2, 3],
+                           "passed_both_gates": [], "permutations": 1000,
+                           "trials_declared": 132, "trials_cumulative": 5388}
+                t3.log_run(src, payload)
+                t3.log_run(src, payload)
+                _legacy, logged = tt.total()
+            finally:
+                t3.HERE, tt.LOG = old_here, old_log
+
+            self.assertEqual(logged, 264, "two 132-test scans must add 264, not compound")
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -138,6 +138,24 @@ class TestSessionClose(unittest.TestCase):
         self.assertFalse(bool(None) and close_due(self._at(23, 0), "20:45", 4))
 
 
+class TestFridayClose(unittest.TestCase):
+    def test_friday_session_close_actually_fires(self):
+        """run_once passed isoweekday() into a 0-based check, so Friday (5)
+        failed `weekday < 5` and positions were never flattened on the one day
+        a weekend gap hurts most."""
+        friday = datetime(2026, 11, 6, 23, 0)
+        self.assertEqual(friday.weekday(), 4, "fixture assumption: 2026-11-06 is a Friday")
+
+        self.assertTrue(close_due(friday, "20:45", friday.weekday()))
+        self.assertFalse(close_due(friday, "23:59", friday.weekday()))
+
+        saturday = datetime(2026, 11, 7, 23, 0)
+        self.assertFalse(close_due(saturday, "20:45", saturday.weekday()))
+
+        # Pin the convention: the old call site must stay broken.
+        self.assertFalse(close_due(friday, "20:45", friday.isoweekday()))
+
+
 class TestStateWrite(unittest.TestCase):
     """Windows raises WinError 5 when another process holds the destination
     open. The dashboard polls it once a second, so losing that race must not

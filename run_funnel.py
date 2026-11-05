@@ -56,7 +56,11 @@ def preflight_check(term, acct) -> list[str]:
     if acct is None:
         problems.append("account_info() is None — not logged in")
     else:
-        if EXPECTED_LOGIN and int(acct.login) != EXPECTED_LOGIN:
+        if not EXPECTED_LOGIN:
+            # Fail closed: an unset pin used to skip the check silently, which
+            # means a clone with no env var would scan whatever account it found.
+            problems.append("MT5_EXPECTED_LOGIN is not set — refusing to scan an unpinned account")
+        elif int(acct.login) != EXPECTED_LOGIN:
             problems.append(f"logged into account {acct.login}, expected {EXPECTED_LOGIN}")
         if EXPECTED_SERVER_SUBSTR not in (acct.server or "").lower():
             problems.append(

@@ -62,6 +62,7 @@ def log_run(src: dict, payload: dict) -> None:
             f"shortlist={len(payload['results'])} "
             f"passed_both={len(payload['passed_both_gates'])} "
             f"trials={payload['trials_declared']} "
+            f"cumulative={payload.get('trials_cumulative', payload['trials_declared'])} "
             f"permutations={payload['permutations']} | {verdict}")
     with (HERE / "funnel_history.log").open("a", encoding="utf-8") as fh:
         fh.write(line + "\n")
@@ -121,10 +122,22 @@ def main() -> int:
         print(STAND_DOWN)
         return 1
 
-    trials = a.trials or max(
+    # Two numbers that must never be conflated:
+    #   scan_tests - hypotheses THIS scan tested; this is what the ledger adds
+    #   trials     - cumulative hypotheses ever tested; this sets the gate
+    # Logging the cumulative made trials_total sum it again on the next run, so
+    # the bar doubled every scan until nothing could clear it.
+    scan_tests = max(
         int(src.get("total_tests") or (src.get("symbols_tested", 1)
                                        * len(src.get("strategies", ["donchian"])))),
         len(top))
+    trials = a.trials or scan_tests
+    if a.trials is None:
+        # Hand-run tier3 must not silently gate on this scan alone.
+        import trials_total
+        _legacy, _logged = trials_total.total()
+        trials = max(scan_tests, _legacy + _logged)
+        print(f"--trials not given; using the ledger total ({trials})")
     zc = tm.bonferroni_z(trials)
     print(f"Tier 2 shortlist: {len(top)} | declaring {trials} tests "
           f"({src.get('symbols_tested', '?')} symbols x {src.get('strategies_tested', '?')} "
@@ -164,7 +177,8 @@ def main() -> int:
 
     kept, dropped = dedupe(survivors, a.corr_max) if len(survivors) > 1 else (survivors, [])
 
-    payload = {"generated_utc": md.now_utc(), "trials_declared": trials,
+    payload = {"generated_utc": md.now_utc(), "trials_declared": scan_tests,
+               "trials_cumulative": trials,
                "z_crit_corrected": zc, "permutations": a.permutations,
                "corr_max": a.corr_max, "results": results,
                "passed_both_gates": [d["symbol"] for d in survivors],

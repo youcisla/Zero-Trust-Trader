@@ -97,6 +97,10 @@ def next_stop(side: int, entry: float, sl: float, price: float, atr: float,
 def close_due(now: datetime, close_at: str, weekday: int) -> bool:
     """True once the session-close time has passed (no overnight holds).
 
+    `weekday` must be 0-based (datetime.weekday(): Mon=0 ... Sun=6). Passing
+    isoweekday() here made Friday(5) fail the `weekday < 5` test, so positions
+    were never flattened on the one day a weekend gap hurts most.
+
     Weekend closes are left to `weekday` so a Saturday tick does not try to
     flatten positions the broker has already settled.
     """
@@ -161,7 +165,7 @@ def run_once(cfg: Cfg, apply: bool, close_at: str | None) -> dict:
         acct = mt5.account_info()
         positions = mt5.positions_get() or []
         now = datetime.now(timezone.utc)
-        due = bool(close_at) and close_due(now, close_at, now.isoweekday())
+        due = bool(close_at) and close_due(now, close_at, now.weekday())
         actions: list[str] = []
         open_docs = []
 
@@ -264,6 +268,10 @@ def main() -> int:
 
     try:
         while True:
+            # Refresh the lock every tick. It used to be written once and then
+            # judged stale after interval*4, so at --interval 5 a second
+            # supervisor could start 20s into the run and both could move stops.
+            LOCK.write_text(str(time.time()))
             doc = run_once(cfg, a.apply, a.session_close)
             try:
                 write_state(doc)

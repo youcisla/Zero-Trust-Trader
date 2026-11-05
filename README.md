@@ -84,7 +84,7 @@ size was not "too small to tell"; it was hiding nothing.
 | --- | --- | --- |
 | 1 | **Universe filter** — live market, spread ≤ 15% of ATR, ≥ 160 days of history | trading an instrument that is shut, illiquid, or newly listed |
 | 2 | **Correlation dedupe** — collapse candidates above \|ρ\| 0.7 | `AMD.US-24` vs `AMD.US-PERP` measure **+0.997**: the same bet billed twice |
-| 3 | **Bonferroni-corrected z** | the scan itself — 5,388 hypotheses tried means the bar is 5, not 1.96 |
+| 3 | **Bonferroni-corrected z** | the scan itself — 5,388 hypotheses tried means the bar is 4.43, not 1.96 |
 | 4 | **Permutation null** — random entries, same barriers | autocorrelation and barrier geometry that the analytic z assumes away |
 | 5 | **Human `APPROVED`** | the agent's own judgement |
 | 6 | **Bridge consent gate** | a compromised or confused agent |

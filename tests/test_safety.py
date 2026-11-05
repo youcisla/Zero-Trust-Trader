@@ -58,6 +58,16 @@ class TestPreflight(unittest.TestCase):
     def test_case_insensitive_demo_match(self):
         self.assertEqual(rf.preflight_check(T(), A(server="some-demo-server")), [])
 
+    def test_unset_pin_refuses(self):
+        """EXPECTED_LOGIN defaulting to 0 used to skip the account pin
+        silently, so a clone with no env var scanned whatever it found."""
+        old, rf.EXPECTED_LOGIN = rf.EXPECTED_LOGIN, 0
+        try:
+            problems = rf.preflight_check(T(), A())
+        finally:
+            rf.EXPECTED_LOGIN = old
+        self.assertTrue(any("MT5_EXPECTED_LOGIN" in p for p in problems), problems)
+
 
 class TestWindow(unittest.TestCase):
     def _t(self, h, m):
