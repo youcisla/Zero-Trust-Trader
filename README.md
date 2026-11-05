@@ -1,5 +1,9 @@
 # Zero-Trust Trader
 
+[![CI](https://github.com/youcisla/Zero-Trust-Trader/actions/workflows/ci.yml/badge.svg)](https://github.com/youcisla/Zero-Trust-Trader/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
+
 > **My AI agent has no authority to lose my money.**
 
 An autonomous trading-research pipeline for MetaTrader 5 where the agent may look at
@@ -185,6 +189,31 @@ Windows Task Scheduler drives the cadence; `run_funnel.cmd` and
 
 The consent-gate policy lives in `%APPDATA%\mt5-mcp\config.toml` (not committed —
 see `docs/BOTLAB_COMMAND.txt` for the ledger/backtest workflow).
+
+## Tests
+
+35 tests, **no trading terminal required** — `MetaTrader5` is Windows-only, so
+`tests/_mt5stub.py` stubs it and the indicator maths and safety guards run
+anywhere, including Linux CI:
+
+```bash
+python -m unittest discover -s tests -v
+```
+
+| Suite | Covers |
+| --- | --- |
+| `test_math` | RSI / MACD / ATR / Donchian / Bollinger edge cases, Bonferroni values, naive-vs-corrected |
+| `test_safety` | demo-only pre-flight, the run window, lock acquire / refuse / stale takeover |
+| `test_ledger` | trials accounting, including that `LEGACY_TRIALS` is frozen |
+
+The suite exists because two bugs in this codebase were **silent**: RSI returned
+100 on a flat series (a dead instrument reading as overbought, firing a false
+short) and MACD's signal line was all-NaN (a strategy family that looked
+implemented and could never fire). Neither raised an error; both now have a
+regression test.
+
+CI also fails the build if a machine path, broker account number, or key prefix
+appears in the tree — the sanitiser is enforced rather than remembered.
 
 ---
 

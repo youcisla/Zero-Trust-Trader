@@ -1,0 +1,13 @@
+# Normalise line endings so a Windows-developed repo does not produce noisy
+# diffs for Linux/macOS contributors or CI.
+* text=auto eol=lf
+
+# Batch files must keep CRLF or cmd.exe misparses them.
+*.cmd text eol=crlf
+*.bat text eol=crlf
+
+# Binary-ish assets
+*.png binary
+*.jpg binary
+*.gif binary
+*.pdf binary

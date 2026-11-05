@@ -1,0 +1,63 @@
+"""The trials ledger — the number the whole honesty argument rests on."""
+
+from __future__ import annotations
+
+import pathlib
+import sys
+import tempfile
+import unittest
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+sys.path[:0] = [str(ROOT), str(ROOT / "tests")]
+
+import trials_total as tt  # noqa: E402
+
+
+class TestTrialsTotal(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self._orig = tt.LOG
+        tt.LOG = pathlib.Path(self.tmp.name) / "funnel_history.log"
+
+    def tearDown(self):
+        tt.LOG = self._orig
+        self.tmp.cleanup()
+
+    def _write(self, *lines):
+        tt.LOG.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+    def test_missing_log_is_just_the_legacy_count(self):
+        self.assertEqual(tt.total(), (tt.LEGACY_TRIALS, 0))
+
+    def test_sums_scan_totals(self):
+        self._write(
+            "2026-11-05T13:00:00Z | universe=50 tested=50 total_tests=150 | STAND_DOWN",
+            "2026-11-05T13:15:00Z | universe=50 tested=44 total_tests=132 | STAND_DOWN",
+        )
+        self.assertEqual(tt.total(), (tt.LEGACY_TRIALS, 282))
+
+    def test_prefers_total_tests_over_trials(self):
+        """A run line carries both fields with the same value; counting both
+        would double the ledger."""
+        self._write("2026-11-05T14:59:00Z | total_tests=1791 ... trials=1791 | STAND_DOWN")
+        self.assertEqual(tt.total()[1], 1791)
+
+    def test_failed_lines_are_ignored(self):
+        self._write(
+            "2026-11-05T14:33:00Z | FAILED tier1 rc=1 | NameError: name 'OUT'",
+            "2026-11-05T13:00:00Z | total_tests=150 | STAND_DOWN",
+        )
+        self.assertEqual(tt.total()[1], 150)
+
+    def test_empty_log(self):
+        self._write()
+        self.assertEqual(tt.total(), (tt.LEGACY_TRIALS, 0))
+
+    def test_legacy_is_frozen(self):
+        """LEGACY_TRIALS is history, not a knob. If this fails, someone has
+        reset the ledger and every significance bar downstream is wrong."""
+        self.assertEqual(tt.LEGACY_TRIALS, 2205)
+
+
+if __name__ == "__main__":
+    unittest.main()
