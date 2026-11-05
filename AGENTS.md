@@ -56,6 +56,27 @@ dashboard/                   read-only viewer (Rust), tails files, never writes
 | `status.py` | read-only diagnostic: terminal, policy, tasks, universe |
 | `dashboard/` | Rust read-only viewer; tails files, never mutates state |
 
+### Execution environment vs mirror
+
+There are two trees and they are **not interchangeable**:
+
+| Tree | Role |
+| --- | --- |
+| `%APPDATA%\mt5-mcp` | **the execution environment.** Task Scheduler runs `run_funnel.cmd` here. The trials ledger (`funnel_history.log`), `trades.csv`, `stops.json`, `liquid_universe.json` and `engine_state.json` live here and are the only copies that matter. |
+| `_publish/Zero-Trust-Trader` | **the mirror.** This git repository. A sanitised copy for publication; it holds no ledger, no credentials and no account number. |
+
+Rules that follow from this:
+
+- **Every runtime script must exist in the workspace.** When you add a component,
+  copy it into `%APPDATA%\mt5-mcp` *and* commit it here. A repo-only script cannot
+  be scheduled and is one disk failure from being lost.
+- The two copies must stay identical **except** for sanitisation: the workspace
+  holds real paths and the broker login, the repo holds `<project-dir>` and an
+  env-var login. Never "fix" one copy without the other.
+- The dashboard reads the execution tree, not the repo. If the supervisor runs
+  from the workspace, launch the dashboard with `ZTT_ROOT=%APPDATA%\mt5-mcp` or
+  it will show a permanently stale heartbeat.
+
 ---
 
 ## 3. The fail-closed gates
