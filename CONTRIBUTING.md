@@ -24,7 +24,7 @@ python -m compileall -q . -x '(^|/)(\.git|tests)/'
 python -m unittest discover -s tests -v
 ```
 
-35 tests, no trading terminal required — MetaTrader5 is stubbed in
+52 tests, no trading terminal required — MetaTrader5 is stubbed in
 `tests/_mt5stub.py`, so the indicator maths and the safety guards run anywhere.
 CI runs the same commands on Python 3.11–3.13 and additionally fails the build
 if a machine path, account number, or key prefix appears in the tree.

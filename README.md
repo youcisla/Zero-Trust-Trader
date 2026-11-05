@@ -97,12 +97,29 @@ times per run. Passing one gate is not permission to trade.
 
 ## Architecture
 
-```
-Tier 1  universe filter      ~1,700 symbols → ~600 tradable, liquid, live
-Tier 2  strategy matrix      3 families, correlation-deduped → 5 distinct bets
-Tier 3  deep test            10k Monte-Carlo paths + 15k bars + both gates
-        ↓
-        human APPROVED  →  bridge consent  →  order
+```mermaid
+flowchart TD
+    SCH["Task Scheduler<br/>13:00–17:00 UTC"] --> PRE{"pre-flight<br/>demo · connected · lock"}
+    PRE -->|refuse| STOP1([abort, nothing scanned])
+    PRE -->|pass| T1["Tier 1 · universe filter<br/>~1,700 → ~600 symbols"]
+    T1 --> T2["Tier 2 · strategy matrix<br/>3 families"]
+    T2 --> DED{"|ρ| < 0.7<br/>correlation dedupe"}
+    DED --> T3["Tier 3 · deep test<br/>15k bars · 10k paths"]
+    T3 --> Z{"corrected z<br/>bonferroni(trials)"}
+    Z -->|fail| SD["STAND DOWN<br/>the default outcome"]
+    Z -->|pass| P{"permutation test<br/>p < 0.05"}
+    P -->|fail| SD
+    P -->|pass| HUMAN["human types APPROVED"]
+    HUMAN --> BRIDGE["bridge consent gate<br/>single-use token"]
+    BRIDGE --> ORDER[("order · demo only")]
+
+    ORDER --> PM["position_manager.py<br/>24/5 supervisor"]
+    PM -->|"protective stop moves + closes only"| ORDER
+
+    PM --> STATE[("engine_state.json")]
+    SD --> LOG[("funnel_history.log")]
+    STATE --> DASH["Rust dashboard<br/>read-only · file-tailing"]
+    LOG --> DASH
 ```
 
 **Three strategy families**, because one is not enough: a breakout strategy fails
@@ -125,6 +142,33 @@ Two details that took measurement to find:
 
 ---
 
+## Live dashboard
+
+![Zero-Trust Trader dashboard](docs/dashboard.png)
+
+A Rust (Axum) server streaming to a React UI: equity, open positions, supervisor
+actions, funnel history and MCP tool calls over a WebSocket. The screenshot is
+the real thing running against the demo account.
+
+```bash
+cd dashboard && cargo run --release        # http://localhost:8787
+```
+
+**Design rule: the engine never knows the dashboard exists.** No IPC, no callback,
+no socket the Python side opens. The dashboard tails ordinary files the engine
+already writes (`engine_state.json`, `funnel_history.log`,
+`position_manager.log`, `audit.jsonl`). Kill the dashboard and trading is
+unaffected; kill the engine and the UI shows an amber staleness age rather than
+inventing numbers.
+
+| Endpoint | Purpose |
+| --- | --- |
+| `GET /` | the UI — one embedded HTML file, React vendored, no build step |
+| `GET /api/snapshot` | one-shot state |
+| `GET /ws` | pushed updates, sent only when something actually changes |
+
+---
+
 ## Trials accounting, which is the whole point
 
 Every scan appends its own hypothesis count to a durable ledger, and the
@@ -133,14 +177,18 @@ scan.
 
 | Cumulative tests | z_crit |
 | --- | --- |
-| 150 (one scan) | 3.59 |
-| 1,791 | 4.19 |
-| 5,388 (today) | **5.30** |
-| 77,256 (a month of intraday) | 4.98 → rising |
+| 1 (a single hypothesis) | 1.96 — no correction at all |
+| 132 (one M15 subset scan) | 3.55 |
+| 525 (the aborted wide run) | 3.90 |
+| 1,791 (one full-universe run) | 4.19 |
+| 5,388 (today) | **4.43** |
+| 22,056 (a week of intraday scanning) | 4.73 |
+| 77,256 (a month of intraday scanning) | 4.98 |
 
-Look at the second and third rows together. The bar rises because the search
-space rises — and the system says so out loud instead of quietly re-using a
-friendlier number.
+The bottom row is the reason the intraday scan runs in a 16-scan window instead
+of 96: at that frequency the bar climbs past 5σ inside a month and nothing
+survives it. Every value here is computed by `bonferroni_z()`, not estimated —
+`python status.py` prints the current one.
 
 ```bash
 $ python trials_total.py
@@ -172,27 +220,44 @@ because something silently lied at least once during development.
 
 ---
 
-## Running it
+## Quick start
+
+Needs Python 3.11+, the MetaTrader 5 terminal (Windows) logged into a **demo**
+account, and Rust if you want the dashboard.
 
 ```bash
+git clone https://github.com/youcisla/Zero-Trust-Trader.git
+cd Zero-Trust-Trader
 pip install -r requirements.txt          # MetaTrader5, numpy, pandas
-# MetaTrader 5 terminal must be running and logged into a DEMO account
 
-python status.py                         # everything: state, positions, trials
+python status.py                         # does the terminal answer? is it demo?
 python run_funnel.py --rebuild           # Tier 1 → liquid universe (~35 min)
-python run_funnel.py --window-utc 13:00-17:00   # intraday scan
+python run_funnel.py --window-utc 13:00-17:00   # one intraday scan
 python report_funnel.py --full           # today's verdict
 ```
 
+Supervisor (dry run by default — it prints what it would do):
+
+```bash
+python position_manager.py                    # watches, changes nothing
+python position_manager.py --apply --session-close 20:45   # actually acts
+```
+
+Dashboard:
+
+```bash
+cd dashboard && cargo run --release            # http://localhost:8787
+```
+
 Windows Task Scheduler drives the cadence; `run_funnel.cmd` and
-`run_rebuild.cmd` are provided.
+`run_rebuild.cmd` are provided. Nothing scheduled can place an order.
 
 The consent-gate policy lives in `%APPDATA%\mt5-mcp\config.toml` (not committed —
 see `docs/BOTLAB_COMMAND.txt` for the ledger/backtest workflow).
 
 ## Tests
 
-35 tests, **no trading terminal required** — `MetaTrader5` is Windows-only, so
+52 tests, **no trading terminal required** — `MetaTrader5` is Windows-only, so
 `tests/_mt5stub.py` stubs it and the indicator maths and safety guards run
 anywhere, including Linux CI:
 
@@ -205,6 +270,7 @@ python -m unittest discover -s tests -v
 | `test_math` | RSI / MACD / ATR / Donchian / Bollinger edge cases, Bonferroni values, naive-vs-corrected |
 | `test_safety` | demo-only pre-flight, the run window, lock acquire / refuse / stale takeover |
 | `test_ledger` | trials accounting, including that `LEGACY_TRIALS` is frozen |
+| `test_position_manager` | protective-direction rule as a 3,000-case property sweep, break-even, session close |
 
 The suite exists because two bugs in this codebase were **silent**: RSI returned
 100 on a flat series (a dead instrument reading as overbought, firing a false

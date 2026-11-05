@@ -7,6 +7,7 @@ __pycache__/
 .publish_marker
 
 # generated data (regenerate with the pipeline)
+engine_state.json
 tier1_universe*.json
 tier2_candidates.json
 tier3_results.json
@@ -20,3 +21,6 @@ funnel.lock
 # secrets
 .env
 config.toml
+
+# rust
+dashboard/target/

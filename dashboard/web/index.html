@@ -1,0 +1,162 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Zero-Trust Trader — live</title>
+<!-- Vendored, not CDN-loaded: no third-party runtime dependency, works offline,
+     and no SRI hash to maintain against a moving upstream. Served by the same
+     Axum process, so there is also no CORS surface. -->
+<script src="/vendor/react.production.min.js"></script>
+<script src="/vendor/react-dom.production.min.js"></script>
+<script src="/vendor/htm.umd.js"></script>
+<style>
+  :root{
+    --bg:#0b0d10; --panel:#12161b; --line:#222932; --ink:#e6edf3;
+    --dim:#7d8894; --good:#3fb950; --warn:#d29922; --bad:#f85149;
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--ink);
+    font:14px/1.45 ui-sans-serif,-apple-system,"Segoe UI",system-ui,sans-serif}
+  .num{font-family:ui-monospace,"Cascadia Mono",Menlo,Consolas,monospace;
+    font-variant-numeric:tabular-nums}
+  header{display:flex;align-items:center;gap:16px;padding:14px 20px;
+    border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:2}
+  h1{font-size:14px;letter-spacing:.14em;text-transform:uppercase;margin:0;font-weight:600}
+  .dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:7px}
+  .live{color:var(--good)} .down{color:var(--bad)}
+  .spacer{flex:1}
+  .equity{font-size:26px;font-weight:600;letter-spacing:-.01em}
+  main{padding:20px;display:grid;gap:14px;
+    grid-template-columns:repeat(auto-fit,minmax(300px,1fr));align-items:start}
+  section{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
+  section h2{margin:0;padding:10px 14px;font-size:11px;letter-spacing:.12em;
+    text-transform:uppercase;color:var(--dim);border-bottom:1px solid var(--line);font-weight:600}
+  .body{padding:12px 14px}
+  .row{display:flex;justify-content:space-between;gap:12px;padding:5px 0}
+  .row+.row{border-top:1px solid rgba(255,255,255,.04)}
+  .k{color:var(--dim)}
+  .wide{grid-column:1/-1}
+  table{width:100%;border-collapse:collapse}
+  th,td{text-align:right;padding:7px 10px;font-size:13px}
+  th{color:var(--dim);font-weight:500;font-size:11px;text-transform:uppercase;
+    letter-spacing:.08em;border-bottom:1px solid var(--line)}
+  th:first-child,td:first-child{text-align:left}
+  tbody tr+tr td{border-top:1px solid rgba(255,255,255,.04)}
+  .pos{color:var(--good)} .neg{color:var(--bad)}
+  .log{font-family:ui-monospace,"Cascadia Mono",Menlo,Consolas,monospace;
+    font-size:12px;color:#b8c3cf;max-height:230px;overflow:auto;white-space:pre-wrap;
+    word-break:break-word;padding:10px 14px;margin:0}
+  .log div{padding:2px 0;border-bottom:1px solid rgba(255,255,255,.03)}
+  .empty{color:var(--dim);font-style:italic;padding:10px 14px;font-size:13px}
+  .badge{font-size:11px;padding:2px 7px;border-radius:999px;border:1px solid var(--line);color:var(--dim)}
+  .stale{color:var(--warn);border-color:rgba(210,153,34,.4)}
+</style>
+</head>
+<body>
+<div id="root"></div>
+<script>
+const {useState, useEffect} = React;
+const html = htm.bind(React.createElement);
+
+const money = (v, c) =>
+  v === null || v === undefined ? "—"
+  : `${Number(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})} ${c||""}`.trim();
+
+const num = (v, d=5) => v === null || v === undefined ? "—" : Number(v).toFixed(d);
+
+function Card({title, children, wide}) {
+  return html`<section className=${wide ? "wide" : ""}>
+    <h2>${title}</h2>${children}</section>`;
+}
+
+function LogPane({lines, empty}) {
+  if (!lines || !lines.length) return html`<div className="empty">${empty}</div>`;
+  return html`<div className="log">${lines.map((l,i)=>html`<div key=${i}>${l}</div>`)}</div>`;
+}
+
+function App() {
+  const [data, setData] = useState(null);
+  const [up, setUp] = useState(false);
+  const [err, setErr] = useState(null);
+
+  useEffect(() => {
+    let alive = true, ws, retry;
+    const connect = () => {
+      ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
+      ws.onopen = () => { if (alive) { setUp(true); setErr(null); } };
+      ws.onclose = () => { if (!alive) return; setUp(false); retry = setTimeout(connect, 1500); };
+      ws.onerror = () => { if (alive) setErr("websocket error"); };
+      ws.onmessage = e => { if (!alive) return; try { setData(JSON.parse(e.data)); } catch (_) {} };
+    };
+    connect();
+    return () => { alive = false; clearTimeout(retry); try { ws.close(); } catch(_){} };
+  }, []);
+
+  const acct = data?.engine?.account || {};
+  const age = data?.engine_age_s;
+  const stale = age !== null && age !== undefined && age > 30;
+  const positions = data?.engine?.positions || [];
+
+  return html`
+  <header>
+    <h1>Zero-Trust Trader</h1>
+    <span className=${up ? "live" : "down"}>
+      <span className="dot" style=${{background:"currentColor"}}></span>
+      ${up ? "live" : "disconnected"}
+    </span>
+    ${stale ? html`<span className="badge stale">engine ${age}s stale</span>` : null}
+    ${err ? html`<span className="badge" style=${{color:"var(--bad)"}}>${err}</span>` : null}
+    <span className="spacer"></span>
+    <span className="equity num">${money(data?.equity, data?.currency)}</span>
+  </header>
+
+  <main>
+    <${Card} title="Account">
+      <div className="body">
+        <div className="row"><span className="k">Equity</span><span className="num">${money(data?.equity, data?.currency)}</span></div>
+        <div className="row"><span className="k">Balance</span><span className="num">${money(data?.balance, data?.currency)}</span></div>
+        <div className="row"><span className="k">Server</span><span>${data?.server ?? "—"}</span></div>
+        <div className="row"><span className="k">Open positions</span><span className="num">${data?.positions ?? 0}</span></div>
+        <div className="row"><span className="k">Engine heartbeat</span>
+          <span className="num" style=${{color: stale ? "var(--warn)" : "var(--good)"}}>
+            ${age === null || age === undefined ? "no data" : age + "s ago"}</span></div>
+      </div>
+    <//>
+
+    <${Card} title="Positions" wide=${true}>
+      ${positions.length
+        ? html`<table>
+            <thead><tr><th>Symbol</th><th>Side</th><th>Lots</th><th>Entry</th><th>Price</th><th>Stop</th><th>P&L</th></tr></thead>
+            <tbody>${positions.map(p => html`
+              <tr key=${p.ticket}>
+                <td>${p.symbol}</td>
+                <td style=${{color: p.side > 0 ? "var(--good)" : "var(--bad)"}}>${p.side > 0 ? "LONG" : "SHORT"}</td>
+                <td className="num">${num(p.volume, 2)}</td>
+                <td className="num">${num(p.entry)}</td>
+                <td className="num">${num(p.price)}</td>
+                <td className="num">${p.sl ? num(p.sl) : "none"}</td>
+                <td className=${"num " + ((p.profit ?? 0) >= 0 ? "pos" : "neg")}>${money(p.profit, data?.currency)}</td>
+              </tr>`)}</tbody>
+          </table>`
+        : html`<div className="empty">Flat — no open positions. The funnel is standing down.</div>`}
+    <//>
+
+    <${Card} title="Supervisor actions">
+      <${LogPane} lines=${data?.actions} empty="No stop changes yet (position_manager.py)" />
+    <//>
+
+    <${Card} title="Funnel history">
+      <${LogPane} lines=${data?.funnel} empty="No funnel runs logged yet" />
+    <//>
+
+    <${Card} title="MCP tool calls">
+      <${LogPane} lines=${data?.mcp} empty="No audit.jsonl — no mutating tool calls recorded" />
+    <//>
+  </main>`;
+}
+
+ReactDOM.createRoot(document.getElementById("root")).render(html`<${App} />`);
+</script>
+</body>
+</html>

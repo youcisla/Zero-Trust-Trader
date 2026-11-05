@@ -35,17 +35,34 @@ jobs:
       # The repository is public: machine paths, the broker account number and
       # key material must never reach it. This makes the sanitiser permanent
       # rather than a one-time step somebody has to remember.
-      # ci.yml is excluded because it necessarily contains the patterns it
-      # searches for.
+      #
+      # Scans TRACKED files only (git ls-files), not the working tree: local
+      # runtime artifacts like engine_state.json legitimately contain the
+      # account number and are gitignored. What matters is what ships.
+      # ci.yml excludes itself because it necessarily contains the patterns.
       - name: Guard against leaked paths or credentials
         run: |
-          if grep -rIn --exclude-dir=.git --exclude=ci.yml \
+          if git ls-files | grep -v '^\.github/workflows/ci\.yml$' | xargs grep -In \
                -e 'C:\Users' \
                -e '62155913' \
                -e 'ghp_' \
                -e 'gho_' \
-               -e 'AppData\Roaming\mt5-mcp' . ; then
+               -e 'AppData\Roaming\mt5-mcp' ; then
             echo "::error::personal data or key material found in the repository"
             exit 1
           fi
           echo "clean"
+
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+
+      - name: Build and lint the dashboard
+        run: |
+          cargo build --release --manifest-path dashboard/Cargo.toml
+          cargo clippy --manifest-path dashboard/Cargo.toml -- -D warnings
