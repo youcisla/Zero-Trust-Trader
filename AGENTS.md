@@ -62,19 +62,19 @@ There are two trees and they are **not interchangeable**:
 
 | Tree | Role |
 | --- | --- |
-| `%APPDATA%\mt5-mcp` | **the execution environment.** Task Scheduler runs `run_funnel.cmd` here. The trials ledger (`funnel_history.log`), `trades.csv`, `stops.json`, `liquid_universe.json` and `engine_state.json` live here and are the only copies that matter. |
+| `<execution-dir>` | **the execution environment.** Task Scheduler runs `run_funnel.cmd` here. The trials ledger (`funnel_history.log`), `trades.csv`, `stops.json`, `liquid_universe.json` and `engine_state.json` live here and are the only copies that matter. |
 | `_publish/Zero-Trust-Trader` | **the mirror.** This git repository. A sanitised copy for publication; it holds no ledger, no credentials and no account number. |
 
 Rules that follow from this:
 
 - **Every runtime script must exist in the workspace.** When you add a component,
-  copy it into `%APPDATA%\mt5-mcp` *and* commit it here. A repo-only script cannot
+  copy it into `<execution-dir>` *and* commit it here. A repo-only script cannot
   be scheduled and is one disk failure from being lost.
 - The two copies must stay identical **except** for sanitisation: the workspace
   holds real paths and the broker login, the repo holds `<project-dir>` and an
   env-var login. Never "fix" one copy without the other.
 - The dashboard reads the execution tree, not the repo. If the supervisor runs
-  from the workspace, launch the dashboard with `ZTT_ROOT=%APPDATA%\mt5-mcp` or
+  from the workspace, launch the dashboard with `ZTT_ROOT=<execution-dir>` or
   it will show a permanently stale heartbeat.
 
 ---

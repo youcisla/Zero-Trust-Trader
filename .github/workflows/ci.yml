@@ -42,7 +42,15 @@ jobs:
       # ci.yml excludes itself because it necessarily contains the patterns.
       - name: Guard against leaked paths or credentials
         run: |
-          if git ls-files | grep -v '^\.github/workflows/ci\.yml$' | xargs grep -In \
+          # Build artifacts must never be tracked: cargo embeds absolute source
+          # paths (C:\Users\<name>\.cargo\...) into target/.
+          if git ls-files | grep -q '^dashboard/target/'; then
+            echo "::error::build artifacts are tracked (dashboard/target/)"
+            exit 1
+          fi
+          # -F: fixed strings. Without it, BRE reads '\U' as a literal 'U' and
+          # the Windows-path pattern silently never matches.
+          if git ls-files | grep -v '^\.github/workflows/ci\.yml$' | xargs grep -In -F \
                -e 'C:\Users' \
                -e '62155913' \
                -e 'ghp_' \
