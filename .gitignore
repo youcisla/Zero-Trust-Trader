@@ -1,0 +1,22 @@
+# runtime artifacts — never commit
+*.log
+*.out
+*.lock
+__pycache__/
+*.py[cod]
+.publish_marker
+
+# generated data (regenerate with the pipeline)
+tier1_universe*.json
+tier2_candidates.json
+tier3_results.json
+liquid_universe.json
+my_market_watch.json
+trades.csv
+stops.json
+tm_run_*.json
+funnel.lock
+
+# secrets
+.env
+config.toml

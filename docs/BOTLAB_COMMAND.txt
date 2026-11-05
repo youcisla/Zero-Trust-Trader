@@ -1,0 +1,86 @@
+BOTLAB HONESTY GATE — command to run when the first trade ledger exists
+=======================================================================
+
+Cumulative trials as of 2026-11-05: 5,106
+
+
+STEP 1 — get the live trials number (do not trust a hardcoded figure)
+--------------------------------------------------------------------
+
+cd <project-dir>
+
+python trials_total.py
+
+It prints the total on line 1 (e.g. `5106`) and the breakdown on line 2
+(`# legacy=2205 logged=2901`). Each scheduled funnel run adds ~1,791, so this
+number is stale the moment tomorrow's run finishes. Always re-run it.
+
+
+STEP 2 — run the gate
+---------------------
+
+python -m honest_backtest check your_trades.csv --trials 5106
+
+Our own exporter names the file trades.csv, so in practice:
+
+python -m honest_backtest check trades.csv --trials 5106
+
+
+With explicit costs (only meaningful when the CSV has prices and no R column):
+
+python -m honest_backtest check trades.csv --trials 5106 ^
+    --fee 0.00005 --slippage 0.0001 --json
+
+
+As a hard CI gate:
+
+python -m honest_backtest check trades.csv --trials 5106 --strict --fail-unless-ready
+
+
+WHAT TO EXPECT
+--------------
+
+G1 requires n >= max(MinTRL, 300) closed trades. A single-trade ledger fails G1
+— that is correct, not a bug: 300 is the point below which the sample cannot
+separate skill from luck. The first meaningful run of this command comes after
+the funnel has produced ~300 real trades.
+
+--trials is the whole point. It tells the Deflated Sharpe Ratio how many
+hypotheses were tried before this strategy was selected, so a good-looking
+equity curve is judged against the best result pure luck would have produced
+from the same search. Under-counting is the classic way a backtest lies.
+
+Break-even honesty note: at 5,106 trials the luck-only Sharpe bar is high. If
+the gate fails for months, that is the designed outcome, not a bug to tune away.
+
+
+STEP 3 — where the trials number comes from
+-------------------------------------------
+
+    trials = 2,205 (legacy, pre-logging) + sum of total_tests in funnel_history.log
+
+The log is complete only from 2026-11-05T16:37Z, when Tier 3 took over writing
+it so that hand-started runs are recorded exactly like scheduled ones. The four
+earlier runs (587 + 568 + 525 + 525) live in TRIALS.md and are frozen into the
+LEGACY_TRIALS constant in trials_total.py.
+
+Sanity check the two agree:
+
+    python trials_total.py                       # 5106
+    tail -3 funnel_history.log                   # newest total_tests=...
+
+
+LEDGER FORMAT
+-------------
+
+Either give R directly (profit / amount risked, after costs):
+
+    closed,symbol,side,R
+    2025-01-03 14:00:00,EURUSD,long,1.42
+
+or give prices and let the cost model compute R:
+
+    closed,symbol,side,entry,exit,stop,hold_hours
+    2025-01-03 14:00:00,EURUSD,long,1.12241,1.12232,1.12090,0.0044
+
+Export it with:  python export_ledger.py
