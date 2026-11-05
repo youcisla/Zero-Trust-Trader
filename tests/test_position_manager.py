@@ -138,5 +138,37 @@ class TestSessionClose(unittest.TestCase):
         self.assertFalse(bool(None) and close_due(self._at(23, 0), "20:45", 4))
 
 
+class TestStateWrite(unittest.TestCase):
+    """Windows raises WinError 5 when another process holds the destination
+    open. The dashboard polls it once a second, so losing that race must not
+    kill supervision."""
+
+    def test_retries_while_the_reader_holds_the_file(self):
+        import pathlib
+        import tempfile
+
+        import position_manager as pm
+
+        with tempfile.TemporaryDirectory() as d:
+            orig, pm.STATE = pm.STATE, pathlib.Path(d) / "engine_state.json"
+            real, seen = pathlib.Path.replace, {"n": 0}
+
+            def flaky(self, target):
+                seen["n"] += 1
+                if seen["n"] < 3:
+                    raise PermissionError(13, "Access is denied")
+                return real(self, target)
+
+            pathlib.Path.replace = flaky
+            try:
+                pm.write_state({"ok": True})
+            finally:
+                pathlib.Path.replace = real
+                pm.STATE = orig
+
+            self.assertEqual(seen["n"], 3, "should give up after retrying, not on the first collision")
+            self.assertIn('"ok": true', (pathlib.Path(d) / "engine_state.json").read_text())
+
+
 if __name__ == "__main__":
     unittest.main()

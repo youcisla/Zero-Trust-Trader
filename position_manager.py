@@ -215,11 +215,25 @@ def run_once(cfg: Cfg, apply: bool, close_at: str | None) -> dict:
         mt5.shutdown()
 
 
-def write_state(doc: dict) -> None:
-    """Atomic-ish state for the dashboard: Python never blocks on the UI."""
+def write_state(doc: dict, attempts: int = 6) -> None:
+    """Publish state for the dashboard.
+
+    The replace is retried: on Windows os.replace fails with WinError 5 while
+    another process holds the destination open, and the dashboard polls this
+    file once a second. Losing that race used to kill the supervisor outright,
+    which is the wrong failure mode - a monitoring problem must never stop the
+    thing being monitored.
+    """
     tmp = STATE.with_suffix(".tmp")
     tmp.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
-    tmp.replace(STATE)
+    for i in range(attempts):
+        try:
+            tmp.replace(STATE)
+            return
+        except PermissionError:
+            if i == attempts - 1:
+                raise
+            time.sleep(0.05)
 
 
 def log_line(text: str) -> None:
@@ -251,7 +265,11 @@ def main() -> int:
     try:
         while True:
             doc = run_once(cfg, a.apply, a.session_close)
-            write_state(doc)
+            try:
+                write_state(doc)
+            except OSError as e:
+                # Monitoring is allowed to fail; supervision is not.
+                log_line(f"STATE WRITE FAILED {e}")
             if not doc.get("ok"):
                 log_line(f"FAILED {doc.get('error')}")
                 print(f"! {doc.get('error')}")
