@@ -134,5 +134,28 @@ class TestSignificance(unittest.TestCase):
         self.assertAlmostEqual(s["break_even"], 0.4)
 
 
+class TestPermutationLock(unittest.TestCase):
+    """The permutation gate must have identical resolution on every run.
+
+    At 300 permutations the smallest attainable p-value is 1/301, so the same
+    candidate can clear the bar on one run and miss it on the next. A gate that
+    wobbles is not a gate, so the count is pinned and the CLI refuses anything
+    else rather than silently clamping.
+    """
+
+    def test_both_modules_pin_the_same_value(self):
+        import run_funnel
+        import tier3_deep
+        self.assertEqual(tier3_deep.PERMUTATIONS, 1000)
+        self.assertEqual(run_funnel.PERMUTATIONS, 1000)
+        self.assertEqual(tier3_deep.PERMUTATIONS, run_funnel.PERMUTATIONS,
+                         "the two locked constants have drifted apart")
+
+    def test_library_default_is_1000(self):
+        import inspect
+        param = inspect.signature(tm.permutation_test).parameters["permutations"]
+        self.assertEqual(param.default, 1000)
+
+
 if __name__ == "__main__":
     unittest.main()

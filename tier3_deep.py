@@ -18,6 +18,12 @@ The higher z wins; the other is dropped with a note.
 
 from __future__ import annotations
 
+# Locked at 1000. A gate whose resolution changes between runs is not a gate:
+# at 300 permutations the smallest attainable p-value is 1/301, so the same
+# candidate can clear the bar on one run and miss it on the next. This is not a
+# performance knob - if a scan is too slow, shrink the universe, not the test.
+PERMUTATIONS = 1000
+
 import argparse
 import json
 import math
@@ -97,7 +103,9 @@ def main() -> int:
     ap.add_argument("--bars", type=int, default=15000,
                     help="H1 bars of history for the deep test (G1 needs n>=300 trades)")
     ap.add_argument("--replays", type=int, default=10000)
-    ap.add_argument("--permutations", type=int, default=1000)
+    ap.add_argument("--permutations", type=int, default=PERMUTATIONS,
+                    choices=[PERMUTATIONS],
+                    help="locked at 1000: other values are rejected, never clamped")
     ap.add_argument("--corr-max", type=float, default=0.7)
     ap.add_argument("--seed", type=int, default=19)
     ap.add_argument("--donchian", type=int, default=20)

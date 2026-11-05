@@ -15,6 +15,12 @@ all year. Omit the flag to always run.
 
 from __future__ import annotations
 
+# Locked at 1000, mirroring tier3_deep.PERMUTATIONS. Duplicated rather than
+# imported: importing tier3_deep pulls MetaTrader5 at module load, which would
+# break this module's importability on CI and in tests. A test asserts the two
+# values are equal, so they cannot drift apart silently.
+PERMUTATIONS = 1000
+
 import argparse
 import atexit
 import json
@@ -146,7 +152,9 @@ def main() -> int:
     ap.add_argument("--shortlist", type=int, default=5)
     ap.add_argument("--bars", type=int, default=15000)
     ap.add_argument("--horizon", type=int, default=32)
-    ap.add_argument("--permutations", type=int, default=1000)
+    ap.add_argument("--permutations", type=int, default=PERMUTATIONS,
+                    choices=[PERMUTATIONS],
+                    help="locked at 1000: rejects a lower count rather than clamping")
     ap.add_argument("--lock-max-age-min", type=float, default=120.0)
     a = ap.parse_args()
 
