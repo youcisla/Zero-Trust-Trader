@@ -292,3 +292,43 @@ Do nothing, and say what you could not verify. **Standing down is a correct
 outcome here** — the system reports exactly that whenever it cannot establish an
 edge, and it will do so for weeks without being wrong. An agent that refuses to
 trade has done its job; one that "makes it work" has broken it.
+
+---
+
+## 12. How to monitor the system
+
+**Open <http://localhost:8787>.** That is the primary check — it needs no agent,
+no terminal and no chat session.
+
+| What you see | What it means |
+| --- | --- |
+| Green **live** dot | WebSocket connected to the Rust server |
+| Large equity figure | Pushed ~every second from `engine_state.json` |
+| Amber **engine Ns stale** | The supervisor is not running, or is writing to a different tree. The UI is showing old data — **not** a quiet market |
+| Positions table | Empty = flat; the funnel is standing down |
+| Supervisor actions | Every stop move made, or that would be made in dry run |
+| Funnel history | Last 12 verdicts |
+| MCP tool calls | Read from `audit.jsonl`; empty means no mutating tool was ever called |
+
+- It launches **at logon** from `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`
+  → `dashboard\start_dashboard.bat`. That batch file sets `ZTT_ROOT` to the
+  execution environment; the raw `.exe` would inherit `System32` as its working
+  directory and find no files, so always launch it through the `.bat`. If the
+  panel is missing, run that `.bat` manually.
+- The dashboard is a **monitor, never a control surface**. Nothing on it can
+  place, modify or close anything — see §9.
+- For what the dashboard does not show — policy in force, Task Scheduler
+  next/last run, trials and the current z bar, the liquid universe — run
+  `python status.py` from the execution environment. That is the authoritative read.
+
+### The supervisor is not scheduled, on purpose
+
+`start_supervisor.bat` exists in the execution environment but is **not** in
+Task Scheduler. It runs `position_manager.py --interval 5` with **no `--apply`**,
+so it can only print what it would do.
+
+Add it to Task Scheduler **the moment the first real position is open** — not
+before. With no positions there is nothing to supervise, and an unsupervised
+process that can modify stops is a liability with no upside. When that day comes,
+watch it dry-run the live position first, then add `--apply` only after the log
+shows it moving stops in the protective direction.
