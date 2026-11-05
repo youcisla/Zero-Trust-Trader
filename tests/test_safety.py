@@ -109,5 +109,39 @@ class TestLock(unittest.TestCase):
         self.assertIn(str(os.getpid()), rf.LOCK.read_text())
 
 
+class TestSessionMatrix(unittest.TestCase):
+    """Each family is another hypothesis the Bonferroni bar pays for, so the
+    matrix narrows early in the day rather than scanning all three all day."""
+
+    def _t(self, h, m):
+        return datetime(2026, 11, 5, h, m, tzinfo=timezone.utc)
+
+    def test_boundaries(self):
+        cases = {
+            (4, 59): (),
+            (5, 0): ("donchian",),
+            (7, 59): ("donchian",),
+            (8, 0): ("donchian", "bollinger"),
+            (12, 59): ("donchian", "bollinger"),
+            (13, 0): ("donchian", "rsi", "bollinger"),
+            (16, 59): ("donchian", "rsi", "bollinger"),
+            (17, 0): (),
+        }
+        for (h, m), want in cases.items():
+            with self.subTest(t=f"{h:02d}:{m:02d}"):
+                self.assertEqual(rf.session_strategies(self._t(h, m)), want)
+
+    def test_only_known_families(self):
+        self.assertLessEqual(set(rf.session_strategies(self._t(15, 0))),
+                             {"donchian", "rsi", "bollinger"})
+
+    def test_families_only_grow_during_the_day(self):
+        """A later session may add a family, never remove one: shrinking
+        mid-day would silently change the matrix between two consecutive scans."""
+        seq = [len(rf.session_strategies(self._t(h, m)))
+               for h, m in ((5, 0), (9, 0), (14, 0))]
+        self.assertEqual(seq, [1, 2, 3])
+
+
 if __name__ == "__main__":
     unittest.main()

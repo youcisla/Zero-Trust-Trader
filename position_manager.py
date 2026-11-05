@@ -1,6 +1,6 @@
 """Continuous position supervisor for all three sessions.
 
-Scanning stays inside the 13:00-17:00 UTC overlap. This process is the other
+Scanning stays inside the 05:00-17:00 UTC window. This process is the other
 half: once something is open, it watches it around the clock -- trails the stop,
 locks in break-even, and flattens before the session closes.
 

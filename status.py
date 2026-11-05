@@ -51,7 +51,7 @@ def terminal_block() -> None:
 
 def config_block() -> None:
     section("configuration in force")
-    print("  run window    : 13:00-17:00 UTC (enforced in Python, not Task Scheduler)")
+    print("  run window    : 05:00-17:00 UTC, session matrix narrows families early")
     print(f"  expected login: {os.environ.get('MT5_EXPECTED_LOGIN') or 'not pinned (demo check only)'}")
     cfg = Path(os.environ.get("APPDATA", "")) / "mt5-mcp" / "config.toml"
     if cfg.exists():

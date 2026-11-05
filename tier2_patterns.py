@@ -106,9 +106,9 @@ def scan_symbol(bars: dict, don_n: int, fast: int, slow: int) -> list[dict]:
     return out
 
 
-def normalise(hits: list[dict]) -> None:
+def normalise(hits: list[dict], families: tuple[str, ...] = STRATEGIES) -> None:
     """Scale each family's strength to 0-1 by its own best of the day (in place)."""
-    for fam in STRATEGIES:
+    for fam in families:
         vals = [h["strength"] for h in hits if h["strategy"] == fam]
         top = max(vals) if vals else 0.0
         for h in hits:
@@ -153,11 +153,18 @@ def main() -> int:
     ap.add_argument("--top", type=int, default=5)
     ap.add_argument("--corr-max", type=float, default=0.7)
     ap.add_argument("--no-dedupe", action="store_true")
+    ap.add_argument("--strategies", default=",".join(STRATEGIES),
+                    help="comma-separated subset of the matrix (session-dependent)")
     ap.add_argument("--bars", type=int, default=4000)
     ap.add_argument("--max-age-min", type=float, default=45.0,
                     help="skip a symbol whose last closed bar is older than this "
                          "(a 15-min cadence would otherwise fire on stale weekend bars)")
     a = ap.parse_args()
+
+    fams = tuple(x.strip() for x in a.strategies.split(",") if x.strip())
+    unknown = [f for f in fams if f not in STRATEGIES]
+    if not fams or unknown:
+        ap.error(f"--strategies: {unknown or 'empty'} (choose from {list(STRATEGIES)})")
 
     src_path = Path(a.tier1) if a.tier1 else newest_universe()
     src = json.loads(src_path.read_text())
@@ -167,7 +174,7 @@ def main() -> int:
     md.connect()
     offset = md.broker_offset()
 
-    hits, tested, per_family = [], 0, {f: 0 for f in STRATEGIES}
+    hits, tested, per_family = [], 0, {f: 0 for f in fams}
     stale = 0
     for row in symbols:
         name = row["symbol"]
@@ -182,11 +189,13 @@ def main() -> int:
             continue
         tested += 1
         for s in scan_symbol(bars, a.donchian, a.ema_fast, a.ema_slow):
+            if s["strategy"] not in fams:
+                continue
             per_family[s["strategy"]] += 1
             hits.append({"symbol": name, "class": row["class"],
                          "spread_pct_atr": row["spread_pct_atr"], **s})
 
-    normalise(hits)
+    normalise(hits, fams)
     hits.sort(key=lambda r: r["score"], reverse=True)
 
     if a.no_dedupe:
@@ -195,15 +204,15 @@ def main() -> int:
         kept, dropped = dedupe(hits, a.corr_max, a.tf)
         top = kept[: a.top]
 
-    total_tests = tested * len(STRATEGIES)
+    total_tests = tested * len(fams)
     payload = {
         "generated_utc": md.now_utc(),
         "timeframe": a.tf,
-        "strategies": list(STRATEGIES),
+        "strategies": list(fams),
         "trigger": "Donchian-20+EMA trend | RSI-14 zone cross | MACD 12/26/9 cross",
         "symbols_in": len(symbols),
         "symbols_tested": tested,
-        "strategies_tested": len(STRATEGIES),
+        "strategies_tested": len(fams),
         "total_tests": total_tests,
         "triggering": len(hits),
         "per_family": per_family,
@@ -215,7 +224,7 @@ def main() -> int:
     }
     OUT.write_text(json.dumps(payload, indent=2) + "\n")
 
-    print(f"tested {tested} x {len(STRATEGIES)} strategies = {total_tests} tests "
+    print(f"tested {tested} x {len(fams)} strategies = {total_tests} tests "
           f"| triggering {len(hits)}  {per_family}"
           + (f" | {stale} stale/closed skipped" if stale else ""))
     if dropped:
@@ -227,7 +236,7 @@ def main() -> int:
         print(f"{n:>2} {r['symbol']:14} {r['class']:11} {r['strategy']:9} {r['side']:6} "
               f"{r['strength']:>9.3f} {r['score']:>6.2f}")
     print(f"\nwrote {OUT.name}")
-    print(f"NOTE: declare {total_tests} tests ({tested} symbols x {len(STRATEGIES)} "
+    print(f"NOTE: declare {total_tests} tests ({tested} symbols x {len(fams)} "
           f"strategies) for the DSR/Bonferroni accounting.")
     print(f"market watch released: {md.release_auto_selected()} symbols")
     return 0

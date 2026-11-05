@@ -99,7 +99,7 @@ times per run. Passing one gate is not permission to trade.
 
 ```mermaid
 flowchart TD
-    SCH["Task Scheduler<br/>13:00–17:00 UTC"] --> PRE{"pre-flight<br/>demo · connected · lock"}
+    SCH["Task Scheduler<br/>05:00–17:00 UTC"] --> PRE{"pre-flight<br/>demo · connected · lock"}
     PRE -->|refuse| STOP1([abort, nothing scanned])
     PRE -->|pass| T1["Tier 1 · universe filter<br/>~1,700 → ~600 symbols"]
     T1 --> T2["Tier 2 · strategy matrix<br/>3 families"]
@@ -139,6 +139,19 @@ Two details that took measurement to find:
 - **RSI sparsity was a history-length problem, not a threshold problem.** Moving
   30/70 → 35/65 bought +70 trades. Moving 5,000 → 15,000 bars bought **+480**.
   Thresholds trade signal quality for volume; history *is* the sample.
+
+**The matrix narrows with the session.** Scanning all three families for twelve
+hours would add 7,200 hypotheses a day; narrowing the early sessions keeps it at
+5,000 without giving up the Asian and London opens.
+
+| Window (UTC) | Families | Why |
+| --- | --- | --- |
+| 05:00–08:00 | `donchian` | pre-London: structure is thin, only a breakout earns a test |
+| 08:00–13:00 | `donchian`, `bollinger` | London range is real enough to fade |
+| 13:00–17:00 | all three | NY overlap: full matrix |
+
+`run_funnel.py --at-utc 08:00 --plan-only` prints the plan for any time without
+touching the terminal.
 
 ---
 
@@ -182,13 +195,13 @@ scan.
 | 525 (the aborted wide run) | 3.90 |
 | 1,791 (one full-universe run) | 4.19 |
 | 5,388 (today) | **4.43** |
-| 22,056 (a week of intraday scanning) | 4.73 |
-| 77,256 (a month of intraday scanning) | 4.98 |
+| 40,388 (a week at 5,000/day) | 4.85 |
+| 155,388 (a month at 5,000/day) | 5.11 |
 
-The bottom row is the reason the intraday scan runs in a 16-scan window instead
-of 96: at that frequency the bar climbs past 5σ inside a month and nothing
-survives it. Every value here is computed by `bonferroni_z()`, not estimated —
-`python status.py` prints the current one.
+Every value is computed by `bonferroni_z()`, not estimated — `python status.py`
+prints the current one. The window is 05:00–17:00 UTC (48 scans/day), but the
+session matrix below narrows the families early, so a day adds 5,000 hypotheses
+rather than the 7,200 a naive 12-hour expansion would.
 
 ```bash
 $ python trials_total.py
@@ -232,7 +245,7 @@ pip install -r requirements.txt          # MetaTrader5, numpy, pandas
 
 python status.py                         # does the terminal answer? is it demo?
 python run_funnel.py --rebuild           # Tier 1 → liquid universe (~35 min)
-python run_funnel.py --window-utc 13:00-17:00   # one intraday scan
+python run_funnel.py --window-utc 05:00-17:00   # one intraday scan
 python report_funnel.py --full           # today's verdict
 ```
 

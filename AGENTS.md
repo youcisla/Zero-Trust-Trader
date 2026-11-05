@@ -65,16 +65,37 @@ Every gate fails **closed**: when it cannot verify, it refuses.
 | # | Gate | Where | Refuses when |
 | --- | --- | --- | --- |
 | 1 | Demo-only pre-flight | `run_funnel.preflight_check` | server name lacks `demo`, terminal disconnected, login mismatch |
-| 2 | Run window | `run_funnel.in_window` | outside 13:00–17:00 UTC |
+| 2 | Run window | `run_funnel.in_window` | outside 05:00–17:00 UTC |
 | 3 | Lock | `run_funnel.acquire_lock` | another run holds the lock (stale locks are taken over) |
 | 4 | Correlation dedupe | `tier2_patterns` | two candidates above \|ρ\| 0.7 — keeps the higher z |
-| 5 | Corrected z | `tier3_deep` | z below `bonferroni_z(cumulative_trials)` |
+| 5 | Corrected z | `tier3_deep` | z below `bonferroni_z(cumulative_trials)` — **cumulative, never per-scan** |
 | 6 | Permutation null | `timemachine_mt5.permutation_test` | p ≥ 0.05 against random entries |
 | 7 | Protective-direction rule | `position_manager.next_stop` | a stop move that would widen risk or cross price |
 | 8 | Human + bridge consent | external | no fresh approval token |
 
 Gates 5 and 6 are **not** redundant. The permutation test does not correct for
 scan width; a p of 0.015 is expected ~8 times per 568-symbol run.
+
+### The session matrix
+
+The window is 05:00–17:00 UTC but the number of families scanned depends on the
+time, because every family is another hypothesis the Bonferroni bar must pay for.
+
+| Window (UTC) | Families | Tests/scan |
+| --- | --- | --- |
+| 05:00–08:00 | `donchian` | 50 |
+| 08:00–13:00 | `donchian`, `bollinger` | 100 |
+| 13:00–17:00 | all three | 150 |
+
+`run_funnel.session_strategies(now)` is the only place this is decided, and
+`run_funnel.py --at-utc HH:MM --plan-only` reproduces it for any time without
+touching the terminal. Do not widen a session's family list to "catch more
+setups" — that raises the bar for every future scan too.
+
+**z_crit is always computed from the cumulative trial count**
+(`legacy + logged + this scan's tests`), passed to `tier3_deep.py` as
+`--trials`. If you ever see a z bar near 3.3–3.6, the cumulative wiring has
+broken and the gate is judging each scan as if it were the first.
 
 ---
 
@@ -101,6 +122,12 @@ conversation:
 8. **Catch and swallow** an exception on the order path. A silent failure that
    reports success is the worst outcome this project has actually produced.
 9. **Add a write endpoint to the dashboard.** It is a monitor. See §9.
+10. **Change the permutation count.** It is locked at exactly 1000 in both
+    `run_funnel.py` and `tier3_deep.py`, and the CLI rejects any other value
+    rather than clamping it. At 300 permutations the smallest attainable
+    p-value is 1/301, so the same candidate can clear the bar on one run and
+    miss it on the next — a gate whose resolution varies between runs is not a
+    gate. If a scan is too slow, shrink the universe, not the test.
 
 ---
 

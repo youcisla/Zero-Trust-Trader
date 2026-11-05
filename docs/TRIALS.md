@@ -221,3 +221,44 @@ The accounting is implemented, not aspirational: every scan appends its own
 `total_tests` to `funnel_history.log` and `trials_total.py` accumulates. A
 candidate that clears 3.59 today will be refused next month at the same z.
 
+
+---
+
+## Session matrix (05:00-17:00 UTC) and the cumulative correction
+
+The scan window widened from 16 scans/day (13:00-17:00) to 48 (05:00-17:00).
+The strategy matrix narrows in the early sessions so the daily hypothesis count
+does not scale with the window.
+
+| Window (UTC) | Scans | Symbols | Families | Tests |
+| --- | --- | --- | --- | --- |
+| 05:00-08:00 | 12 | 50 | donchian | 600 |
+| 08:00-13:00 | 20 | 50 | donchian, bollinger | 2,000 |
+| 13:00-17:00 | 16 | 50 | donchian, rsi, bollinger | 2,400 |
+| **Total** | **48** | | | **5,000** |
+
+5,000/day is 2.08x the previous 2,400/day. The matrix does not push the total
+below the old rate - it stops the widened window from costing 7,200/day
+(48 scans x 150 tests), which is what a naive 12-hour expansion would have
+done. Fewer families early is not a saving, it is a smaller bet.
+
+### z_crit is cumulative, never per-scan
+
+The gate uses the running total of every hypothesis ever tested, including the
+scan being judged.
+
+| Point | Cumulative trials | z_crit |
+| --- | --- | --- |
+| now | 5,388 | 4.43 |
+| +1 day | 10,388 | 4.57 |
+| +1 week | 40,388 | 4.85 |
+| +30 days | 155,388 | 5.11 |
+
+A per-scan bar would have been 3.29 (50 tests), 3.48 (100), 3.59 (150). At 30
+days that is **1.52 sigma of unearned leniency** - the exact data-snooping error
+this file exists to prevent.
+
+`run_funnel.py` therefore passes `--trials <cumulative>` to `tier3_deep.py`,
+computed as `legacy + logged + this scan's tests`. Before this was wired,
+tier3 fell back to the per-scan count, so every run after the first was judged
+as if it were the only run ever made.

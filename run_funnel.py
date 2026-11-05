@@ -134,6 +134,30 @@ def release_lock() -> None:
         pass
 
 
+SESSION_MATRIX = (
+    ("05:00", "08:00", ("donchian",)),
+    ("08:00", "13:00", ("donchian", "bollinger")),
+    ("13:00", "17:00", ("donchian", "rsi", "bollinger")),
+)
+
+
+def session_strategies(now: datetime) -> tuple[str, ...]:
+    """Which strategy families to scan at this UTC minute.
+
+    Fewer families early, because every family is another hypothesis the
+    Bonferroni bar has to pay for. A trend breakout needs the least structure to
+    justify scanning it; mean reversion is only worth testing once London is
+    open and the range is real. Empty tuple = outside every session.
+    """
+    minute = now.hour * 60 + now.minute
+    for start, end, fams in SESSION_MATRIX:
+        s = int(start[:2]) * 60 + int(start[3:])
+        e = int(end[:2]) * 60 + int(end[3:])
+        if s <= minute < e:
+            return fams
+    return ()
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--rebuild", action="store_true",
@@ -142,10 +166,14 @@ def main() -> int:
                          "~35 minute whole-universe cost.")
     ap.add_argument("--target-utc", default=None, help='e.g. "13:30" (rebuild window)')
     ap.add_argument("--window-utc", default=None,
-                    help='e.g. "13:00-17:00" — start inclusive, end exclusive. '
+                    help='e.g. "05:00-17:00" — start inclusive, end exclusive. '
                          'Outside it the run exits 0 immediately. Enforced in Python '
                          'rather than in Task Scheduler because the scheduler stores '
                          'LOCAL time and Europe/Paris shifts by an hour at DST.')
+    ap.add_argument("--at-utc", default=None, metavar="HH:MM",
+                    help="pretend it is this UTC time (for verifying the session matrix)")
+    ap.add_argument("--plan-only", action="store_true",
+                    help="print the session plan and expected test count, then exit")
     ap.add_argument("--tolerance-min", type=int, default=10)
     ap.add_argument("--tf", default="M15")
     ap.add_argument("--top", type=int, default=50, help="intraday universe size")
@@ -162,9 +190,14 @@ def main() -> int:
     if not acquire_lock(a.lock_max_age_min):
         return 0
 
+    now = datetime.now(timezone.utc)
+    if a.at_utc:
+        hh_a, mm_a = (int(x) for x in a.at_utc.split(":"))
+        now = now.replace(hour=hh_a, minute=mm_a, second=0, microsecond=0)
+        print(f"--at-utc: pretending it is {now:%H:%M}Z")
+
     if a.target_utc:
         hh, mm = (int(x) for x in a.target_utc.split(":"))
-        now = datetime.now(timezone.utc)
         delta = abs((now.hour * 60 + now.minute) - (hh * 60 + mm))
         delta = min(delta, 1440 - delta)
         if delta > a.tolerance_min:
@@ -172,10 +205,29 @@ def main() -> int:
             return 0
 
     if a.window_utc:
-        now = datetime.now(timezone.utc)
         if not in_window(a.window_utc, now):
             print(f"outside the {a.window_utc}Z window ({now:%H:%M}Z) — no-op")
             return 0
+
+    fams = session_strategies(now)
+    print(f"session matrix @ {now:%H:%M}Z: {', '.join(fams) if fams else 'none'}")
+    if a.plan_only:
+        n_sym = 50
+        try:
+            n_sym = len(json.loads((HERE / "liquid_universe.json").read_text())["symbols"])
+        except Exception:
+            pass
+        print(f"plan: {n_sym} symbols x {len(fams)} strategies = "
+              f"{n_sym * len(fams)} tests this scan")
+        try:
+            import trials_total
+            print(f"prior trials on record: {sum(trials_total.total())}")
+        except Exception:
+            pass
+        return 0
+    if not fams:
+        print(f"outside every session in the matrix ({now:%H:%M}Z) — no-op")
+        return 0
 
     ok, problems = preflight()
     if not ok:
@@ -217,14 +269,32 @@ def main() -> int:
         return 2
 
     t2 = run(["tier2_patterns.py", "--tier1", "liquid_universe.json",
-              "--tf", a.tf, "--top", str(a.shortlist)])
+              "--tf", a.tf, "--top", str(a.shortlist),
+              "--strategies", ",".join(fams)])
     if t2.returncode != 0:
         log(f"FAILED tier2 rc={t2.returncode} | {tail(t2.stderr, 3)}")
         return 1
     print(tail(t2.stdout, 10))
 
+    # The gate must price EVERY hypothesis ever tested, including this scan.
+    # Reading only the per-scan count let a 132-test scan apply a 3.55 bar
+    # after 5,388 trials - the exact data-snooping the project exists to stop.
+    try:
+        import trials_total
+        prior = sum(trials_total.total())
+    except Exception:
+        prior = 0
+    try:
+        scan_tests = int(json.loads((HERE / "tier2_candidates.json").read_text())
+                         .get("total_tests") or 0)
+    except Exception:
+        scan_tests = 0
+    cumulative = prior + scan_tests
+    print(f"trials: {prior} prior + {scan_tests} this scan = {cumulative}")
+
     t3 = run(["tier3_deep.py", "--tf", a.tf, "--bars", str(a.bars),
-              "--horizon", str(a.horizon), "--permutations", str(a.permutations)])
+              "--horizon", str(a.horizon), "--permutations", str(a.permutations),
+              "--trials", str(cumulative)])
     # tier3 exits 2 on a clean stand-down: that is success, not failure
     if t3.returncode not in (0, 2):
         log(f"FAILED tier3 rc={t3.returncode} | {tail(t3.stderr, 3)}")
