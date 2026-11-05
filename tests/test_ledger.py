@@ -59,5 +59,23 @@ class TestTrialsTotal(unittest.TestCase):
         self.assertEqual(tt.LEGACY_TRIALS, 2205)
 
 
+class TestFailureRow(unittest.TestCase):
+    def test_tail_never_splits_a_ledger_row(self):
+        """A traceback joined with newlines used to turn one failed run into
+        several ledger rows, which then read like a crash dump in status."""
+        from run_funnel import tail
+
+        traceback_text = (
+            "Traceback (most recent call last):\n"
+            '  File "tier1_universe.py", line 178, in main\n'
+            '    OUT.write_text(payload)\n'
+            "NameError: name 'OUT' is not defined\n"
+        )
+        out = tail(traceback_text, 3)
+        self.assertNotIn("\n", out)
+        self.assertIn("NameError", out)
+        self.assertEqual(tail("", 3), "")
+
+
 if __name__ == "__main__":
     unittest.main()

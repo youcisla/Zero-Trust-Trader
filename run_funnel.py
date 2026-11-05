@@ -86,7 +86,14 @@ def run(args: list[str], timeout: int = 5400) -> subprocess.CompletedProcess:
 
 
 def tail(text: str, n: int = 12) -> str:
-    return "\n".join((text or "").strip().splitlines()[-n:])
+    """Last n lines, flattened onto ONE line.
+
+    The ledger is line-based: a traceback joined with newlines turns a single
+    failed run into several rows and reads like a crash dump in status output.
+    Failure context is still kept, just on one line.
+    """
+    lines = [l.strip() for l in (text or "").strip().splitlines() if l.strip()]
+    return " / ".join(lines[-n:])
 
 
 def in_window(spec: str, now: datetime) -> bool:
