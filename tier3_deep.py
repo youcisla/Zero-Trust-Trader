@@ -110,6 +110,10 @@ def main() -> int:
     ap.add_argument("--corr-max", type=float, default=0.7)
     ap.add_argument("--seed", type=int, default=19)
     ap.add_argument("--donchian", type=int, default=20)
+    # Must match tier2's --ema-fast/--ema-slow: the trend gate is part of the
+    # rule being tested, so the backtest cannot use a different one.
+    ap.add_argument("--ema-fast", type=int, default=50)
+    ap.add_argument("--ema-slow", type=int, default=200)
     ap.add_argument("--atr-k", type=float, default=1.5)
     ap.add_argument("--rr", type=float, default=1.5)
     ap.add_argument("--json", action="store_true")
@@ -150,8 +154,11 @@ def main() -> int:
         sym = row["symbol"]
         strat = row.get("strategy", "donchian")
         label = f"{sym}/{strat}"
-        doc = tm.analyse(sym, a.tf, strat, a.donchian, 20, 50, a.atr_k, a.rr, a.horizon,
-                         "both", a.bars, a.replays, a.seed, 2, 1500, trials,
+        doc = tm.analyse(sym, a.tf, strat, a.donchian, a.ema_fast, a.ema_slow,
+                         a.atr_k, a.rr, a.horizon,
+                         # test the side Tier 2 actually proposes, not both
+                         row.get("side", "both"),
+                         a.bars, a.replays, a.seed, 2, 1500, trials,
                          a.permutations)
         if doc is None:
             print(f"{label}: no setups fired — skipped")

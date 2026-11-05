@@ -24,7 +24,7 @@ jobs:
       # MetaTrader5 is Windows-only and is not installed here. The test suite
       # stubs it, so the indicators and the safety guards still run.
       - name: Install test dependencies
-        run: python -m pip install --upgrade pip numpy
+        run: python -m pip install --upgrade pip numpy pandas
 
       - name: Syntax-check every module
         run: python -m compileall -q . -x '(^|/)(\.git|tests)/'

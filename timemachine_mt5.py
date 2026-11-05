@@ -37,6 +37,11 @@ from datetime import datetime, timezone
 
 import marketdata as md
 
+# The live supervisor owns the exit policy. Import it rather than restating it:
+# a backtest that re-implements trailing/break-even measures a strategy nobody
+# trades, which is exactly the mismatch this module used to have.
+from position_manager import Cfg, next_stop
+
 CYCLE = {"M15": 96, "M30": 48, "H1": 24, "H4": 6, "D1": 5}
 HORIZON_DEFAULT = {"M15": 96, "M30": 48, "H1": 24, "H4": 12, "D1": 10}
 
@@ -104,40 +109,106 @@ def _resolve(bars, i, side, entry, stop, target, risk, horizon):
     return outcome, mae, min(j, n - 1)
 
 
-def _row(bars, i, side, entry, stop, target, risk, outcome, mae, exit_i, rr):
-    mark = bars["c"][exit_i]
-    r = (rr if outcome == "target" else -1.0 if outcome == "stop"
-         else ((mark - entry) if side == "long" else (entry - mark)) / risk)
+def _resolve_live(bars, i, side, entry, stop, risk, atr, spread, horizon,
+                  cfg: "Cfg" = Cfg()):
+    """Walk forward using the supervisor's own rules.
+
+    There is deliberately no fixed target here: `position_manager` never sets
+    one, so booking +rr in the backtest would be measuring a strategy that is
+    not traded. The stop only ever moves in the protective direction because
+    `next_stop()` is the same pure function the live loop calls.
+
+    Prices are bid. A long pays the spread on entry, a short on exit, so every
+    trade is charged exactly one spread round trip.
+
+    Returns (reason, mae_R, exit_i, exit_price_effective).
+    """
+    sgn = 1 if side == "long" else -1
+    hi_a, lo_a, cl_a = bars["h"], bars["l"], bars["c"]
+    n = len(cl_a)
+    cur = stop
+    mae = 0.0
+    j = i + 1
+    while j < n and j <= i + horizon:
+        a_j = float(atr[j]) if not math.isnan(atr[j]) else 0.0
+        # stop is checked on the bar before any trail update (conservative)
+        if side == "long":
+            mae = max(mae, (entry - min(lo_a[j], entry)) / risk)
+            if lo_a[j] <= cur:
+                return "stop", mae, j, cur
+        else:
+            mae = max(mae, (max(hi_a[j], entry) - entry) / risk)
+            if hi_a[j] + spread >= cur:          # buy-back happens at the ask
+                return "stop", mae, j, cur + spread
+        if a_j > 0:
+            nxt, _why = next_stop(sgn, entry, cur, float(cl_a[j]), a_j, 0.0, cfg)
+            if nxt is not None:
+                cur = nxt
+        j += 1
+    j = min(j, n - 1)
+    return "horizon", mae, j, (cl_a[j] if side == "long" else cl_a[j] + spread)
+
+
+def _row(bars, i, side, entry, stop, target, risk, outcome, mae, exit_i, rr,
+         exit_price=None):
+    mark = bars["c"][exit_i] if exit_price is None else exit_price
+    gross = ((mark - entry) if side == "long" else (entry - mark)) / risk
+    r = gross if exit_price is not None else (
+        rr if outcome == "target" else -1.0 if outcome == "stop" else gross)
     return {"bar": i, "time": int(bars["t"][i]), "side": side,
             "entry": round(entry, 5), "stop": round(stop, 5), "target": round(target, 5),
             "risk": round(risk, 6), "outcome": outcome or "neither",
             "R": round(r, 3), "mae_R": round(mae, 3), "bars_held": exit_i - i}
 
 
-def scan_donchian(bars, n, k_atr, rr, horizon, sides):
-    """n-period Donchian breakout on the prior n bars, ATR stop, rr target."""
+def scan_donchian(bars, n, k_atr, rr, horizon, sides,
+                  ema_fast: int = 50, ema_slow: int = 200, spread: float = 0.0,
+                  live_exits: bool = True):
+    """Donchian breakout on the prior n bars — the exact rule Tier 2 proposes.
+
+    Tier 2 requires the EMA(fast) vs EMA(slow) trend gate, so the backtest must
+    apply the identical gate; without it this function graded a different
+    strategy from the one proposed for execution.
+
+    Costs and exits match live: the entry pays the spread and the stop trails
+    and moves to break-even through position_manager.next_stop().
+    """
     upper, lower = md.donchian(bars["h"], bars["l"], n)
     a = md.atr(bars["h"], bars["l"], bars["c"], 14)
     c = bars["c"]
-    trades, i = [], n + 1
+    ef, es = md.ema(c, ema_fast), md.ema(c, ema_slow)
+    trades = []
+    i = max(n + 1, ema_slow + 1)
     while i < len(c) - 1:
-        if math.isnan(upper[i]) or math.isnan(a[i]) or a[i] <= 0:
+        if (math.isnan(upper[i]) or math.isnan(lower[i]) or math.isnan(a[i])
+                or a[i] <= 0 or math.isnan(ef[i]) or math.isnan(es[i])):
             i += 1
             continue
+        up_trend = bool(ef[i] > es[i])
         side = None
-        if sides in ("both", "long") and c[i] > upper[i]:
+        # identical to tier2: long needs the up-trend, short needs it absent
+        if sides in ("both", "long") and c[i] > upper[i] and up_trend:
             side = "long"
-        elif sides in ("both", "short") and c[i] < lower[i]:
+        elif sides in ("both", "short") and c[i] < lower[i] and not up_trend:
             side = "short"
         if side is None:
             i += 1
             continue
-        entry = c[i]
+        sgn = 1 if side == "long" else -1
+        entry_fill = c[i] + spread if side == "long" else c[i]
         risk = k_atr * a[i]
-        stop = entry - risk if side == "long" else entry + risk
-        target = entry + rr * risk if side == "long" else entry - rr * risk
-        outcome, mae, exit_i = _resolve(bars, i, side, entry, stop, target, risk, horizon)
-        trades.append(_row(bars, i, side, entry, stop, target, risk, outcome, mae, exit_i, rr))
+        stop = entry_fill - sgn * risk
+        target = entry_fill + sgn * rr * risk
+        if live_exits:
+            outcome, mae, exit_i, exit_px = _resolve_live(
+                bars, i, side, entry_fill, stop, risk, a, spread, horizon)
+            trades.append(_row(bars, i, side, entry_fill, stop, target, risk,
+                               outcome, mae, exit_i, rr, exit_price=exit_px))
+        else:
+            outcome, mae, exit_i = _resolve(
+                bars, i, side, entry_fill, stop, target, risk, horizon)
+            trades.append(_row(bars, i, side, entry_fill, stop, target, risk,
+                               outcome, mae, exit_i, rr))
         i = max(exit_i, i + 1)
     return trades
 
@@ -436,7 +507,7 @@ def permutation_test(bars, trades, k_atr, rr, horizon, permutations=1000, seed=1
     }
 
 
-def analyse(symbol, tf="H1", strategy="donchian", don_n=20, ema_fast=20, ema_slow=50,
+def analyse(symbol, tf="H1", strategy="donchian", don_n=20, ema_fast=50, ema_slow=200,
             atr_k=1.5, rr=1.5, horizon=None, sides="both", bars_n=5000,
             replays=10000, seed=19, window=2, pool_bars=1500, n_tests=1,
             permutations=0) -> dict | None:
@@ -450,10 +521,17 @@ def analyse(symbol, tf="H1", strategy="donchian", don_n=20, ema_fast=20, ema_slo
         return None
     info = md.mt5.symbol_info(symbol)
     tick = md.mt5.symbol_info_tick(symbol)
+    # One spread per round trip, in price units. Tier 1 already refuses symbols
+    # whose spread exceeds 15% of ATR; the backtest now charges what it admits.
+    spread_px = (float(info.spread) * float(info.point)
+                 if info and getattr(info, "spread", 0) else 0.0)
 
     if strategy == "donchian":
-        trades = scan_donchian(bars, don_n, atr_k, rr, horizon, sides)
-        rule = f"Donchian-{don_n} breakout, stop {atr_k}xATR14, target {rr}R, {horizon} bars"
+        trades = scan_donchian(bars, don_n, atr_k, rr, horizon, sides,
+                               ema_fast, ema_slow, spread_px, True)
+        rule = (f"Donchian-{don_n} breakout gated by EMA{ema_fast}/EMA{ema_slow}, "
+                f"stop {atr_k}xATR14, trail+break-even exits, spread {spread_px:g}, "
+                f"{horizon} bars")
     elif strategy == "pullback":
         trades = scan_pullback(bars, ema_fast, ema_slow, atr_k, rr, horizon, sides)
         rule = f"EMA{ema_fast}/{ema_slow} pullback, stop {atr_k}xATR14, target {rr}R, {horizon} bars"

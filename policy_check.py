@@ -29,6 +29,16 @@ def requires_approval(cfg, volume: Decimal, price: Decimal) -> bool:
 
 def main() -> int:
     cfg = load_config()
+
+    # Fail closed. The replay expression below treats auto_approve_notional <= 0
+    # as "no order ever needs consent", which is the opposite of a safety gate.
+    # If the config disarms it, stop here instead of reporting a green run.
+    if cfg.policy.auto_approve_notional <= 0:
+        print(f"HARD STOP: auto_approve_notional={cfg.policy.auto_approve_notional} "
+              "disarms the consent gate — every order would be auto-approved.\n"
+              "Set a positive value in config.toml and re-run.")
+        return 2
+
     ask = Decimal("1.12236")  # live EURUSD ask at setup time
     failures: list[str] = []
 

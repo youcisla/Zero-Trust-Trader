@@ -48,6 +48,14 @@ many hypotheses were tried, and a gate that survives the answer being *no*.
 
 ## The result that justifies the whole design
 
+> **Superseded 2026-11-05.** These numbers came from a backtest that did not
+> match live execution: no EMA trend gate, no spread, and a fixed +1.5R target
+> the supervisor never sets. The Time Machine now imports Tier 2's gate and the
+> supervisor's own `next_stop()`, and charges the spread — enforced by
+> `tests/test_parity.py`. Every figure below is being re-derived under the
+> corrected rule. Treat the table as history, not as evidence about the system
+> as it runs today.
+
 I scanned 568 instruments, deep-tested the five strongest, and one candidate
 looked like a genuine edge:
 
@@ -270,7 +278,7 @@ see `docs/BOTLAB_COMMAND.txt` for the ledger/backtest workflow).
 
 ## Tests
 
-52 tests, **no trading terminal required** — `MetaTrader5` is Windows-only, so
+66 tests, **no trading terminal required** — `MetaTrader5` is Windows-only, so
 `tests/_mt5stub.py` stubs it and the indicator maths and safety guards run
 anywhere, including Linux CI:
 

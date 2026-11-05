@@ -1,0 +1,17 @@
+# Guardrail ownership.
+#
+# These files decide whether the system may trade and whether its own result is
+# believable. An agent that can edit them can grant itself an edge, which makes
+# every other control cosmetic. Changes here need a human owner's review; the
+# prose rules in AGENTS.md are not a substitute for that.
+
+/.github/                    @youcisla
+/AGENTS.md                   @youcisla
+/CONTRIBUTING.md             @youcisla
+/tier3_deep.py               @youcisla
+/run_funnel.py               @youcisla
+/timemachine_mt5.py          @youcisla
+/trials_total.py             @youcisla
+/position_manager.py         @youcisla
+/policy_check.py             @youcisla
+/tests/                      @youcisla
