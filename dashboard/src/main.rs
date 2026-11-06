@@ -14,8 +14,9 @@
 use axum::{
     extract::{
         ws::{Message, WebSocket, WebSocketUpgrade},
-        State,
+        Path as AxumPath, State,
     },
+    http::StatusCode,
     response::{Html, IntoResponse},
     routing::get,
     Json, Router,
@@ -122,6 +123,21 @@ async fn watch(state: AppState) {
     }
 }
 
+async fn full_log(AxumPath(which): AxumPath<String>, State(st): State<AppState>) -> impl IntoResponse {
+    // The snapshot only carries the last 12 lines: enough to glance at, useless
+    // for debugging. This serves the whole file so the Copy button copies
+    // everything. Loopback-only listener, so no new exposure.
+    let name = match which.as_str() {
+        "funnel" => "funnel_history.log",
+        "actions" => "position_manager.log",
+        "audit" => "audit.jsonl",
+        _ => return (StatusCode::NOT_FOUND, String::from("unknown log")),
+    };
+    let text = std::fs::read_to_string(st.root.join(name)).unwrap_or_default();
+    // ponytail: whole file up to 4 MB. Stream it if a log ever outgrows memory.
+    (StatusCode::OK, text.chars().take(4_000_000).collect::<String>())
+}
+
 async fn index() -> Html<&'static str> {
     Html(include_str!("../web/index.html"))
 }
@@ -205,6 +221,7 @@ async fn main() {
     let app = Router::new()
         .route("/", get(index))
         .route("/api/snapshot", get(snapshot))
+        .route("/api/logs/:which", get(full_log))
         .route("/ws", get(ws))
         .route("/vendor/react.production.min.js", get(|| js("react")))
         .route("/vendor/react-dom.production.min.js", get(|| js("react-dom")))

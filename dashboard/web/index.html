@@ -12,73 +12,164 @@
 <script src="/vendor/htm.umd.js"></script>
 <style>
   :root{
-    --bg:#0b0d10; --panel:#12161b; --line:#222932; --ink:#e6edf3;
-    --dim:#7d8894; --good:#3fb950; --warn:#d29922; --bad:#f85149;
+    /* one type scale: 11 / 12 / 13 / 15 / 22  ·  one 4px spacing scale */
+    --bg:#0a0c0f; --panel:#101419; --line:#1d242d; --line-soft:#161c23;
+    --ink:#e8eef5; --dim:#7b8794; --faint:#55606c;
+    --good:#3fb950; --warn:#d29922; --bad:#f85149;
+    --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px;
+    --r:10px;
   }
   *{box-sizing:border-box}
+  html,body{height:100%}
   body{margin:0;background:var(--bg);color:var(--ink);
-    font:14px/1.45 ui-sans-serif,-apple-system,"Segoe UI",system-ui,sans-serif}
-  .num{font-family:ui-monospace,"Cascadia Mono",Menlo,Consolas,monospace;
-    font-variant-numeric:tabular-nums}
-  header{display:flex;align-items:center;gap:16px;padding:14px 20px;
-    border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--bg);z-index:2}
-  h1{font-size:14px;letter-spacing:.14em;text-transform:uppercase;margin:0;font-weight:600}
-  .dot{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:7px}
-  .live{color:var(--good)} .down{color:var(--bad)}
+    font:13px/1.5 ui-sans-serif,-apple-system,"Segoe UI",system-ui,sans-serif;
+    -webkit-font-smoothing:antialiased}
+  .mono{font-family:ui-monospace,"Cascadia Mono",Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
+  button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
+  button:focus-visible,a:focus-visible{outline:2px solid var(--warn);outline-offset:2px;border-radius:6px}
+
+  header{display:flex;align-items:center;gap:var(--s3);padding:var(--s3) var(--s5);
+    border-bottom:1px solid var(--line);position:sticky;top:0;background:rgba(10,12,15,.92);
+    backdrop-filter:blur(6px);z-index:5}
+  .brand{display:flex;align-items:center;gap:var(--s2)}
+  .mark{width:18px;height:18px;border-radius:5px;border:1px solid var(--line);
+    display:grid;place-items:center;color:var(--warn);font-size:11px;font-weight:700}
+  h1{font-size:13px;letter-spacing:.02em;margin:0;font-weight:600}
+  .sub{color:var(--faint);font-size:11px;letter-spacing:.08em;text-transform:uppercase}
   .spacer{flex:1}
-  .equity{font-size:26px;font-weight:600;letter-spacing:-.01em}
-  main{padding:20px;display:grid;gap:14px;
-    grid-template-columns:repeat(auto-fit,minmax(300px,1fr));align-items:start}
-  section{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden}
-  section h2{margin:0;padding:10px 14px;font-size:11px;letter-spacing:.12em;
-    text-transform:uppercase;color:var(--dim);border-bottom:1px solid var(--line);font-weight:600}
-  .body{padding:12px 14px}
-  .row{display:flex;justify-content:space-between;gap:12px;padding:5px 0}
+
+  .pill{display:inline-flex;align-items:center;gap:6px;font-size:11px;letter-spacing:.04em;
+    padding:3px 9px;border-radius:999px;border:1px solid var(--line);color:var(--dim);
+    transition:color .15s ease,border-color .15s ease}
+  .pill .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+  .pill.live{color:var(--good);border-color:rgba(63,185,80,.35)}
+  .pill.down{color:var(--bad);border-color:rgba(248,81,73,.35)}
+  .pill.stale{color:var(--warn);border-color:rgba(210,153,34,.4)}
+
+  .equity{display:flex;align-items:baseline;gap:6px}
+  .equity b{font-size:22px;font-weight:600;letter-spacing:-.015em}
+  .equity span{color:var(--dim);font-size:11px;letter-spacing:.08em}
+
+  main{padding:var(--s5);display:grid;gap:var(--s4);
+    grid-template-columns:repeat(12,1fr);align-items:start;max-width:1500px;margin:0 auto}
+  .tap4{grid-column:span 3}
+  .tap6{grid-column:span 6}
+  .tap12{grid-column:1/-1}
+  @media (max-width:1100px){ .tap4{grid-column:span 6} .tap6{grid-column:span 12} }
+  @media (max-width:640px){ main{padding:var(--s4)} .tap4{grid-column:span 12} }
+
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
+  .card header{position:static;display:flex;align-items:center;gap:var(--s2);
+    padding:var(--s2) var(--s3);border-bottom:1px solid var(--line-soft);
+    background:transparent;backdrop-filter:none}
+  .card h2{margin:0;font-size:11px;letter-spacing:.1em;text-transform:uppercase;
+    color:var(--dim);font-weight:600}
+  .card .count{color:var(--faint);font-size:11px}
+
+  .tile{padding:var(--s4)}
+  .tile .label{color:var(--dim);font-size:11px;letter-spacing:.09em;text-transform:uppercase}
+  .tile .value{font-size:22px;font-weight:600;letter-spacing:-.015em;margin-top:var(--s1)}
+  .tile .value.small{font-size:15px;font-weight:500}
+  .tile .note{color:var(--faint);font-size:11px;margin-top:2px}
+
+  .row{display:flex;justify-content:space-between;gap:var(--s3);padding:var(--s2) 0;font-size:13px}
   .row+.row{border-top:1px solid rgba(255,255,255,.04)}
   .k{color:var(--dim)}
-  .wide{grid-column:1/-1}
+
   table{width:100%;border-collapse:collapse}
-  th,td{text-align:right;padding:7px 10px;font-size:13px}
+  th,td{text-align:right;padding:var(--s2) var(--s3);font-size:13px}
   th{color:var(--dim);font-weight:500;font-size:11px;text-transform:uppercase;
-    letter-spacing:.08em;border-bottom:1px solid var(--line)}
+    letter-spacing:.08em;border-bottom:1px solid var(--line-soft)}
   th:first-child,td:first-child{text-align:left}
   tbody tr+tr td{border-top:1px solid rgba(255,255,255,.04)}
   .pos{color:var(--good)} .neg{color:var(--bad)}
+
   .log{font-family:ui-monospace,"Cascadia Mono",Menlo,Consolas,monospace;
-    font-size:12px;color:#b8c3cf;max-height:230px;overflow:auto;white-space:pre-wrap;
-    word-break:break-word;padding:10px 14px;margin:0}
-  .log div{padding:2px 0;border-bottom:1px solid rgba(255,255,255,.03)}
-  .empty{color:var(--dim);font-style:italic;padding:10px 14px;font-size:13px}
-  .badge{font-size:11px;padding:2px 7px;border-radius:999px;border:1px solid var(--line);color:var(--dim)}
-  .stale{color:var(--warn);border-color:rgba(210,153,34,.4)}
+    font-size:12px;line-height:1.65;color:#aab6c2;max-height:260px;overflow:auto;
+    white-space:pre-wrap;word-break:break-word;padding:var(--s2) 0;margin:0;
+    scrollbar-width:thin;scrollbar-color:var(--line) transparent}
+  .log div{padding:2px var(--s3);border-bottom:1px solid rgba(255,255,255,.025)}
+  .log div:last-child{border-bottom:0}
+  .l-bad{color:#ff9a92} .l-good{color:#7ee787} .l-dim{color:var(--faint)}
+  .empty{color:var(--faint);font-style:italic;padding:var(--s4) var(--s3);font-size:12px}
+
+  .copy{border:1px solid var(--line);border-radius:7px;padding:3px 9px;font-size:11px;
+    color:var(--dim);transition:color .15s ease,border-color .15s ease,background .15s ease}
+  .copy:hover{color:var(--ink);border-color:#2b3542;background:#151b22}
+  .copy.done{color:var(--good);border-color:rgba(63,185,80,.4)}
+  .copy.fail{color:var(--bad);border-color:rgba(248,81,73,.4)}
+
+  footer{color:var(--faint);font-size:11px;text-align:center;padding:0 var(--s5) var(--s5)}
+  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
 </style>
 </head>
 <body>
 <div id="root"></div>
 <script>
-const {useState, useEffect} = React;
+const {useState, useEffect, useCallback} = React;
 const html = htm.bind(React.createElement);
 
 const money = (v, c) =>
   v === null || v === undefined ? "—"
   : `${Number(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})} ${c||""}`.trim();
-
 const num = (v, d=5) => v === null || v === undefined ? "—" : Number(v).toFixed(d);
 
-function Card({title, children, wide}) {
-  return html`<section className=${wide ? "wide" : ""}>
-    <h2>${title}</h2>${children}</section>`;
+// Colour by meaning, not by position: a failure should be findable by eye in a
+// wall of green rows.
+const lineClass = (l) => {
+  if (/FAILED|ERROR|TAMPERED|REFUSED|not configured|denied/i.test(l)) return "l-bad";
+  if (/(^|[^A-Z])OK\b|RECOVERED|PROPOSAL|WINNER/.test(l)) return "l-good";
+  if (/STAND_DOWN/.test(l)) return "l-dim";
+  return "";
+};
+
+function CopyBtn({which, label}) {
+  const [state, setState] = useState("");
+  const onClick = useCallback(async () => {
+    try {
+      // The snapshot carries 12 lines; debugging needs all of them.
+      const res = await fetch(`/api/logs/${which}`);
+      if (!res.ok) throw new Error(res.status);
+      await navigator.clipboard.writeText(await res.text());
+      setState("done");
+    } catch (e) {
+      setState("fail");
+    }
+    setTimeout(() => setState(""), 1400);
+  }, [which]);
+  return html`<button className=${`copy ${state}`} onClick=${onClick}
+    aria-label=${`Copy ${label || which} log to clipboard`}
+    title=${`Copy the full ${which} log`}>
+    ${state === "done" ? "copied ✓" : state === "fail" ? "copy failed" : "copy"}
+  </button>`;
+}
+
+function Card({title, which, count, wide, children}) {
+  return html`<section className=${`card ${wide || ""}`}>
+    <header>
+      <h2>${title}</h2>
+      ${count ? html`<span className="count">${count}</span>` : null}
+      <span className="spacer"></span>
+      ${which ? html`<${CopyBtn} which=${which} label=${title} />` : null}
+    </header>
+    ${children}
+  </section>`;
 }
 
 function LogPane({lines, empty}) {
   if (!lines || !lines.length) return html`<div className="empty">${empty}</div>`;
-  return html`<div className="log">${lines.map((l,i)=>html`<div key=${i}>${l}</div>`)}</div>`;
+  // Newest first: the last line is what is happening now. Oldest-first makes a
+  // fixed failure look current for as long as the tail window is full.
+  const view = lines.slice().reverse();
+  return html`<div className="log">${view.map((l,i)=>
+    html`<div key=${i} className=${lineClass(l)}>${l}</div>`)}</div>`;
 }
 
 function App() {
   const [data, setData] = useState(null);
   const [up, setUp] = useState(false);
   const [err, setErr] = useState(null);
+  const [allState, setAllState] = useState("");
 
   useEffect(() => {
     let alive = true, ws, retry;
@@ -93,67 +184,114 @@ function App() {
     return () => { alive = false; clearTimeout(retry); try { ws.close(); } catch(_){} };
   }, []);
 
-  const acct = data?.engine?.account || {};
+  const copyAll = useCallback(async () => {
+    try {
+      const names = ["audit", "funnel", "actions"];
+      const parts = await Promise.all(names.map(async n => {
+        const r = await fetch(`/api/logs/${n}`);
+        return `# ${n}  (${new Date().toISOString()})\n` + await r.text();
+      }));
+      await navigator.clipboard.writeText(parts.join("\n\n"));
+      setAllState("done");
+    } catch (e) { setAllState("fail"); }
+    setTimeout(() => setAllState(""), 1600);
+  }, []);
+
   const age = data?.engine_age_s;
   const stale = age !== null && age !== undefined && age > 30;
   const positions = data?.engine?.positions || [];
+  const account = data?.engine?.account || {};
+  const engineErr = data?.engine && data.engine.ok === false ? data.engine.error : null;
 
   return html`
   <header>
-    <h1>Zero-Trust Trader</h1>
-    <span className=${up ? "live" : "down"}>
-      <span className="dot" style=${{background:"currentColor"}}></span>
-      ${up ? "live" : "disconnected"}
+    <div className="brand">
+      <div className="mark">Z</div>
+      <div>
+        <h1>Zero-Trust Trader</h1>
+        <div className="sub">demo · read-only</div>
+      </div>
+    </div>
+    <span className=${`pill ${up ? "live" : "down"}`}>
+      <span className="dot"></span>${up ? "live" : "disconnected"}
     </span>
-    ${stale ? html`<span className="badge stale">engine ${age}s stale</span>` : null}
-    ${err ? html`<span className="badge" style=${{color:"var(--bad)"}}>${err}</span>` : null}
+    ${stale ? html`<span className="pill stale">engine ${age}s stale</span>` : null}
+    ${engineErr ? html`<span className="pill down" title=${engineErr}>engine refusing</span>` : null}
+    ${err ? html`<span className="pill down">${err}</span>` : null}
     <span className="spacer"></span>
-    <span className="equity num">${money(data?.equity, data?.currency)}</span>
+    <button className=${`copy ${allState}`} onClick=${copyAll}
+      aria-label="Copy all logs to clipboard" title="Copy audit, funnel and supervisor logs">
+      ${allState === "done" ? "copied ✓" : allState === "fail" ? "copy failed" : "copy all logs"}
+    </button>
+    <div className="equity mono">
+      <b>${money(data?.equity, data?.currency)}</b><span>equity</span>
+    </div>
   </header>
 
   <main>
-    <${Card} title="Account">
-      <div className="body">
-        <div className="row"><span className="k">Equity</span><span className="num">${money(data?.equity, data?.currency)}</span></div>
-        <div className="row"><span className="k">Balance</span><span className="num">${money(data?.balance, data?.currency)}</span></div>
-        <div className="row"><span className="k">Server</span><span>${data?.server ?? "—"}</span></div>
-        <div className="row"><span className="k">Open positions</span><span className="num">${data?.positions ?? 0}</span></div>
-        <div className="row"><span className="k">Engine heartbeat</span>
-          <span className="num" style=${{color: stale ? "var(--warn)" : "var(--good)"}}>
-            ${age === null || age === undefined ? "no data" : age + "s ago"}</span></div>
-      </div>
-    <//>
+    <section className="card tap4"><div className="tile">
+      <div className="label">Balance</div>
+      <div className="value mono">${money(data?.balance, data?.currency)}</div>
+      <div className="note">server ${data?.server ?? "—"}</div>
+    </div></section>
 
-    <${Card} title="Positions" wide=${true}>
+    <section className="card tap4"><div className="tile">
+      <div className="label">Open positions</div>
+      <div className="value mono">${data?.positions ?? 0}</div>
+      <div className="note">${positions.length ? "supervised" : "flat — funnel standing down"}</div>
+    </div></section>
+
+    <section className="card tap4"><div className="tile">
+      <div className="label">Engine heartbeat</div>
+      <div className="value mono small" style=${{color: stale ? "var(--warn)" : "var(--good)"}}>
+        ${age === null || age === undefined ? "no data" : age + "s ago"}
+      </div>
+      <div className="note">${account.login ? "account " + account.login : "waiting for supervisor"}</div>
+    </div></section>
+
+    <section className="card tap4"><div className="tile">
+      <div className="label">Mode</div>
+      <div className="value small">${positions.length ? "supervising" : "holding"}</div>
+      <div className="note">AutoTrading off · dry run · 0.01 lot cap</div>
+    </div></section>
+
+    <${Card} title="Positions" wide="tap12">
       ${positions.length
         ? html`<table>
             <thead><tr><th>Symbol</th><th>Side</th><th>Lots</th><th>Entry</th><th>Price</th><th>Stop</th><th>P&L</th></tr></thead>
             <tbody>${positions.map(p => html`
               <tr key=${p.ticket}>
-                <td>${p.symbol}</td>
+                <td className="mono">${p.symbol}</td>
                 <td style=${{color: p.side > 0 ? "var(--good)" : "var(--bad)"}}>${p.side > 0 ? "LONG" : "SHORT"}</td>
-                <td className="num">${num(p.volume, 2)}</td>
-                <td className="num">${num(p.entry)}</td>
-                <td className="num">${num(p.price)}</td>
-                <td className="num">${p.sl ? num(p.sl) : "none"}</td>
-                <td className=${"num " + ((p.profit ?? 0) >= 0 ? "pos" : "neg")}>${money(p.profit, data?.currency)}</td>
+                <td className="mono">${num(p.volume, 2)}</td>
+                <td className="mono">${num(p.entry)}</td>
+                <td className="mono">${num(p.price)}</td>
+                <td className="mono">${p.sl ? num(p.sl) : "none"}</td>
+                <td className=${"mono " + ((p.profit ?? 0) >= 0 ? "pos" : "neg")}>${money(p.profit, data?.currency)}</td>
               </tr>`)}</tbody>
           </table>`
         : html`<div className="empty">Flat — no open positions. The funnel is standing down.</div>`}
     <//>
 
-    <${Card} title="Supervisor actions">
-      <${LogPane} lines=${data?.actions} empty="No stop changes yet (position_manager.py)" />
+    <${Card} title="Audit trail" which="audit" wide="tap6"
+      count=${data?.mcp?.length ? data.mcp.length + " shown" : null}>
+      <${LogPane} lines=${data?.mcp} empty="No audit records yet — audit.jsonl fills on the next run" />
     <//>
 
-    <${Card} title="Funnel history">
+    <${Card} title="Funnel history" which="funnel" wide="tap6"
+      count=${data?.funnel?.length ? data.funnel.length + " shown" : null}>
       <${LogPane} lines=${data?.funnel} empty="No funnel runs logged yet" />
     <//>
 
-    <${Card} title="MCP tool calls">
-      <${LogPane} lines=${data?.mcp} empty="No audit.jsonl — no mutating tool calls recorded" />
+    <${Card} title="Supervisor" which="actions" wide="tap12"
+      count=${data?.actions?.length ? data.actions.length + " shown" : null}>
+      <${LogPane} lines=${data?.actions} empty="No stop changes yet (position_manager.py)" />
     <//>
-  </main>`;
+  </main>
+
+  <footer>
+    read-only mirror · the engine never calls this process · files are tailed, nothing is written
+  </footer>`;
 }
 
 ReactDOM.createRoot(document.getElementById("root")).render(html`<${App} />`);

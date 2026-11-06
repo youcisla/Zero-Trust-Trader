@@ -145,5 +145,24 @@ class TestLedgerChain(unittest.TestCase):
             self.assertEqual(tt.verify(log, self.KEY)[0], "unsigned")
 
 
+class TestAudit(unittest.TestCase):
+    """audit.jsonl is one JSON object per line, append-only."""
+
+    def test_write_appends_one_parseable_object_per_line(self):
+        import audit
+        with tempfile.TemporaryDirectory() as d:
+            original, audit.AUDIT = audit.AUDIT, pathlib.Path(d) / "audit.jsonl"
+            try:
+                audit.write("verdict", verdict="STAND_DOWN")
+                audit.write("refused", problems=["pinned account missing"])
+                records = audit.tail(10)
+                raw = audit.AUDIT.read_text(encoding="utf-8")
+            finally:
+                audit.AUDIT = original
+        self.assertEqual(raw.count("\n"), 2)
+        self.assertEqual([r["event"] for r in records], ["verdict", "refused"])
+        self.assertEqual(records[0]["verdict"], "STAND_DOWN")
+
+
 if __name__ == "__main__":
     unittest.main()

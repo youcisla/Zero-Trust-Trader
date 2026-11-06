@@ -192,8 +192,25 @@ inventing numbers.
 | Endpoint | Purpose |
 | --- | --- |
 | `GET /` | the UI — one embedded HTML file, React vendored, no build step |
-| `GET /api/snapshot` | one-shot state |
+| `GET /api/snapshot` | one-shot state, last 12 lines of each log |
+| `GET /api/logs/{audit,funnel,actions}` | **whole log**, for the Copy buttons and for pasting into an issue |
 | `GET /ws` | pushed updates, sent only when something actually changes |
+
+### Debugging from the UI
+
+Every log pane has a **copy** button that pulls the entire file from
+`/api/logs/…`, not the 12-line tail the snapshot carries — so a failure can be
+pasted somewhere without shelling in. The header has **copy all logs**, which
+concatenates audit + funnel + supervisor with a timestamp.
+
+Panes are **newest first**. Oldest-first made a failure that was fixed hours ago
+look current for as long as the 12-line window stayed full.
+
+`audit.jsonl` is the event trail, not a test ledger: one JSON object per line
+for verdicts, refusals and supervisor actions, written by `audit.write(...)`.
+The trials ledger keeps counting trials; this records everything else. It is
+appended to, never rewritten, and a failed write is swallowed on purpose —
+auditing must never be able to break the thing it audits.
 
 ---
 

@@ -24,3 +24,4 @@ config.toml
 
 # rust
 dashboard/target/
+audit.jsonl

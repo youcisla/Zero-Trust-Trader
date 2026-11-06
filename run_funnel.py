@@ -33,6 +33,8 @@ from pathlib import Path
 
 from keep_awake import keep_awake
 
+import audit
+
 HERE = Path(__file__).resolve().parent
 LOG = HERE / "funnel_history.log"
 LOCK = HERE / "funnel.lock"
@@ -249,6 +251,7 @@ def main() -> int:
         print("A long scan against a dead terminal only produces empty data.")
         print("=" * 72)
         log(f"FAILED preflight | {' | '.join(problems)}")
+        audit.write("refused", stage="preflight", problems=problems)
         return 2
 
     # Hold the machine awake for the run; atexit guarantees release on every
@@ -330,6 +333,11 @@ def main() -> int:
     # Tier 3 writes the funnel_history.log line itself (it owns the trials count,
     # so manual runs are recorded too). Do not log a summary here as well.
     print(f"\ntier3 verdict: {'STAND_DOWN' if doc.get('stood_down') else 'WINNER ' + ','.join(doc.get('survivors', []))}")
+    audit.write(
+        "verdict",
+        verdict="STAND_DOWN" if doc.get("stood_down") else "PROPOSAL",
+        survivors=doc.get("survivors", []),
+    )
     return 0
 
 

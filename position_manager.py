@@ -28,6 +28,8 @@ import argparse
 import json
 import os
 import time
+
+import audit
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -285,7 +287,10 @@ def main() -> int:
         print(f"another supervisor is running (lock {LOCK.name})")
         return 0
     LOCK.write_text(str(time.time()))
+    log_line(f"supervisor up | interval={a.interval}s | apply={a.apply} | "
+             f"session-close={a.session_close}")
 
+    last_error = None
     try:
         while True:
             # Refresh the lock every tick. It used to be written once and then
@@ -299,12 +304,24 @@ def main() -> int:
                 # Monitoring is allowed to fail; supervision is not.
                 log_line(f"STATE WRITE FAILED {e}")
             if not doc.get("ok"):
-                log_line(f"FAILED {doc.get('error')}")
-                print(f"! {doc.get('error')}")
+                err = str(doc.get("error"))
+                # One line per state change, not one per tick. A failing
+                # pre-flight used to repeat every 5s and bury the log: 13
+                # identical rows in a minute hid everything around them.
+                if err != last_error:
+                    last_error = err
+                    log_line(f"FAILED {err}")
+                    print(f"! {err}")
+                    audit.write("refused", stage="supervisor", problems=[err])
             else:
+                if last_error is not None:
+                    last_error = None
+                    log_line("RECOVERED pre-flight passed again")
+                    print("recovered")
                 for act in doc["actions"]:
                     print(act)
                     log_line(act)
+                    audit.write("action", detail=act)
                 if not doc["actions"]:
                     print(f"{doc['generated_utc']}  {len(doc['positions'])} open, "
                           f"equity {doc['account']['equity']} {doc['account']['currency']}  idle")
