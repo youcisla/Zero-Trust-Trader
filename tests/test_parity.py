@@ -94,5 +94,33 @@ class TestBacktestMatchesTier2(unittest.TestCase):
         self.assertGreater(len(calls), 0, "backtest must use the live exit function")
 
 
+class TestLiveExitRules(unittest.TestCase):
+    def _bars_around_close(self):
+        """Flat bars every 15 min from 16:00 UTC, so only time can close a trade."""
+        n = 40
+        midnight = 1_700_000_000 - (1_700_000_000 % 86400)
+        t = np.array([midnight + 16 * 3600 + i * 900 for i in range(n)])
+        c = np.full(n, 1.10)
+        return {"o": c.copy(), "h": c + 1e-5, "l": c - 1e-5, "c": c, "t": t}
+
+    def test_trade_closes_at_the_session_end(self):
+        """A horizon alone lets a 16:45 entry run to 00:45. The session close is
+        a hard exit, so 'no overnight holds' is not just a bar count."""
+        bars = self._bars_around_close()
+        atr = np.full(len(bars["c"]), 0.0010)
+        outcome, _mae, exit_i, _px = tm._resolve_live(
+            bars, 0, "long", 1.10, 1.09, 0.0010, atr, 0.0, 32, close_utc="17:00")
+        self.assertEqual(outcome, "session")
+        self.assertEqual(exit_i, 4, "16:00 + 4 bars of 15 min is exactly 17:00")
+
+    def test_profitable_trailing_exit_counts_as_a_win(self):
+        """Regression: live exits never produce a 'target' outcome, so scoring
+        by outcome label made every trade a loss and no candidate could pass."""
+        self.assertGreater(tm._z_from([{"R": 0.3}, {"R": 0.2}, {"R": -1.0}], 1.5, 0.4), 0.0)
+        # a trade that ended green but exited on a trail is still a win
+        self.assertGreater(tm._z_from([{"R": 0.1, "outcome": "stop"}] * 20, 1.5, 0.4), 0.0)
+        self.assertLess(tm._z_from([{"R": -1.0, "outcome": "stop"}] * 20, 1.5, 0.4), 0.0)
+
+
 if __name__ == "__main__":
     unittest.main()

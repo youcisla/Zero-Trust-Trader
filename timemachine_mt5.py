@@ -110,7 +110,7 @@ def _resolve(bars, i, side, entry, stop, target, risk, horizon):
 
 
 def _resolve_live(bars, i, side, entry, stop, risk, atr, spread, horizon,
-                  cfg: "Cfg" = Cfg()):
+                  cfg: "Cfg" = Cfg(), close_utc: str | None = None):
     """Walk forward using the supervisor's own rules.
 
     There is deliberately no fixed target here: `position_manager` never sets
@@ -125,6 +125,11 @@ def _resolve_live(bars, i, side, entry, stop, risk, atr, spread, horizon,
     """
     sgn = 1 if side == "long" else -1
     hi_a, lo_a, cl_a = bars["h"], bars["l"], bars["c"]
+    times = bars.get("t")
+    close_min = None
+    if close_utc:
+        _h, _m = (int(x) for x in close_utc.split(":"))
+        close_min = _h * 60 + _m
     n = len(cl_a)
     cur = stop
     mae = 0.0
@@ -144,6 +149,13 @@ def _resolve_live(bars, i, side, entry, stop, risk, atr, spread, horizon,
             nxt, _why = next_stop(sgn, entry, cur, float(cl_a[j]), a_j, 0.0, cfg)
             if nxt is not None:
                 cur = nxt
+        # No overnight holds: the horizon alone allows a 16:45 entry to run to
+        # 00:45, so the session close is a hard exit in the test as well.
+        if close_min is not None and times is not None:
+            bt = datetime.fromtimestamp(int(times[j]), tz=timezone.utc)
+            if bt.hour * 60 + bt.minute >= close_min:
+                px = cl_a[j] if side == "long" else cl_a[j] + spread
+                return "session", mae, j, px
         j += 1
     j = min(j, n - 1)
     return "horizon", mae, j, (cl_a[j] if side == "long" else cl_a[j] + spread)
@@ -163,7 +175,7 @@ def _row(bars, i, side, entry, stop, target, risk, outcome, mae, exit_i, rr,
 
 def scan_donchian(bars, n, k_atr, rr, horizon, sides,
                   ema_fast: int = 50, ema_slow: int = 200, spread: float = 0.0,
-                  live_exits: bool = True):
+                  live_exits: bool = True, close_utc: str | None = None):
     """Donchian breakout on the prior n bars — the exact rule Tier 2 proposes.
 
     Tier 2 requires the EMA(fast) vs EMA(slow) trend gate, so the backtest must
@@ -201,7 +213,8 @@ def scan_donchian(bars, n, k_atr, rr, horizon, sides,
         target = entry_fill + sgn * rr * risk
         if live_exits:
             outcome, mae, exit_i, exit_px = _resolve_live(
-                bars, i, side, entry_fill, stop, risk, a, spread, horizon)
+                bars, i, side, entry_fill, stop, risk, a, spread, horizon,
+                close_utc=close_utc)
             trades.append(_row(bars, i, side, entry_fill, stop, target, risk,
                                outcome, mae, exit_i, rr, exit_price=exit_px))
         else:
@@ -430,16 +443,21 @@ def simulate(pool, entry, stop, target, start_slot, horizon, rr, replays, seed, 
 # ---------------------------------------------------------------- analysis
 
 def _z_from(trades, rr: float, p0: float) -> float:
-    """Win-rate z against break-even, from a list of trades carrying 'outcome'."""
-    decided = [t for t in trades if t["outcome"] in ("target", "stop")]
-    if not decided:
+    """Win-rate z against break-even, from a list of trades carrying 'R'.
+
+    A win is a trade that ended with R > 0. The live exit policy has no fixed
+    target, so the old target/stop labels stopped describing the outcome —
+    counting 'target' entries would have scored every trade as a loss.
+    """
+    if not trades:
         return 0.0
-    win = sum(1 for t in decided if t["outcome"] == "target") / len(decided)
-    se = math.sqrt(p0 * (1.0 - p0) / len(decided))
+    win = sum(1 for t in trades if t["R"] > 0) / len(trades)
+    se = math.sqrt(p0 * (1.0 - p0) / len(trades))
     return (win - p0) / se if se else 0.0
 
 
-def permutation_test(bars, trades, k_atr, rr, horizon, permutations=1000, seed=19) -> dict | None:
+def permutation_test(bars, trades, k_atr, rr, horizon, permutations=1000, seed=19,
+                     spread: float = 0.0, close_utc: str | None = None) -> dict | None:
     """Random-entry permutation null for the strategy's z-score.
 
     Why not "shuffle the returns": the statistic is a function of the mean and
@@ -479,17 +497,15 @@ def permutation_test(bars, trades, k_atr, rr, horizon, permutations=1000, seed=1
             risk = k_atr * a[i]
             if not risk or risk <= 0:
                 continue
-            entry = c[i]
+            # The null must trade the same rule as the observation: same fills,
+            # same costs, same exit policy. Otherwise the p-value compares two
+            # different strategies and means nothing.
+            entry = c[i] + spread if side == "long" else c[i]
             stop = entry - risk if side == "long" else entry + risk
-            target = entry + rr * risk if side == "long" else entry - rr * risk
-            outcome, _mae, exit_i = _resolve(bars, i, side, entry, stop, target, risk, horizon)
-            if outcome == "target":
-                r = rr
-            elif outcome == "stop":
-                r = -1.0
-            else:
-                mk = c[exit_i]
-                r = ((mk - entry) if side == "long" else (entry - mk)) / risk
+            outcome, _mae, exit_i, exit_px = _resolve_live(
+                bars, i, side, entry, stop, risk, a, spread, horizon,
+                close_utc=close_utc)
+            r = ((exit_px - entry) if side == "long" else (entry - exit_px)) / risk
             perm.append({"outcome": outcome or "neither", "R": r})
         z = _z_from(perm, rr, p0)
         zs.append(z)
@@ -510,7 +526,7 @@ def permutation_test(bars, trades, k_atr, rr, horizon, permutations=1000, seed=1
 def analyse(symbol, tf="H1", strategy="donchian", don_n=20, ema_fast=50, ema_slow=200,
             atr_k=1.5, rr=1.5, horizon=None, sides="both", bars_n=5000,
             replays=10000, seed=19, window=2, pool_bars=1500, n_tests=1,
-            permutations=0) -> dict | None:
+            permutations=0, close_utc=None) -> dict | None:
     """Full Time Machine for one symbol. Returns None when there is nothing to say."""
     if horizon is None:
         horizon = HORIZON_DEFAULT[tf]
@@ -528,7 +544,7 @@ def analyse(symbol, tf="H1", strategy="donchian", don_n=20, ema_fast=50, ema_slo
 
     if strategy == "donchian":
         trades = scan_donchian(bars, don_n, atr_k, rr, horizon, sides,
-                               ema_fast, ema_slow, spread_px, True)
+                               ema_fast, ema_slow, spread_px, True, close_utc)
         rule = (f"Donchian-{don_n} breakout gated by EMA{ema_fast}/EMA{ema_slow}, "
                 f"stop {atr_k}xATR14, trail+break-even exits, spread {spread_px:g}, "
                 f"{horizon} bars")
@@ -551,9 +567,8 @@ def analyse(symbol, tf="H1", strategy="donchian", don_n=20, ema_fast=50, ema_slo
         return None
 
     rs = [t["R"] for t in trades]
-    decided = [t for t in trades if t["outcome"] in ("target", "stop")]
-    win = sum(1 for t in decided if t["outcome"] == "target") / len(decided) if decided else 0.0
-    sig = significance(win, len(decided), rr, rs, n_tests)
+    win = sum(1 for r in rs if r > 0) / len(rs) if rs else 0.0
+    sig = significance(win, len(rs), rr, rs, n_tests)
 
     a = md.atr(bars["h"], bars["l"], bars["c"], 14)
     atr_now = float(a[-1]) if not math.isnan(a[-1]) else float("nan")
@@ -583,7 +598,8 @@ def analyse(symbol, tf="H1", strategy="donchian", don_n=20, ema_fast=50, ema_slo
     start_slot = slot_of(bars["t"][last], tf) % CYCLE[tf]
     mc = simulate(pool, ref, stop, target, start_slot, horizon, rr, replays, seed, window, side, tf)
 
-    perm = (permutation_test(bars, trades, atr_k, rr, horizon, permutations, seed)
+    perm = (permutation_test(bars, trades, atr_k, rr, horizon, permutations, seed,
+                             spread_px, close_utc)
             if permutations else None)
 
     return {

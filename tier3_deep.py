@@ -100,6 +100,11 @@ def main() -> int:
                     help="bars allowed before a trade exits at market; 32 M15 bars = 8h, "
                          "which keeps the thesis intraday and compatible with "
                          "no-overnight-holds")
+    # A hard session close, not just a horizon: 32 bars from a 16:45 entry runs
+    # to 00:45 unless the session end is itself an exit. run_funnel passes the
+    # end of its own --window-utc so the two cannot drift apart.
+    ap.add_argument("--session-close", default="17:00", metavar="HH:MM",
+                    help="UTC time at which an open test trade is closed (default 17:00)")
     ap.add_argument("--trials", type=int, default=None)
     ap.add_argument("--bars", type=int, default=15000,
                     help="H1 bars of history for the deep test (G1 needs n>=300 trades)")
@@ -159,7 +164,7 @@ def main() -> int:
                          # test the side Tier 2 actually proposes, not both
                          row.get("side", "both"),
                          a.bars, a.replays, a.seed, 2, 1500, trials,
-                         a.permutations)
+                         a.permutations, a.session_close)
         if doc is None:
             print(f"{label}: no setups fired — skipped")
             continue

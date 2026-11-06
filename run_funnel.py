@@ -303,9 +303,14 @@ def main() -> int:
     cumulative = prior + scan_tests
     print(f"trials: {prior} prior + {scan_tests} this scan = {cumulative}")
 
-    t3 = run(["tier3_deep.py", "--tf", a.tf, "--bars", str(a.bars),
-              "--horizon", str(a.horizon), "--permutations", str(a.permutations),
-              "--trials", str(cumulative)])
+    t3_args = ["tier3_deep.py", "--tf", a.tf, "--bars", str(a.bars),
+               "--horizon", str(a.horizon), "--permutations", str(a.permutations),
+               "--trials", str(cumulative)]
+    if a.window_utc:
+        # The deep test must close at the end of the window it is testing into;
+        # deriving it from --window-utc stops the two from drifting apart.
+        t3_args += ["--session-close", a.window_utc.partition("-")[2].strip()]
+    t3 = run(t3_args)
     # tier3 exits 2 on a clean stand-down: that is success, not failure
     if t3.returncode not in (0, 2):
         log(f"FAILED tier3 rc={t3.returncode} | {tail(t3.stderr, 3)}")

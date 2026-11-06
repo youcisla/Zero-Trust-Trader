@@ -24,7 +24,7 @@ That is not a failure message. That is the product.
 **AutoTrading is off.** Always. It is enabled only inside an approved trade
 window, and the agent cannot enable it at all.
 
-Every order needs two independent approvals:
+Every **entry** needs two independent approvals:
 
 1. a human typing the literal word `APPROVED`, and
 2. the MCP bridge's own consent gate — a separate process that returns an
@@ -86,16 +86,23 @@ size was not "too small to tell"; it was hiding nothing.
 
 ---
 
-## Six gates before anything reaches the order book
+## Four in-repo gates, plus two external approvals
 
-| # | Gate | Failure it catches |
-| --- | --- | --- |
-| 1 | **Universe filter** — live market, spread ≤ 15% of ATR, ≥ 160 days of history | trading an instrument that is shut, illiquid, or newly listed |
-| 2 | **Correlation dedupe** — collapse candidates above \|ρ\| 0.7 | `AMD.US-24` vs `AMD.US-PERP` measure **+0.997**: the same bet billed twice |
-| 3 | **Bonferroni-corrected z** | the scan itself — 5,388 hypotheses tried means the bar is 4.43, not 1.96 |
-| 4 | **Permutation null** — random entries, same barriers | autocorrelation and barrier geometry that the analytic z assumes away |
-| 5 | **Human `APPROVED`** | the agent's own judgement |
-| 6 | **Bridge consent gate** | a compromised or confused agent |
+| # | Gate | Where it runs | Failure it catches |
+| --- | --- | --- | --- |
+| 1 | **Universe filter** — live market, spread ≤ 15% of ATR, ≥ 160 days of history | this repo | trading an instrument that is shut, illiquid, or newly listed |
+| 2 | **Correlation dedupe** — collapse candidates above \|ρ\| 0.7 | this repo | `AMD.US-24` vs `AMD.US-PERP` measure **+0.997**: the same bet billed twice |
+| 3 | **Bonferroni-corrected z** | this repo | the scan itself — 5,388 hypotheses tried means the bar is 4.43, not 1.96 |
+| 4 | **Permutation null** — random entries, same fills, costs and exits | this repo | autocorrelation and barrier geometry that the analytic z assumes away |
+| 5 | **Human `APPROVED`** | a human | the agent's own judgement |
+| 6 | **Bridge consent gate** | a separate process | a compromised or confused agent |
+
+Gates 1–4 are code in this repository and run on every scan. Gates 5 and 6 live
+outside it: they govern *entry orders* and are only as strong as the bridge
+deployment. Nothing in this repo can place an entry on its own — it has no order
+path at all — and protective exits through the supervisor are single-approval by
+design, because a stop you cannot move without a second signature is a stop you
+cannot tighten when the market turns.
 
 Gates 3 and 4 are not redundant. The permutation test is per-instrument and does
 **not** correct for the scan: at 568 tests, a p-value of 0.015 is expected ~8
