@@ -7,7 +7,7 @@ a dated pointer forward and a record of what it measured.
 
 | | Repository | Dates | Size | Outcome |
 |---|---|---|---|---|
-| 1 | [TradeBot](https://github.com/youcisla/TradeBot) | Mar–Sep 2026 | 423 files, ~48k lines | **No edge.** |
+| 1 | [TradeBot](https://github.com/youcisla/TradeBot) | Mar–Sep 2026 | 423 files, ~50k lines | **No edge.** |
 | 2 | [TradeBotV2](https://github.com/youcisla/TradeBotV2) | 13 Sep 2026 | 20 modules, 69 tests | Measurement first. |
 | 3 | this repo | Nov 2026 | gates, ledger, consent | **Refuses to trade.** |
 
@@ -15,7 +15,7 @@ a dated pointer forward and a record of what it measured.
 
 A multi-agent MT5 system: nine-role pipeline, LSTM, LightGBM ensemble, GARCH and
 HMM regime detection, an LLM council and a debate layer, FastAPI + Next.js +
-Telegram. Roughly 48,000 lines.
+Telegram. Roughly 50,000 lines.
 
 Two findings killed it, in this order:
 
