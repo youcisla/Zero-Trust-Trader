@@ -173,6 +173,36 @@ def _row(bars, i, side, entry, stop, target, risk, outcome, mae, exit_i, rr,
             "R": round(r, 3), "mae_R": round(mae, 3), "bars_held": exit_i - i}
 
 
+def _trade_row(bars, i, side, close_px, risk, rr, horizon, atr, spread,
+               live_exits, close_utc):
+    """Enter at ``close_px`` and resolve with one exit policy. Returns (row, exit_i).
+
+    Every scanner and the permutation null go through here, so a scanner
+    physically cannot grade a different strategy from the one
+    ``permutation_test`` grades. That mismatch is what let four of the five
+    families beat their own null for free: they booked a fixed +rr with no
+    spread while the null paid the spread and trailed.
+
+    Long pays the spread on entry, short on exit: exactly one round trip.
+    """
+    entry = close_px + spread if side == "long" else close_px
+    sgn = 1 if side == "long" else -1
+    stop = entry - sgn * risk
+    target = entry + sgn * rr * risk
+    if live_exits:
+        outcome, mae, exit_i, exit_px = _resolve_live(
+            bars, i, side, entry, stop, risk, atr, spread, horizon,
+            close_utc=close_utc)
+        row = _row(bars, i, side, entry, stop, target, risk, outcome, mae,
+                   exit_i, rr, exit_price=exit_px)
+    else:
+        outcome, mae, exit_i = _resolve(
+            bars, i, side, entry, stop, target, risk, horizon)
+        row = _row(bars, i, side, entry, stop, target, risk, outcome, mae,
+                   exit_i, rr)
+    return row, exit_i
+
+
 def scan_donchian(bars, n, k_atr, rr, horizon, sides,
                   ema_fast: int = 50, ema_slow: int = 200, spread: float = 0.0,
                   live_exits: bool = True, close_utc: str | None = None):
@@ -206,27 +236,16 @@ def scan_donchian(bars, n, k_atr, rr, horizon, sides,
         if side is None:
             i += 1
             continue
-        sgn = 1 if side == "long" else -1
-        entry_fill = c[i] + spread if side == "long" else c[i]
-        risk = k_atr * a[i]
-        stop = entry_fill - sgn * risk
-        target = entry_fill + sgn * rr * risk
-        if live_exits:
-            outcome, mae, exit_i, exit_px = _resolve_live(
-                bars, i, side, entry_fill, stop, risk, a, spread, horizon,
-                close_utc=close_utc)
-            trades.append(_row(bars, i, side, entry_fill, stop, target, risk,
-                               outcome, mae, exit_i, rr, exit_price=exit_px))
-        else:
-            outcome, mae, exit_i = _resolve(
-                bars, i, side, entry_fill, stop, target, risk, horizon)
-            trades.append(_row(bars, i, side, entry_fill, stop, target, risk,
-                               outcome, mae, exit_i, rr))
+        tr, exit_i = _trade_row(bars, i, side, c[i], k_atr * a[i], rr, horizon,
+                                a, spread, live_exits, close_utc)
+        trades.append(tr)
         i = max(exit_i, i + 1)
     return trades
 
 
-def scan_pullback(bars, fast, slow, k_atr, rr, horizon, sides):
+def scan_pullback(bars, fast, slow, k_atr, rr, horizon, sides,
+                  spread: float = 0.0, live_exits: bool = True,
+                  close_utc: str | None = None):
     """Pullback to EMA(fast) with a close back across it, in EMA(fast/slow) trend."""
     c = bars["c"]
     ef, es = md.ema(c, fast), md.ema(c, slow)
@@ -244,17 +263,16 @@ def scan_pullback(bars, fast, slow, k_atr, rr, horizon, sides):
         if side is None:
             i += 1
             continue
-        entry = c[i]
-        risk = k_atr * a[i]
-        stop = entry - risk if side == "long" else entry + risk
-        target = entry + rr * risk if side == "long" else entry - rr * risk
-        outcome, mae, exit_i = _resolve(bars, i, side, entry, stop, target, risk, horizon)
-        trades.append(_row(bars, i, side, entry, stop, target, risk, outcome, mae, exit_i, rr))
+        tr, exit_i = _trade_row(bars, i, side, c[i], k_atr * a[i], rr, horizon,
+                                a, spread, live_exits, close_utc)
+        trades.append(tr)
         i = max(exit_i, i + 1)
     return trades
 
 
-def scan_rsi(bars, n, lo, hi, k_atr, rr, horizon, sides):
+def scan_rsi(bars, n, lo, hi, k_atr, rr, horizon, sides,
+             spread: float = 0.0, live_exits: bool = True,
+             close_utc: str | None = None):
     """RSI-n mean reversion: enter as RSI crosses INTO oversold/overbought.
 
     Crossing (not the resting state) so one oversold episode cannot emit a run
@@ -277,17 +295,16 @@ def scan_rsi(bars, n, lo, hi, k_atr, rr, horizon, sides):
         if side is None:
             i += 1
             continue
-        entry = c[i]
-        risk = k_atr * a[i]
-        stop = entry - risk if side == "long" else entry + risk
-        target = entry + rr * risk if side == "long" else entry - rr * risk
-        outcome, mae, exit_i = _resolve(bars, i, side, entry, stop, target, risk, horizon)
-        trades.append(_row(bars, i, side, entry, stop, target, risk, outcome, mae, exit_i, rr))
+        tr, exit_i = _trade_row(bars, i, side, c[i], k_atr * a[i], rr, horizon,
+                                a, spread, live_exits, close_utc)
+        trades.append(tr)
         i = max(exit_i, i + 1)
     return trades
 
 
-def scan_macd(bars, fast, slow, signal_n, k_atr, rr, horizon, sides):
+def scan_macd(bars, fast, slow, signal_n, k_atr, rr, horizon, sides,
+              spread: float = 0.0, live_exits: bool = True,
+              close_utc: str | None = None):
     """MACD line crossing its signal line. No extra trend filter."""
     c = bars["c"]
     line, sig = md.macd(c, fast, slow, signal_n)
@@ -305,17 +322,16 @@ def scan_macd(bars, fast, slow, signal_n, k_atr, rr, horizon, sides):
         if side is None:
             i += 1
             continue
-        entry = c[i]
-        risk = k_atr * a[i]
-        stop = entry - risk if side == "long" else entry + risk
-        target = entry + rr * risk if side == "long" else entry - rr * risk
-        outcome, mae, exit_i = _resolve(bars, i, side, entry, stop, target, risk, horizon)
-        trades.append(_row(bars, i, side, entry, stop, target, risk, outcome, mae, exit_i, rr))
+        tr, exit_i = _trade_row(bars, i, side, c[i], k_atr * a[i], rr, horizon,
+                                a, spread, live_exits, close_utc)
+        trades.append(tr)
         i = max(exit_i, i + 1)
     return trades
 
 
-def scan_bollinger(bars, n, k, k_atr, rr, horizon, sides):
+def scan_bollinger(bars, n, k, k_atr, rr, horizon, sides,
+                   spread: float = 0.0, live_exits: bool = True,
+                   close_utc: str | None = None):
     """Bollinger fade: close outside the band is faded, not followed.
 
     Entering on the CROSS out of the band (not the resting state) for the same
@@ -337,12 +353,9 @@ def scan_bollinger(bars, n, k, k_atr, rr, horizon, sides):
         if side is None:
             i += 1
             continue
-        entry = c[i]
-        risk = k_atr * a[i]
-        stop = entry - risk if side == "long" else entry + risk
-        target = entry + rr * risk if side == "long" else entry - rr * risk
-        outcome, mae, exit_i = _resolve(bars, i, side, entry, stop, target, risk, horizon)
-        trades.append(_row(bars, i, side, entry, stop, target, risk, outcome, mae, exit_i, rr))
+        tr, exit_i = _trade_row(bars, i, side, c[i], k_atr * a[i], rr, horizon,
+                                a, spread, live_exits, close_utc)
+        trades.append(tr)
         i = max(exit_i, i + 1)
     return trades
 
@@ -457,7 +470,8 @@ def _z_from(trades, rr: float, p0: float) -> float:
 
 
 def permutation_test(bars, trades, k_atr, rr, horizon, permutations=1000, seed=19,
-                     spread: float = 0.0, close_utc: str | None = None) -> dict | None:
+                     spread: float = 0.0, close_utc: str | None = None,
+                     live_exits: bool = True) -> dict | None:
     """Random-entry permutation null for the strategy's z-score.
 
     Why not "shuffle the returns": the statistic is a function of the mean and
@@ -502,10 +516,22 @@ def permutation_test(bars, trades, k_atr, rr, horizon, permutations=1000, seed=1
             # different strategies and means nothing.
             entry = c[i] + spread if side == "long" else c[i]
             stop = entry - risk if side == "long" else entry + risk
-            outcome, _mae, exit_i, exit_px = _resolve_live(
-                bars, i, side, entry, stop, risk, a, spread, horizon,
-                close_utc=close_utc)
-            r = ((exit_px - entry) if side == "long" else (entry - exit_px)) / risk
+            if live_exits:
+                outcome, _mae, exit_i, exit_px = _resolve_live(
+                    bars, i, side, entry, stop, risk, a, spread, horizon,
+                    close_utc=close_utc)
+                r = ((exit_px - entry) if side == "long"
+                     else (entry - exit_px)) / risk
+            else:
+                target = (entry + rr * risk if side == "long"
+                          else entry - rr * risk)
+                outcome, _mae, exit_i = _resolve(
+                    bars, i, side, entry, stop, target, risk, horizon)
+                mark = c[exit_i]
+                gross = ((mark - entry) if side == "long"
+                         else (entry - mark)) / risk
+                r = (rr if outcome == "target"
+                     else -1.0 if outcome == "stop" else gross)
             perm.append({"outcome": outcome or "neither", "R": r})
         z = _z_from(perm, rr, p0)
         zs.append(z)
@@ -549,17 +575,26 @@ def analyse(symbol, tf="H1", strategy="donchian", don_n=20, ema_fast=50, ema_slo
                 f"stop {atr_k}xATR14, trail+break-even exits, spread {spread_px:g}, "
                 f"{horizon} bars")
     elif strategy == "pullback":
-        trades = scan_pullback(bars, ema_fast, ema_slow, atr_k, rr, horizon, sides)
-        rule = f"EMA{ema_fast}/{ema_slow} pullback, stop {atr_k}xATR14, target {rr}R, {horizon} bars"
+        trades = scan_pullback(bars, ema_fast, ema_slow, atr_k, rr, horizon, sides,
+                               spread_px, True, close_utc)
+        rule = (f"EMA{ema_fast}/{ema_slow} pullback, stop {atr_k}xATR14, "
+                f"trail+break-even exits, spread {spread_px:g}, {horizon} bars")
     elif strategy == "rsi":
-        trades = scan_rsi(bars, 14, 35.0, 65.0, atr_k, rr, horizon, sides)
-        rule = f"RSI-14 mean reversion (<35 long / >65 short), stop {atr_k}xATR14, target {rr}R, {horizon} bars"
+        trades = scan_rsi(bars, 14, 35.0, 65.0, atr_k, rr, horizon, sides,
+                          spread_px, True, close_utc)
+        rule = (f"RSI-14 mean reversion (<35 long / >65 short), stop "
+                f"{atr_k}xATR14, trail+break-even exits, spread {spread_px:g}, "
+                f"{horizon} bars")
     elif strategy == "bollinger":
-        trades = scan_bollinger(bars, 20, 2.0, atr_k, rr, horizon, sides)
-        rule = f"Bollinger-20 2.0sd fade, stop {atr_k}xATR14, target {rr}R, {horizon} bars"
+        trades = scan_bollinger(bars, 20, 2.0, atr_k, rr, horizon, sides,
+                                spread_px, True, close_utc)
+        rule = (f"Bollinger-20 2.0sd fade, stop {atr_k}xATR14, "
+                f"trail+break-even exits, spread {spread_px:g}, {horizon} bars")
     elif strategy == "macd":
-        trades = scan_macd(bars, 12, 26, 9, atr_k, rr, horizon, sides)
-        rule = f"MACD 12/26/9 line cross, stop {atr_k}xATR14, target {rr}R, {horizon} bars"
+        trades = scan_macd(bars, 12, 26, 9, atr_k, rr, horizon, sides,
+                           spread_px, True, close_utc)
+        rule = (f"MACD 12/26/9 line cross, stop {atr_k}xATR14, "
+                f"trail+break-even exits, spread {spread_px:g}, {horizon} bars")
     else:
         raise ValueError(strategy)
 
@@ -599,7 +634,7 @@ def analyse(symbol, tf="H1", strategy="donchian", don_n=20, ema_fast=50, ema_slo
     mc = simulate(pool, ref, stop, target, start_slot, horizon, rr, replays, seed, window, side, tf)
 
     perm = (permutation_test(bars, trades, atr_k, rr, horizon, permutations, seed,
-                             spread_px, close_utc)
+                             spread_px, close_utc, live_exits=True)
             if permutations else None)
 
     return {

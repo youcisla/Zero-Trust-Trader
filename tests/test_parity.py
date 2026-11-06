@@ -41,6 +41,21 @@ def synth(n: int = 900, seed: int = 7) -> dict:
     }
 
 
+def osc(n: int = 2500, seed: int = 11, amp: float = 0.0006,
+        sigma: float = 0.0012, period: int = 14) -> dict:
+    """Oscillating series: every family triggers on it, which the trending
+    fixture above does not manage (RSI crossings and pullbacks are rare in a
+    one-way drift)."""
+    rng = np.random.default_rng(seed)
+    i = np.arange(n)
+    ret = amp * np.sin(2 * np.pi * i / period) + rng.normal(0, sigma, n)
+    c = 1.10 * np.exp(np.cumsum(ret))
+    o = np.concatenate([[c[0]], c[:-1]])
+    pad = np.abs(c) * 0.0006
+    return {"o": o, "h": np.maximum(o, c) + pad, "l": np.minimum(o, c) - pad,
+            "c": c, "t": np.arange(n) * 900 + 1_700_000_000}
+
+
 class TestBacktestMatchesTier2(unittest.TestCase):
     def setUp(self):
         self.bars = synth()
@@ -124,3 +139,89 @@ class TestLiveExitRules(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class TestEveryScannerTradesTheExitPolicyItIsGradedOn(unittest.TestCase):
+    """The null must trade the same rule as the observation.
+
+    Four of the five families used to book a fixed +rr with no spread while
+    `permutation_test` charged the spread and trailed. That made the null
+    harder than the observation, so those families beat their own null for
+    free: EURNZD/rsi scored p=0.001 with a null mean z of -4.555 while the one
+    family that was already matched (donchian) scored p=0.93.
+    """
+
+    def setUp(self):
+        self.bars = osc()
+
+    def _calls(self, live_exits):
+        """Count which resolver each scanner actually reaches."""
+        counts = {"live": 0, "free": 0}
+        real_live, real_free = tm._resolve_live, tm._resolve
+
+        def live(*a, **k):
+            counts["live"] += 1
+            return real_live(*a, **k)
+
+        def free(*a, **k):
+            counts["free"] += 1
+            return real_free(*a, **k)
+
+        tm._resolve_live, tm._resolve = live, free
+        try:
+            for fn, args in (
+                (tm.scan_donchian, (20, 1.5, 1.5, 32, "both")),
+                (tm.scan_pullback, (50, 200, 1.5, 1.5, 32, "both")),
+                (tm.scan_rsi, (14, 35.0, 65.0, 1.5, 1.5, 32, "both")),
+                (tm.scan_macd, (12, 26, 9, 1.5, 1.5, 32, "both")),
+                (tm.scan_bollinger, (20, 2.0, 1.5, 1.5, 32, "both")),
+            ):
+                trades = fn(self.bars, *args, spread=0.0002,
+                            live_exits=live_exits, close_utc="17:00")
+                self.assertGreater(len(trades), 0,
+                                   f"{fn.__name__} produced no trades")
+        finally:
+            tm._resolve_live, tm._resolve = real_live, real_free
+        return counts
+
+    def test_all_five_scanners_use_the_live_resolver(self):
+        counts = self._calls(live_exits=True)
+        self.assertGreater(counts["live"], 0, "no scanner reached _resolve_live")
+        self.assertEqual(counts["free"], 0,
+                         "a scanner still resolves frictionless while the null trails")
+
+    def test_frictionless_mode_uses_the_frictionless_resolver(self):
+        counts = self._calls(live_exits=False)
+        self.assertGreater(counts["free"], 0)
+        self.assertEqual(counts["live"], 0)
+
+    def test_spread_is_charged_on_entry(self):
+        free = tm.scan_rsi(self.bars, 14, 35.0, 65.0, 1.5, 1.5, 32, "both",
+                           spread=0.0, live_exits=False)
+        costly = tm.scan_rsi(self.bars, 14, 35.0, 65.0, 1.5, 1.5, 32, "both",
+                             spread=0.0020, live_exits=False)
+        longs = [t for t in free if t["side"] == "long"]
+        self.assertGreater(len(longs), 0, "fixture must produce a long")
+        by_bar = {t["bar"]: t for t in costly}
+        shifted = [round(by_bar[t["bar"]]["entry"] - t["entry"], 6)
+                   for t in longs if t["bar"] in by_bar]
+        self.assertTrue(shifted)
+        for d in shifted:
+            self.assertAlmostEqual(d, 0.0020, places=6,
+                                   msg="long entry did not pay the spread")
+
+    def test_matched_null_is_not_handicapped(self):
+        """Scoring the null with costs the observation did not pay must make
+        the null look worse. Matched, that gap disappears."""
+        trades = tm.scan_rsi(self.bars, 14, 35.0, 65.0, 1.5, 1.5, 32, "both",
+                             spread=0.0005, live_exits=False)
+        self.assertGreaterEqual(len(trades), 20, "need >=20 trades for the null")
+        kw = dict(permutations=200, seed=19, spread=0.0005, close_utc=None)
+        matched = tm.permutation_test(self.bars, trades, 1.5, 1.5, 32,
+                                      live_exits=False, **kw)
+        handicapped = tm.permutation_test(self.bars, trades, 1.5, 1.5, 32,
+                                          live_exits=True, **kw)
+        self.assertIsNotNone(matched)
+        self.assertIsNotNone(handicapped)
+        self.assertGreater(matched["null_z_mean"], handicapped["null_z_mean"],
+                           "the live-exit null is not harsher than the frictionless one")
