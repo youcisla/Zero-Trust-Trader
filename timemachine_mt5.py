@@ -610,7 +610,7 @@ def analyse(symbol, tf="H1", strategy="donchian", don_n=20, ema_fast=50, ema_slo
             "target": sum(1 for t in trades if t["outcome"] == "target"),
             "stop": sum(1 for t in trades if t["outcome"] == "stop"),
             "neither": sum(1 for t in trades if t["outcome"] == "neither"),
-            "n_decided": len(decided),
+            "n_decided": len(rs),
             "win_rate": round(win, 4),
             "avg_R": round(statistics.mean(rs), 3),
             "avg_mae_R": round(statistics.mean(t["mae_R"] for t in trades), 3),

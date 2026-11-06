@@ -188,5 +188,27 @@ class TestStateWrite(unittest.TestCase):
             self.assertIn('"ok": true', (pathlib.Path(d) / "engine_state.json").read_text())
 
 
+class TestApplyGuard(unittest.TestCase):
+    """--apply is a request; only the environment grants it."""
+
+    def test_apply_is_refused_without_the_env_var(self):
+        import position_manager as pm
+        allowed, why = pm.apply_allowed(True, {})
+        self.assertFalse(allowed)
+        self.assertIn("ZTT_ALLOW_APPLY", why)
+
+    def test_apply_is_refused_when_the_var_is_not_one(self):
+        import position_manager as pm
+        self.assertFalse(pm.apply_allowed(True, {"ZTT_ALLOW_APPLY": "yes"})[0])
+
+    def test_apply_is_granted_by_the_env_var(self):
+        import position_manager as pm
+        self.assertEqual(pm.apply_allowed(True, {"ZTT_ALLOW_APPLY": "1"}), (True, ""))
+
+    def test_dry_run_is_unaffected(self):
+        import position_manager as pm
+        self.assertEqual(pm.apply_allowed(False, {}), (False, ""))
+
+
 if __name__ == "__main__":
     unittest.main()

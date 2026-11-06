@@ -105,5 +105,45 @@ class TestNoCompounding(unittest.TestCase):
             self.assertEqual(logged, 264, "two 132-test scans must add 264, not compound")
 
 
+class TestLedgerChain(unittest.TestCase):
+    """Tamper-evidence: an edited or deleted row must not verify."""
+
+    KEY = b"k" * 32
+
+    def _chain(self, d, bodies):
+        log = pathlib.Path(d) / "ledger.log"
+        for body in bodies:
+            prev = log.read_text(encoding="utf-8") if log.exists() else ""
+            log.write_text(prev + tt.sign_line(body, log, self.KEY) + "\n", encoding="utf-8")
+        return log
+
+    def test_intact_chain_verifies(self):
+        with tempfile.TemporaryDirectory() as d:
+            log = self._chain(d, ["a total_tests=10", "b total_tests=20"])
+            self.assertEqual(tt.verify(log, self.KEY)[0], "ok")
+
+    def test_edited_row_breaks_the_chain(self):
+        with tempfile.TemporaryDirectory() as d:
+            log = self._chain(d, ["a total_tests=10", "b total_tests=20"])
+            log.write_text(log.read_text(encoding="utf-8").replace("total_tests=20", "total_tests=2"),
+                           encoding="utf-8")
+            state, detail = tt.verify(log, self.KEY)
+            self.assertEqual(state, "broken")
+            self.assertIn("line", detail)
+
+    def test_deleted_row_breaks_the_chain(self):
+        with tempfile.TemporaryDirectory() as d:
+            log = self._chain(d, ["a total_tests=10", "b total_tests=20", "c total_tests=30"])
+            rows = log.read_text(encoding="utf-8").splitlines()
+            log.write_text("\n".join([rows[0], rows[2]]) + "\n", encoding="utf-8")
+            self.assertEqual(tt.verify(log, self.KEY)[0], "broken")
+
+    def test_unsigned_rows_are_reported_not_trusted(self):
+        with tempfile.TemporaryDirectory() as d:
+            log = pathlib.Path(d) / "ledger.log"
+            log.write_text("a total_tests=10\n", encoding="utf-8")
+            self.assertEqual(tt.verify(log, self.KEY)[0], "unsigned")
+
+
 if __name__ == "__main__":
     unittest.main()

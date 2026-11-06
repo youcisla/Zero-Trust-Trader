@@ -116,6 +116,14 @@ def trials_block() -> None:
         print(f"  total {total}  (legacy {legacy} + logged {logged})")
         print(f"  z bar at this count: {tm.bonferroni_z(total):.2f}")
         print(f"  -> botlab --trials {total}")
+        # Tamper-evidence: a chain break means the bar may have been lowered.
+        state, detail = trials_total.verify()
+        if state == "broken":
+            print(f"  !! LEDGER TAMPERED — {detail}")
+        elif state == "ok":
+            print(f"  chain: ok — {detail}")
+        else:
+            print(f"  chain: {state} — {detail}")
     except Exception as e:
         print(f"  unavailable: {e}")
 

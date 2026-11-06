@@ -64,8 +64,13 @@ def log_run(src: dict, payload: dict) -> None:
             f"trials={payload['trials_declared']} "
             f"cumulative={payload.get('trials_cumulative', payload['trials_declared'])} "
             f"permutations={payload['permutations']} | {verdict}")
-    with (HERE / "funnel_history.log").open("a", encoding="utf-8") as fh:
-        fh.write(line + "\n")
+    # Sign the row into the hash chain: an edited or deleted line breaks
+    # verification, which status.py reports loudly. No key = unsigned, stated
+    # as such rather than silently trusted.
+    import trials_total as tt
+    path = HERE / "funnel_history.log"
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(tt.sign_line(line, path) + "\n")
 
 
 def correlation(sym_a: str, sym_b: str, bars_n: int = 3000, tf: str = "H1") -> float | None:

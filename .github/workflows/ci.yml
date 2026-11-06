@@ -61,6 +61,14 @@ jobs:
           fi
           echo "clean"
 
+      # compileall only proves it parses. An undefined name parses fine and
+      # crashes at runtime - that is exactly how a NameError reached production
+      # twelve times in a row while CI stayed green. F821 is precisely that bug.
+      - name: Lint for undefined names
+        run: |
+          python -m pip install --quiet ruff
+          ruff check --select F821 --no-cache .
+
   rust:
     runs-on: ubuntu-latest
     steps:

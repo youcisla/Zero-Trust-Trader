@@ -26,6 +26,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import time
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
@@ -45,6 +46,20 @@ class Cfg:
     trail_k: float = 2.0       # trail at 2 x ATR
     initial_k: float = 2.0     # seed a stop at 2 x ATR when one is missing
     min_step_atr: float = 0.10 # ignore micro-adjustments (broker spam / requotes)
+
+
+def apply_allowed(requested: bool, environ=None) -> tuple[bool, str]:
+    """--apply is a request, not a permission.
+
+    A flag can be typed by anything that can build a command string: an agent, a
+    scheduled task, a copy-paste from a README. The actual switch is an
+    environment variable a human sets in their own session, so a process that
+    inherits its parent's environment cannot arm itself by argument alone.
+    """
+    env = os.environ if environ is None else environ
+    if requested and env.get("ZTT_ALLOW_APPLY") != "1":
+        return False, "ZTT_ALLOW_APPLY=1 is not set in this session"
+    return requested, ""
 
 
 def next_stop(side: int, entry: float, sl: float, price: float, atr: float,
@@ -258,8 +273,13 @@ def main() -> int:
     a = ap.parse_args()
     cfg = Cfg(be_r=a.be_r, trail_k=a.trail_k)
 
+    a.apply, why = apply_allowed(a.apply)
     if not a.apply:
-        print("DRY RUN -- nothing will be sent. Use --apply to act.\n")
+        print("DRY RUN -- nothing will be sent.")
+        if why:
+            print(f"REFUSED --apply: {why}.")
+            print("Set ZTT_ALLOW_APPLY=1 in your own shell to enable it.")
+        print("Use --apply (with that variable) to act.\n")
 
     if LOCK.exists() and time.time() - LOCK.stat().st_mtime < a.interval * 4:
         print(f"another supervisor is running (lock {LOCK.name})")

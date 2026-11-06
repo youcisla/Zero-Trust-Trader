@@ -70,7 +70,7 @@ looked like a genuine edge:
 z = +2.40 clears the conventional 1.96 threshold comfortably. Any single-symbol
 study would have called that a finding and sized a position on it.
 
-It was **refused**. Against the corrected bar for 568 tests (z = 3.92), +2.40 is
+It was **refused**. Against the corrected bar for 576 tests (z = 3.92), +2.40 is
 unremarkable — precisely what taking the best of 568 draws produces by luck.
 
 The same instrument was later re-tested on four times the history:
@@ -105,7 +105,7 @@ design, because a stop you cannot move without a second signature is a stop you
 cannot tighten when the market turns.
 
 Gates 3 and 4 are not redundant. The permutation test is per-instrument and does
-**not** correct for the scan: at 568 tests, a p-value of 0.015 is expected ~8
+**not** correct for the scan: at 576 tests, a p-value of 0.015 is expected ~8
 times per run. Passing one gate is not permission to trade.
 
 ---
@@ -285,13 +285,49 @@ see `docs/BOTLAB_COMMAND.txt` for the ledger/backtest workflow).
 
 ## Tests
 
-66 tests, **no trading terminal required** — `MetaTrader5` is Windows-only, so
+76 tests, **no trading terminal required** — `MetaTrader5` is Windows-only, so
 `tests/_mt5stub.py` stubs it and the indicator maths and safety guards run
 anywhere, including Linux CI:
 
 ```bash
 python -m unittest discover -s tests -v
 ```
+
+CI also runs `ruff --select F821` over every module. `compileall` only proves a
+file parses; an undefined name parses fine and crashes at runtime, which is how
+a `NameError` once reached production twelve runs in a row while CI stayed green.
+
+## Prove the order path once, by hand
+
+`manual_e2e_test.py` is the only thing here that sends a real order, and it is
+manual by design — it is not part of the cadence and never runs in CI.
+
+```bash
+python manual_e2e_test.py
+```
+
+It refuses unless the account is **demo** and AutoTrading is **on**, shows the
+exact 0.01-lot order, and sends nothing until you type `EXECUTE`. It then closes
+the position immediately, verifies the account is flat, and asks you to switch
+AutoTrading back off — verifying that too.
+
+Two things it cannot do for you: AutoTrading is a terminal **GUI toggle** (the
+API can read `trade_allowed`, not flip it), and it exercises the bridge's
+*policy* code in-process rather than over the MCP transport. Start the bridge
+separately if you also want the transport covered.
+
+## Two switches only a human holds
+
+**Armed execution.** `--apply` on the supervisor is a request, not a permission.
+It is honoured only when `ZTT_ALLOW_APPLY=1` is set in the shell that launched
+it; otherwise the process stays in dry run and says why. A command string an
+agent can build is not consent.
+
+**Ledger integrity.** Every trial row is signed into an HMAC chain keyed from
+`ZTT_LEDGER_KEY` (env, or `.env` in the execution dir — never committed).
+`status.py` and `trials_total.py` verify the chain and print `!! LEDGER TAMPERED`
+if a row was edited, deleted or reordered. Rows written before the chain existed
+are reported as `unsigned` rather than silently trusted.
 
 | Suite | Covers |
 | --- | --- |
