@@ -161,7 +161,11 @@ async fn latest_report(State(st): State<AppState>) -> impl IntoResponse {
                 continue;
             }
             if let Ok(m) = e.metadata().and_then(|m| m.modified()) {
-                if newest.as_ref().map_or(true, |(t, _)| m > *t) {
+                let newer = match &newest {
+                    None => true,
+                    Some((t, _)) => m > *t,
+                };
+                if newer {
                     newest = Some((m, p));
                 }
             }
