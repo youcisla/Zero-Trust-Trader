@@ -17,6 +17,12 @@ Market is choppy, no statistically significant edge found today. Standing down.
 
 That is not a failure message. That is the product.
 
+**Stage 3 of a three-stage research arc** that began in March 2026. The earlier
+systems are preserved, with the failure they measured, in
+[`docs/LINEAGE.md`](docs/LINEAGE.md) — [TradeBot](https://github.com/youcisla/TradeBot)
+(no edge) → [TradeBotV2](https://github.com/youcisla/TradeBotV2) (measurement
+first) → this repository (refuses to trade).
+
 ---
 
 ## The one rule
