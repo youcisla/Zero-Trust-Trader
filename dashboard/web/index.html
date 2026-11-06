@@ -45,6 +45,8 @@
   .pill.live{color:var(--good);border-color:rgba(63,185,80,.35)}
   .pill.down{color:var(--bad);border-color:rgba(248,81,73,.35)}
   .pill.stale{color:var(--warn);border-color:rgba(210,153,34,.4)}
+  .pill.tz{color:var(--faint);font-family:ui-monospace,"Cascadia Mono",Menlo,Consolas,monospace;
+    letter-spacing:0}
 
   .equity{display:flex;align-items:baseline;gap:6px}
   .equity b{font-size:22px;font-weight:600;letter-spacing:-.015em}
@@ -116,6 +118,24 @@ const money = (v, c) =>
   : `${Number(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})} ${c||""}`.trim();
 const num = (v, d=5) => v === null || v === undefined ? "—" : Number(v).toFixed(d);
 
+// Logs are written in UTC and must stay that way: the ledger is HMAC-chained
+// over its exact bytes, and a local timestamp in the file would break
+// verification for anyone reading it in another timezone. Localisation belongs
+// to the viewer, so it happens here, from the browser's own zone.
+const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || "local";
+const clock = new Intl.DateTimeFormat(undefined,
+  {hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false});
+const todayLocal = () => new Date().toLocaleDateString("sv-SE");   // YYYY-MM-DD, local
+
+const localize = (line) => String(line).replace(
+  /(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})Z/g,
+  (_, date, time) => {
+    const at = new Date(`${date}T${time}Z`);
+    if (Number.isNaN(at.getTime())) return `${date}T${time}Z`;
+    const hms = clock.format(at);
+    return date === todayLocal() ? hms : `${date.slice(5)} ${hms}`;
+  });
+
 // Colour by meaning, not by position: a failure should be findable by eye in a
 // wall of green rows.
 const isError = (l) => /FAILED|ERROR|TAMPERED|REFUSED|not configured|denied/i.test(l);
@@ -163,7 +183,7 @@ function LogPane({lines, empty}) {
   if (!lines || !lines.length) return html`<div className="empty">${empty}</div>`;
   // Newest first: the last line is what is happening now. Oldest-first made a
   // fixed failure look current for as long as the tail window was full.
-  const view = lines.slice().reverse();
+  const view = lines.slice().reverse().map(localize);
   // Anything failing BELOW the newest healthy row is history. Dim it rather
   // than hide it: the ledger is append-only and honest, the UI just stops
   // shouting about problems that were fixed hours ago.
@@ -224,6 +244,7 @@ function App() {
       <span className="dot"></span>${up ? "live" : "disconnected"}
     </span>
     ${stale ? html`<span className="pill stale">engine ${age}s stale</span>` : null}
+    <span className="pill tz" title="Logs are stored in UTC; times are shown in your own zone">${TZ}</span>
     ${engineErr ? html`<span className="pill down" title=${engineErr}>engine refusing</span>` : null}
     ${err ? html`<span className="pill down">${err}</span>` : null}
     <span className="spacer"></span>
@@ -300,6 +321,7 @@ function App() {
   <footer>
     read-only mirror · the engine never calls this process · files are tailed, nothing is written
     · dimmed rows are failures older than the last successful run
+    · times shown in ${TZ} (the logs themselves stay UTC)
   </footer>`;
 }
 
