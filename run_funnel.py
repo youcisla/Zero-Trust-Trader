@@ -172,6 +172,7 @@ def session_strategies(now: datetime) -> tuple[str, ...]:
 
 
 def main() -> int:
+    t0 = time.monotonic()
     ap = argparse.ArgumentParser()
     ap.add_argument("--rebuild", action="store_true",
                     help="run Tier 1 then rebuild liquid_universe.json, then exit "
@@ -196,6 +197,10 @@ def main() -> int:
     ap.add_argument("--permutations", type=int, default=PERMUTATIONS,
                     choices=[PERMUTATIONS],
                     help="locked at 1000: rejects a lower count rather than clamping")
+    ap.add_argument("--t-gate", action="store_true",
+                    help="gate the deep test on the mean-R t instead of the win-rate z. "
+                         "The live exit policy books no fixed target, so p0=1/(1+rr) is "
+                         "unreachable and the binomial only measures who lost more slowly.")
     ap.add_argument("--lock-max-age-min", type=float, default=120.0)
     a = ap.parse_args()
 
@@ -309,6 +314,8 @@ def main() -> int:
     t3_args = ["tier3_deep.py", "--tf", a.tf, "--bars", str(a.bars),
                "--horizon", str(a.horizon), "--permutations", str(a.permutations),
                "--trials", str(cumulative)]
+    if a.t_gate:
+        t3_args.append("--t-gate")
     if a.window_utc:
         # The deep test must close at the end of the window it is testing into;
         # deriving it from --window-utc stops the two from drifting apart.
@@ -337,6 +344,11 @@ def main() -> int:
         "verdict",
         verdict="STAND_DOWN" if doc.get("stood_down") else "PROPOSAL",
         survivors=doc.get("survivors", []),
+        # How long the scan took. Without it, a missed schedule slot and a slow
+        # scan look identical in the log, and that ambiguity cost an afternoon:
+        # the 09:30 break in cadence was CPU contention from builds, not the
+        # 3-strategy window that opens four hours later.
+        dur_s=round(time.monotonic() - t0, 1),
     )
     return 0
 

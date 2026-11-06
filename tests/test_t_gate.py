@@ -14,6 +14,7 @@ import pathlib
 import statistics
 import sys
 import unittest
+import unittest.mock
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(ROOT), str(ROOT / "tests")]
@@ -117,6 +118,32 @@ class TestPermutationNeverPassesANonPositiveExpectancy(unittest.TestCase):
                                   use_t=True)
         self.assertEqual(p_z["statistic"], "z")
         self.assertEqual(p_t["statistic"], "t")
+
+
+class TestDedupeKeepsTheHigherEdgeUnderTheActiveGate(unittest.TestCase):
+    def test_sort_and_dedupe_follow_the_gated_statistic(self):
+        import tier3_deep as t3
+
+        a = {"symbol": "AAA", "significance": {"gate": "t", "z": 9.0, "t_stat_R": 3.1}}
+        b = {"symbol": "BBB", "significance": {"gate": "t", "z": 4.0, "t_stat_R": 6.2}}
+        stat_key = "t_stat_R"
+        survivors = sorted([a, b], key=lambda d: d["significance"][stat_key], reverse=True)
+        with unittest.mock.patch.object(t3, "correlation", lambda *_: 0.95):
+            kept, dropped = t3.dedupe(survivors, 0.7, stat_key)
+        self.assertEqual([d["symbol"] for d in kept], ["BBB"])
+        self.assertEqual(dropped[0]["symbol"], "AAA")
+        self.assertEqual(dropped[0]["t_stat_R"], 3.1)
+        self.assertEqual(dropped[0]["gate"], "t")
+
+    def test_default_key_stays_z_for_backward_compatibility(self):
+        import tier3_deep as t3
+
+        a = {"symbol": "AAA", "significance": {"z": 9.0}}
+        b = {"symbol": "BBB", "significance": {"z": 4.0}}
+        with unittest.mock.patch.object(t3, "correlation", lambda *_: 0.95):
+            kept, dropped = t3.dedupe([a, b], 0.7)
+        self.assertEqual([d["symbol"] for d in kept], ["AAA"])
+        self.assertEqual(dropped[0]["z"], 4.0)
 
 
 if __name__ == "__main__":

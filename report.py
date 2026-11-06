@@ -63,14 +63,17 @@ def candidate_card(r: dict) -> str:
     s = r.get("significance") or {}
     p = r.get("permutation") or {}
 
-    z = s.get("z")
+    gate = s.get("gate") or "z"
+    z = s.get("t_stat_R") if gate == "t" else s.get("z")
     zc = s.get("z_crit_bonferroni")
     zn = s.get("z_crit_naive")
     pval = p.get("p_value")
     g1 = bool(s.get("passes_corrected"))
-    g2 = bool(pval is not None and pval < 0.05)
+    # Trust the kernel's verdict: p < 0.05 alone also passes a loser that only
+    # out-lost its random-entry null. permutation["passes"] requires mean R > 0.
+    g2 = bool(p.get("passes"))
 
-    g1_detail = (f'z = {esc(z)} against a corrected bar of {esc(zc)} '
+    g1_detail = (f'{esc(gate)} = {esc(z)} against a corrected bar of {esc(zc)} '
                  f'({esc(s.get("n_tests"))} cumulative tests). '
                  f'A naive 1.96 test would have said '
                  f'{"pass" if s.get("passes_naive") else "fail"} — '

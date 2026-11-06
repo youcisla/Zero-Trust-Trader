@@ -78,8 +78,13 @@ def correlation(sym_a: str, sym_b: str, bars_n: int = 3000, tf: str = "H1") -> f
     return md.correlation(sym_a, sym_b, bars_n, tf)
 
 
-def dedupe(survivors: list[dict], corr_max: float) -> tuple[list[dict], list[dict]]:
-    """Greedy: keep by descending z, drop anything too correlated with a keeper."""
+def dedupe(survivors: list[dict], corr_max: float,
+           stat_key: str = "z") -> tuple[list[dict], list[dict]]:
+    """Greedy: keep by descending ``stat_key``, drop anything correlated with a keeper.
+
+    The caller sorts by the statistic the gate actually used, so under --t-gate
+    the higher-t edge survives and the higher-z one is the one dropped.
+    """
     kept, dropped = [], []
     for cand in survivors:
         clash = None
@@ -91,7 +96,8 @@ def dedupe(survivors: list[dict], corr_max: float) -> tuple[list[dict], list[dic
         if clash:
             dropped.append({"symbol": cand["symbol"], "kept_instead": clash[0],
                             "correlation": round(clash[1], 3),
-                            "z": cand["significance"]["z"]})
+                            "gate": cand["significance"].get("gate", "z"),
+                            stat_key: cand["significance"][stat_key]})
         else:
             kept.append(cand)
     return kept, dropped
@@ -205,9 +211,11 @@ def main() -> int:
     survivors = [d for d in results
                  if d["significance"]["passes_corrected"]
                  and (d["permutation"] or {}).get("passes")]
-    survivors.sort(key=lambda d: d["significance"]["z"], reverse=True)
+    stat_key = "t_stat_R" if a.t_gate else "z"
+    survivors.sort(key=lambda d: d["significance"][stat_key], reverse=True)
 
-    kept, dropped = dedupe(survivors, a.corr_max) if len(survivors) > 1 else (survivors, [])
+    kept, dropped = (dedupe(survivors, a.corr_max, stat_key)
+                     if len(survivors) > 1 else (survivors, []))
 
     payload = {"generated_utc": md.now_utc(), "trials_declared": scan_tests,
                "trials_cumulative": trials,

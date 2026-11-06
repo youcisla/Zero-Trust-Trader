@@ -707,12 +707,12 @@ def analyse(symbol, tf="H1", strategy="donchian", don_n=20, ema_fast=50, ema_slo
     }
 
 
-def verdict_line(z: float, zc: float) -> str:
-    if z > zc:
-        return f"PASS: z={z:+.2f} > corrected {zc:.2f} — survives the multiple-comparisons bar."
-    if z > 1.96:
-        return f"FAIL: z={z:+.2f} clears a naive 1.96 but not the corrected {zc:.2f} — this is what scanning produces by luck."
-    return f"FAIL: z={z:+.2f} does not clear 1.96 — indistinguishable from noise."
+def verdict_line(stat: float, zc: float, name: str = "z") -> str:
+    if stat > zc:
+        return f"PASS: {name}={stat:+.2f} > corrected {zc:.2f} — survives the multiple-comparisons bar."
+    if stat > 1.96:
+        return f"FAIL: {name}={stat:+.2f} clears a naive 1.96 but not the corrected {zc:.2f} — this is what scanning produces by luck."
+    return f"FAIL: {name}={stat:+.2f} does not clear 1.96 — indistinguishable from noise."
 
 
 def main() -> int:
@@ -764,7 +764,8 @@ def main() -> int:
     print(f"  target {m['p_target']:.1%}  stop {m['p_stop']:.1%}  neither {m['p_neither']:.1%}  "
           f"avg R {m['avg_R']:+.3f}")
     print(f"\nCURRENT: {c['side']} near {c['proposed_entry']} stop {c['proposed_stop']} target {c['proposed_target']}")
-    print(f"\n{verdict_line(s['z'], s['z_crit_bonferroni'])}")
+    gate = s.get("gate") or "z"
+    print(f"\n{verdict_line(s['t_stat_R'] if gate == 't' else s['z'], s['z_crit_bonferroni'], gate)}")
     print("Simulation from the instrument's own recent bars. Not a prediction.")
     return 0
 
