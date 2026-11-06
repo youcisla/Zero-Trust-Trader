@@ -131,11 +131,6 @@ def main() -> int:
 
     src = json.loads(Path(a.tier2).read_text())
     top = src.get("top", [])
-    if not top:
-        print("Tier 2 produced no candidates.")
-        print(STAND_DOWN)
-        return 1
-
     # Two numbers that must never be conflated:
     #   scan_tests - hypotheses THIS scan tested; this is what the ledger adds
     #   trials     - cumulative hypotheses ever tested; this sets the gate
@@ -152,6 +147,20 @@ def main() -> int:
         _legacy, _logged = trials_total.total()
         trials = max(scan_tests, _legacy + _logged)
         print(f"--trials not given; using the ledger total ({trials})")
+    if not top:
+        # No candidates is a normal outcome, not a failure. It must still be
+        # recorded: the scan tested scan_tests hypotheses even though none
+        # reached the deep pass, and dropping the row silently under-counts the
+        # cumulative trials the Bonferroni gate is computed from -- which makes
+        # the bar weaker than it claims to be. Exit 0 and log the row.
+        print("Tier 2 produced no candidates.")
+        print(STAND_DOWN)
+        log_run(src, {"results": [], "passed_both_gates": [], "survivors": [],
+                      "stood_down": True, "trials_declared": scan_tests,
+                      "trials_cumulative": trials,
+                      "permutations": a.permutations})
+        return 0
+
     zc = tm.bonferroni_z(trials)
     print(f"Tier 2 shortlist: {len(top)} | declaring {trials} tests "
           f"({src.get('symbols_tested', '?')} symbols x {src.get('strategies_tested', '?')} "
