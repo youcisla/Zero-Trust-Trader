@@ -57,6 +57,12 @@ def config_block() -> None:
                    "a scan run without it refuses by design)")
     print(f"  expected login: {hint}")
     cfg = Path(os.environ.get("APPDATA", "")) / "mt5-mcp" / "config.toml"
+    # Single-tree installs keep the policy next to this script; prefer the
+    # copy in the tree when the per-user one is absent.
+    if not cfg.exists():
+        local = Path(__file__).resolve().parent / "config.toml"
+        if local.exists():
+            cfg = local
     if cfg.exists():
         print(f"  policy        : {cfg}")
         for ln in cfg.read_text(encoding="utf-8").splitlines():
