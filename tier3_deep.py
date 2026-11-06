@@ -214,6 +214,14 @@ def main() -> int:
     OUT.write_text(json.dumps(payload, indent=2) + "\n")
     log_run(src, payload)
 
+    # One readable page per scan, next to the machine-readable JSON. A scan that
+    # produces only a log line is very hard to argue with six weeks later.
+    try:
+        import report
+        print(f"report: {report.write_report(OUT)}")
+    except Exception as exc:  # reporting must never break the scan
+        print(f"report: skipped ({exc})")
+
     print()
     if not kept:
         for d in results:

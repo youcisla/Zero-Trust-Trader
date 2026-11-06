@@ -47,6 +47,8 @@
   .pill.stale{color:var(--warn);border-color:rgba(210,153,34,.4)}
   .pill.tz{color:var(--faint);font-family:ui-monospace,"Cascadia Mono",Menlo,Consolas,monospace;
     letter-spacing:0}
+  a.pill{text-decoration:none;color:var(--fg)}
+  a.pill:hover{border-color:var(--fg)}
 
   .equity{display:flex;align-items:baseline;gap:6px}
   .equity b{font-size:22px;font-weight:600;letter-spacing:-.015em}
@@ -245,6 +247,8 @@ function App() {
     </span>
     ${stale ? html`<span className="pill stale">engine ${age}s stale</span>` : null}
     <span className="pill tz" title="Logs are stored in UTC; times are shown in your own zone">${TZ}</span>
+    <a className="pill" href="/api/report/latest" target="_blank" rel="noopener"
+       title="The newest per-scan report: every candidate, both gates, why each was rejected">last report ↗</a>
     ${engineErr ? html`<span className="pill down" title=${engineErr}>engine refusing</span>` : null}
     ${err ? html`<span className="pill down">${err}</span>` : null}
     <span className="spacer"></span>

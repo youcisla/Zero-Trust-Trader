@@ -149,6 +149,41 @@ async fn watch(state: AppState) {
     }
 }
 
+async fn latest_report(State(st): State<AppState>) -> impl IntoResponse {
+    // The per-scan HTML report is the deep view; this is the bridge to it from
+    // the live view. Newest file wins -- one scan, one page.
+    let dir = st.root.join("reports");
+    let mut newest: Option<(std::time::SystemTime, std::path::PathBuf)> = None;
+    if let Ok(entries) = std::fs::read_dir(&dir) {
+        for e in entries.flatten() {
+            let p = e.path();
+            if p.extension().and_then(|s| s.to_str()) != Some("html") {
+                continue;
+            }
+            if let Ok(m) = e.metadata().and_then(|m| m.modified()) {
+                if newest.as_ref().map_or(true, |(t, _)| m > *t) {
+                    newest = Some((m, p));
+                }
+            }
+        }
+    }
+    match newest {
+        Some((_, path)) => {
+            let body = std::fs::read_to_string(&path).unwrap_or_default();
+            (
+                StatusCode::OK,
+                [(axum::http::header::CONTENT_TYPE, "text/html; charset=utf-8")],
+                body,
+            )
+        }
+        None => (
+            StatusCode::NOT_FOUND,
+            [(axum::http::header::CONTENT_TYPE, "text/plain")],
+            String::from("no reports yet - the next scan writes one"),
+        ),
+    }
+}
+
 async fn full_log(AxumPath(which): AxumPath<String>, State(st): State<AppState>) -> impl IntoResponse {
     // The snapshot only carries the last 12 lines: enough to glance at, useless
     // for debugging. This serves the whole file so the Copy button copies
@@ -248,6 +283,7 @@ async fn main() {
         .route("/", get(index))
         .route("/api/snapshot", get(snapshot))
         .route("/api/logs/:which", get(full_log))
+        .route("/api/report/latest", get(latest_report))
         .route("/ws", get(ws))
         .route("/vendor/react.production.min.js", get(|| js("react")))
         .route("/vendor/react-dom.production.min.js", get(|| js("react-dom")))

@@ -200,6 +200,26 @@ and the UI shows an amber staleness age rather than inventing numbers.
 | `GET /` | the UI — one embedded HTML file, React vendored, no build step |
 | `GET /api/snapshot` | one-shot state, last 12 lines of each log |
 | `GET /api/logs/{audit,funnel,actions}` | **whole log**, for the Copy buttons and for pasting into an issue |
+| `GET /api/report/latest` | the newest per-scan HTML report (`reports/run-*.html`) |
+
+### Read the argument, not just the verdict
+
+Every scan writes one page to `reports/run-<utc>.html` — the same page the
+dashboard's **last report ↗** link opens. It lists each candidate with both
+gates side by side: the corrected bar against the naive `1.96`, and the
+permutation p-value. A candidate that dies at gate 1 shows what it *would* have
+scored under a naive test, which is the whole reason the second gate exists:
+
+```
+GBPCAD  z = 3.278  vs corrected bar 4.5   -> rejected
+        a naive 1.96 test would have traded it
+```
+
+That page is also the artefact to hand a reader who asks "how do you know?" —
+it names the code SHA, the cumulative trial count and the permutation count, so
+the number can be reproduced rather than believed. `report.py` builds it from
+`tier3_results.json`; tier 3 calls it after writing the JSON, so a manual run is
+documented exactly like a scheduled one.
 | `GET /ws` | pushed updates, sent only when something actually changes |
 
 ### Debugging from the UI

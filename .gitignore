@@ -25,3 +25,6 @@ config.toml
 # rust
 dashboard/target/
 audit.jsonl
+
+# generated per-scan HTML reports
+reports/
