@@ -59,8 +59,34 @@ fn age_secs(path: &Path) -> Option<u64> {
     SystemTime::now().duration_since(m).ok().map(|d| d.as_secs())
 }
 
+/// The supervisor publishes a NEW state generation each tick and never touches
+/// a file a reader holds: that is what keeps WinError 5 off the write path.
+/// The reader's side of that contract is to resolve the newest generation.
+/// Falls back to the legacy fixed name so an older tree still renders.
+fn newest_state(dir: &Path) -> PathBuf {
+    let mut best: Option<(SystemTime, PathBuf)> = None;
+    if let Ok(entries) = std::fs::read_dir(dir) {
+        for entry in entries.flatten() {
+            let name = entry.file_name();
+            let name = name.to_string_lossy();
+            if !(name.starts_with("engine_state.") && name.ends_with(".json")) {
+                continue;
+            }
+            // ponytail: newest of two files, scanned once a second. An index
+            // would cost more than it saves at this size.
+            if let Ok(modified) = entry.metadata().and_then(|m| m.modified()) {
+                if best.as_ref().map(|(t, _)| modified > *t).unwrap_or(true) {
+                    best = Some((modified, entry.path()));
+                }
+            }
+        }
+    }
+    best.map(|(_, p)| p)
+        .unwrap_or_else(|| dir.join("engine_state.json"))
+}
+
 fn build(root: &Path) -> Value {
-    let engine_path = root.join("engine_state.json");
+    let engine_path = newest_state(root);
     let engine: Value = std::fs::read_to_string(&engine_path)
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())

@@ -25,6 +25,7 @@ anything to the broker.
 from __future__ import annotations
 
 import argparse
+import atexit
 import json
 import os
 import time
@@ -166,14 +167,36 @@ def _close(mt5, pos, inf) -> tuple[bool, str]:
     return False, f"close failed rc={getattr(r, 'retcode', '?')} {getattr(r, 'comment', '')}"
 
 
+_MT5_READY = False
+
+
+def ensure_mt5(mt5) -> None:
+    """Hold ONE MetaTrader5 session for the life of the process.
+
+    run_once used to connect and disconnect every tick. At --interval 5 that is
+    17,280 connect cycles a day, racing the funnel's own connect every 15
+    minutes, and it is what produced the -10005 IPC timeouts. Reconnect only
+    when the terminal is actually gone.
+    """
+    global _MT5_READY
+    if _MT5_READY and mt5.terminal_info() is not None:
+        return
+    if not mt5.initialize():
+        _MT5_READY = False
+        raise RuntimeError(f"initialize failed: {mt5.last_error()}")
+    _MT5_READY = True
+
+
 def run_once(cfg: Cfg, apply: bool, close_at: str | None) -> dict:
     """One supervision pass. Returns the state document the dashboard reads."""
     import MetaTrader5 as mt5
 
     import run_funnel as rf
 
-    if not mt5.initialize():
-        return {"ok": False, "error": f"initialize failed: {mt5.last_error()}"}
+    try:
+        ensure_mt5(mt5)
+    except RuntimeError as exc:
+        return {"ok": False, "error": str(exc)}
     try:
         problems = rf.preflight_check(mt5.terminal_info(), mt5.account_info())
         if problems:
@@ -233,34 +256,49 @@ def run_once(cfg: Cfg, apply: bool, close_at: str | None) -> dict:
             "applied": apply,
         }
     finally:
-        mt5.shutdown()
+        # The terminal session is held open between ticks on purpose: closing
+        # and reopening it every 5 seconds is what caused the -10005 IPC
+        # timeouts. Shutdown is registered once, at process exit.
+        pass
 
 
-def write_state(doc: dict, attempts: int = 20, delay: float = 0.05) -> bool:
+def write_state(doc: dict, keep: int = 2) -> bool:
     """Publish state for the dashboard. Returns whether it landed.
 
-    On Windows os.replace fails with WinError 5 while another process holds the
-    destination open, and the dashboard polls this file once a second. Losing
-    that race used to kill the supervisor outright - a monitoring problem must
-    never stop the thing being monitored.
+    Written as a NEW generation, never over the file a reader has open:
 
-    A miss is now self-healing rather than fatal: the next tick rewrites the
-    same state about five seconds later, and the UI already reports its own
-    staleness instead of inventing numbers. 20 x 50ms covers the window where a
-    scheduled scan saturates the disk; the old 6 x 50ms did not, which is why a
-    write failed at 10:13 exactly as the funnel started.
+        .engine_state.<pid>.tmp  ->  engine_state.<epoch_ms>.json
+
+    os.replace onto an existing name fails with WinError 5 whenever anything
+    holds the destination - the dashboard polls, and the antivirus scans what
+    was just created. Retrying around that only made the collision rarer; it
+    never made it impossible. Renaming onto a name that does not exist yet
+    cannot be refused, because no process can hold a handle on a file that was
+    never created. The reader resolves the newest generation instead.
+
+    Old generations are pruned best-effort: a reader mid-read of the previous
+    one must not turn cleanup into an error.
     """
-    tmp = STATE.with_suffix(f".{os.getpid()}.tmp")
+    tmp = HERE / f".engine_state.{os.getpid()}.tmp"
     tmp.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
-    for i in range(attempts):
+    # Nanoseconds, not milliseconds: two writes inside the same tick must not
+    # race for the same name, and a rename onto an existing file is exactly the
+    # failure this design exists to avoid.
+    target = HERE / f"engine_state.{time.time_ns()}.json"
+    try:
+        os.rename(tmp, target)          # create, never replace
+    except OSError:
+        tmp.unlink(missing_ok=True)
+        return False
+
+    stale = sorted(HERE.glob("engine_state.*.json"),
+                   key=lambda p: p.stat().st_mtime_ns)[:-keep]
+    for old in stale:
         try:
-            tmp.replace(STATE)
-            return True
-        except PermissionError:
-            if i < attempts - 1:
-                time.sleep(delay)
-    tmp.unlink(missing_ok=True)
-    return False
+            old.unlink()
+        except OSError:
+            pass
+    return True
 
 
 def log_line(text: str) -> None:
@@ -298,6 +336,12 @@ def main() -> int:
 
     last_error = None
     state_stalled = False
+    try:
+        import MetaTrader5 as _mt5
+
+        atexit.register(_mt5.shutdown)
+    except ImportError:
+        pass
     try:
         while True:
             # Refresh the lock every tick. It used to be written once and then

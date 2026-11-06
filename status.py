@@ -52,7 +52,10 @@ def terminal_block() -> None:
 def config_block() -> None:
     section("configuration in force")
     print("  run window    : 05:00-17:00 UTC, session matrix narrows families early")
-    print(f"  expected login: {os.environ.get('MT5_EXPECTED_LOGIN') or 'not pinned (demo check only)'}")
+    pin = os.environ.get("MT5_EXPECTED_LOGIN")
+    hint = pin or ("not set in THIS shell (the launchers pin it; "
+                   "a scan run without it refuses by design)")
+    print(f"  expected login: {hint}")
     cfg = Path(os.environ.get("APPDATA", "")) / "mt5-mcp" / "config.toml"
     if cfg.exists():
         print(f"  policy        : {cfg}")

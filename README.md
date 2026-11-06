@@ -184,10 +184,10 @@ cd dashboard && cargo run --release        # http://localhost:8787
 
 **Design rule: the engine never knows the dashboard exists.** No IPC, no callback,
 no socket the Python side opens. The dashboard tails ordinary files the engine
-already writes (`engine_state.json`, `funnel_history.log`,
-`position_manager.log`, `audit.jsonl`). Kill the dashboard and trading is
-unaffected; kill the engine and the UI shows an amber staleness age rather than
-inventing numbers.
+already writes (`engine_state.<ns>.json` — a fresh generation each tick, never
+a file a reader holds; `funnel_history.log`, `position_manager.log`,
+`audit.jsonl`). Kill the dashboard and trading is unaffected; kill the engine
+and the UI shows an amber staleness age rather than inventing numbers.
 
 | Endpoint | Purpose |
 | --- | --- |

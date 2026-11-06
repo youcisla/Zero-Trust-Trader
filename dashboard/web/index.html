@@ -91,6 +91,8 @@
   .log div{padding:2px var(--s3);border-bottom:1px solid rgba(255,255,255,.025)}
   .log div:last-child{border-bottom:0}
   .l-bad{color:#ff9a92} .l-good{color:#7ee787} .l-dim{color:var(--faint)}
+  /* An error older than the newest healthy row is history, not an alert. */
+  .l-past{opacity:.32}
   .empty{color:var(--faint);font-style:italic;padding:var(--s4) var(--s3);font-size:12px}
 
   .copy{border:1px solid var(--line);border-radius:7px;padding:3px 9px;font-size:11px;
@@ -116,8 +118,9 @@ const num = (v, d=5) => v === null || v === undefined ? "—" : Number(v).toFixe
 
 // Colour by meaning, not by position: a failure should be findable by eye in a
 // wall of green rows.
+const isError = (l) => /FAILED|ERROR|TAMPERED|REFUSED|not configured|denied/i.test(l);
 const lineClass = (l) => {
-  if (/FAILED|ERROR|TAMPERED|REFUSED|not configured|denied/i.test(l)) return "l-bad";
+  if (isError(l)) return "l-bad";
   if (/(^|[^A-Z])OK\b|RECOVERED|PROPOSAL|WINNER/.test(l)) return "l-good";
   if (/STAND_DOWN/.test(l)) return "l-dim";
   return "";
@@ -158,11 +161,16 @@ function Card({title, which, count, wide, children}) {
 
 function LogPane({lines, empty}) {
   if (!lines || !lines.length) return html`<div className="empty">${empty}</div>`;
-  // Newest first: the last line is what is happening now. Oldest-first makes a
-  // fixed failure look current for as long as the tail window is full.
+  // Newest first: the last line is what is happening now. Oldest-first made a
+  // fixed failure look current for as long as the tail window was full.
   const view = lines.slice().reverse();
+  // Anything failing BELOW the newest healthy row is history. Dim it rather
+  // than hide it: the ledger is append-only and honest, the UI just stops
+  // shouting about problems that were fixed hours ago.
+  const healthy = view.findIndex(l => !isError(l));
   return html`<div className="log">${view.map((l,i)=>
-    html`<div key=${i} className=${lineClass(l)}>${l}</div>`)}</div>`;
+    html`<div key=${i}
+      className=${lineClass(l) + (healthy >= 0 && i > healthy && isError(l) ? " l-past" : "")}>${l}</div>`)}</div>`;
 }
 
 function App() {
@@ -291,6 +299,7 @@ function App() {
 
   <footer>
     read-only mirror · the engine never calls this process · files are tailed, nothing is written
+    · dimmed rows are failures older than the last successful run
   </footer>`;
 }
 

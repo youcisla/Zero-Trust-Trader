@@ -157,62 +157,60 @@ class TestFridayClose(unittest.TestCase):
 
 
 class TestStateWrite(unittest.TestCase):
-    """Windows raises WinError 5 when another process holds the destination
-    open. The dashboard polls it once a second, so losing that race must not
-    kill supervision."""
+    """The dashboard polls state while the supervisor writes it.
 
-    def test_retries_while_the_reader_holds_the_file(self):
+    Publishing a NEW generation and renaming onto a name that does not exist
+    yet is what makes WinError 5 impossible rather than merely rare.
+    """
+
+    def setUp(self):
         import pathlib
         import tempfile
 
         import position_manager as pm
 
-        with tempfile.TemporaryDirectory() as d:
-            orig, pm.STATE = pm.STATE, pathlib.Path(d) / "engine_state.json"
-            real, seen = pathlib.Path.replace, {"n": 0}
+        self.pm = pm
+        self.tmp = tempfile.TemporaryDirectory()
+        self.dir = pathlib.Path(self.tmp.name)
+        self.orig = pm.HERE
+        pm.HERE = self.dir
 
-            def flaky(self, target):
-                seen["n"] += 1
-                if seen["n"] < 3:
-                    raise PermissionError(13, "Access is denied")
-                return real(self, target)
+    def tearDown(self):
+        self.pm.HERE = self.orig
+        self.tmp.cleanup()
 
-            pathlib.Path.replace = flaky
-            try:
-                landed = pm.write_state({"ok": True})
-            finally:
-                pathlib.Path.replace = real
-                pm.STATE = orig
+    def test_a_reader_holding_the_newest_state_cannot_block_the_next_write(self):
+        pm = self.pm
+        self.assertTrue(pm.write_state({"n": 1}))
+        newest = sorted(self.dir.glob("engine_state.*.json"))[-1]
+        with newest.open("rb") as held:      # a reader sits on the file
+            self.assertEqual(held.read(1)[:1], b"{")
+            self.assertTrue(pm.write_state({"n": 2}),
+                            "the writer must never touch the generation a reader holds")
+        self.assertEqual(len(list(self.dir.glob("engine_state.*.json"))), 2)
 
-            self.assertTrue(landed)
-            self.assertEqual(seen["n"], 3, "should give up after retrying, not on the first collision")
-            self.assertIn('"ok": true', (pathlib.Path(d) / "engine_state.json").read_text())
+    def test_old_generations_are_pruned_and_no_tmp_is_left(self):
+        pm = self.pm
+        for i in range(5):
+            self.assertTrue(pm.write_state({"n": i}))
+        self.assertLessEqual(len(list(self.dir.glob("engine_state.*.json"))), 2)
+        self.assertEqual(list(self.dir.glob("*.tmp")), [])
 
-    def test_a_lost_race_returns_false_and_leaves_no_tmp(self):
-        """A missed publish is self-healing: next tick rewrites the same state.
-        It must not raise, and it must not leave a tmp file behind to wedge
-        the next attempt."""
-        import pathlib
-        import tempfile
+    def test_a_failed_rename_returns_false_without_leaving_a_tmp(self):
+        import os
 
-        import position_manager as pm
+        pm = self.pm
+        real = os.rename
 
-        with tempfile.TemporaryDirectory() as d:
-            orig, pm.STATE = pm.STATE, pathlib.Path(d) / "engine_state.json"
-            real = pathlib.Path.replace
+        def denied(*a, **k):
+            raise PermissionError(13, "Access is denied")
 
-            def never(self, target):
-                raise PermissionError(13, "Access is denied")
-
-            pathlib.Path.replace = never
-            try:
-                landed = pm.write_state({"ok": True}, attempts=3, delay=0)
-            finally:
-                pathlib.Path.replace = real
-                pm.STATE = orig
-
-            self.assertFalse(landed)
-            self.assertEqual(list(pathlib.Path(d).iterdir()), [], "tmp file must be cleaned up")
+        os.rename = denied
+        try:
+            self.assertFalse(pm.write_state({"n": 1}))
+        finally:
+            os.rename = real
+        self.assertEqual(list(self.dir.glob("*.tmp")), [])
 
 
 class TestApplyGuard(unittest.TestCase):
