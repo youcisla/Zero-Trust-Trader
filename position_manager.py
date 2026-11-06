@@ -236,25 +236,31 @@ def run_once(cfg: Cfg, apply: bool, close_at: str | None) -> dict:
         mt5.shutdown()
 
 
-def write_state(doc: dict, attempts: int = 6) -> None:
-    """Publish state for the dashboard.
+def write_state(doc: dict, attempts: int = 20, delay: float = 0.05) -> bool:
+    """Publish state for the dashboard. Returns whether it landed.
 
-    The replace is retried: on Windows os.replace fails with WinError 5 while
-    another process holds the destination open, and the dashboard polls this
-    file once a second. Losing that race used to kill the supervisor outright,
-    which is the wrong failure mode - a monitoring problem must never stop the
-    thing being monitored.
+    On Windows os.replace fails with WinError 5 while another process holds the
+    destination open, and the dashboard polls this file once a second. Losing
+    that race used to kill the supervisor outright - a monitoring problem must
+    never stop the thing being monitored.
+
+    A miss is now self-healing rather than fatal: the next tick rewrites the
+    same state about five seconds later, and the UI already reports its own
+    staleness instead of inventing numbers. 20 x 50ms covers the window where a
+    scheduled scan saturates the disk; the old 6 x 50ms did not, which is why a
+    write failed at 10:13 exactly as the funnel started.
     """
-    tmp = STATE.with_suffix(".tmp")
+    tmp = STATE.with_suffix(f".{os.getpid()}.tmp")
     tmp.write_text(json.dumps(doc, indent=2) + "\n", encoding="utf-8")
     for i in range(attempts):
         try:
             tmp.replace(STATE)
-            return
+            return True
         except PermissionError:
-            if i == attempts - 1:
-                raise
-            time.sleep(0.05)
+            if i < attempts - 1:
+                time.sleep(delay)
+    tmp.unlink(missing_ok=True)
+    return False
 
 
 def log_line(text: str) -> None:
@@ -291,6 +297,7 @@ def main() -> int:
              f"session-close={a.session_close}")
 
     last_error = None
+    state_stalled = False
     try:
         while True:
             # Refresh the lock every tick. It used to be written once and then
@@ -299,10 +306,20 @@ def main() -> int:
             LOCK.write_text(str(time.time()))
             doc = run_once(cfg, a.apply, a.session_close)
             try:
-                write_state(doc)
+                published = write_state(doc)
             except OSError as e:
                 # Monitoring is allowed to fail; supervision is not.
-                log_line(f"STATE WRITE FAILED {e}")
+                published = False
+                if not state_stalled:
+                    log_line(f"STATE WRITE FAILED {e}")
+            if not published:
+                if not state_stalled:
+                    state_stalled = True
+                    log_line("STATE WRITE deferred - engine_state.json is held open; "
+                             "retrying next tick")
+            elif state_stalled:
+                state_stalled = False
+                log_line("STATE WRITE recovered")
             if not doc.get("ok"):
                 err = str(doc.get("error"))
                 # One line per state change, not one per tick. A failing

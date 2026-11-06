@@ -179,13 +179,40 @@ class TestStateWrite(unittest.TestCase):
 
             pathlib.Path.replace = flaky
             try:
-                pm.write_state({"ok": True})
+                landed = pm.write_state({"ok": True})
             finally:
                 pathlib.Path.replace = real
                 pm.STATE = orig
 
+            self.assertTrue(landed)
             self.assertEqual(seen["n"], 3, "should give up after retrying, not on the first collision")
             self.assertIn('"ok": true', (pathlib.Path(d) / "engine_state.json").read_text())
+
+    def test_a_lost_race_returns_false_and_leaves_no_tmp(self):
+        """A missed publish is self-healing: next tick rewrites the same state.
+        It must not raise, and it must not leave a tmp file behind to wedge
+        the next attempt."""
+        import pathlib
+        import tempfile
+
+        import position_manager as pm
+
+        with tempfile.TemporaryDirectory() as d:
+            orig, pm.STATE = pm.STATE, pathlib.Path(d) / "engine_state.json"
+            real = pathlib.Path.replace
+
+            def never(self, target):
+                raise PermissionError(13, "Access is denied")
+
+            pathlib.Path.replace = never
+            try:
+                landed = pm.write_state({"ok": True}, attempts=3, delay=0)
+            finally:
+                pathlib.Path.replace = real
+                pm.STATE = orig
+
+            self.assertFalse(landed)
+            self.assertEqual(list(pathlib.Path(d).iterdir()), [], "tmp file must be cleaned up")
 
 
 class TestApplyGuard(unittest.TestCase):
