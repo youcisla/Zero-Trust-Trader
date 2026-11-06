@@ -119,6 +119,10 @@ def main() -> int:
                     help="locked at 1000: other values are rejected, never clamped")
     ap.add_argument("--corr-max", type=float, default=0.7)
     ap.add_argument("--seed", type=int, default=19)
+    ap.add_argument("--t-gate", action="store_true",
+                    help="gate on the mean-R t instead of the win-rate z. p0=1/(1+rr) "
+                         "needs a fixed target; the live exit policy books none, so the "
+                         "binomial only measures who lost more slowly.")
     ap.add_argument("--donchian", type=int, default=20)
     # Must match tier2's --ema-fast/--ema-slow: the trend gate is part of the
     # rule being tested, so the backtest cannot use a different one.
@@ -178,7 +182,7 @@ def main() -> int:
                          # test the side Tier 2 actually proposes, not both
                          row.get("side", "both"),
                          a.bars, a.replays, a.seed, 2, 1500, trials,
-                         a.permutations, a.session_close)
+                         a.permutations, a.session_close, a.t_gate)
         if doc is None:
             print(f"{label}: no setups fired — skipped")
             continue
@@ -188,7 +192,9 @@ def main() -> int:
         h, s, pm = doc["history"], doc["significance"], doc["permutation"] or {}
         ok = s["passes_corrected"] and pm.get("passes", False)
         print(f"{label:22} n={h['occurrences']:>4} win {h['win_rate']:6.1%} "
-              f"z {s['z']:+6.2f}/{zc:.2f} p={pm.get('p_value', float('nan')):.4f} "
+              f"{(s.get('gate') or 'z')} "
+              f"{(s['t_stat_R'] if s.get('gate') == 't' else s['z']):+6.2f}/{zc:.2f} "
+              f"p={pm.get('p_value', float('nan')):.4f} "
               f"avgR {h['avg_R']:+.3f} maxDD {h['max_drawdown_R']:+7.2f}R  "
               f"{'PASS' if ok else 'fail'}")
 

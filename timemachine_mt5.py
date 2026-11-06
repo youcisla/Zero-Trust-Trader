@@ -15,9 +15,12 @@ Kept from the original:
   * the verdict: target share of decided trades vs break-even 1/(1+R).
 
 Added:
-  * z-score of the win rate against break-even, and a t-statistic on mean R.
-    The z is the number the funnel gates on; the t is the cross-check, because
-    a win-rate proportion ignores the size of the undecided trades.
+  * z-score of the win rate against break-even, and a one-sample t on mean R.
+    Exactly one of them gates. The z measures a proportion against a break-even
+    that only exists when a fixed +rr target is booked, so under the live exit
+    policy (trail, break-even, session close, no target) it degenerates into
+    "lost slower than random". `use_t` switches the gate to the t, which needs
+    no target — see significance().
   * Bonferroni-corrected critical value, because scanning N symbols and keeping
     the best is exactly what inflates a nominal 1.96 into noise.
 
@@ -371,19 +374,46 @@ def max_drawdown(rs) -> float:
     return round(dd, 3)
 
 
-def significance(win_rate: float, n_decided: int, rr: float, rs, n_tests: int) -> dict:
-    """Two gates: z on the win-rate proportion, t on the mean R."""
+def _t_from(rs) -> float:
+    """One-sample t on mean R (0.0 when there is nothing to test).
+
+    The only edge statistic that survives an exit policy with no fixed target.
+    """
+    if len(rs) < 3:
+        return 0.0
+    # Coerce: R comes from numpy scalars, and statistics.mean/stdev preserve
+    # np.float64. That leaks numpy bools into passes_* and breaks json.dumps
+    # of the document (the --json path).
+    rs = [float(x) for x in rs]
+    sd = statistics.stdev(rs)
+    return statistics.mean(rs) / (sd / math.sqrt(len(rs))) if sd else 0.0
+
+
+def significance(win_rate: float, n_decided: int, rr: float, rs, n_tests: int,
+                 use_t: bool = False) -> dict:
+    """Two statistics on one trade series. Exactly one of them gates.
+
+    z benchmarks the win rate against p0 = 1/(1+rr). That break-even only
+    exists when a fixed +rr target is booked, so under the live exit policy it
+    is a phantom: trailing exits push every trade below p0, winners included,
+    and a strategy can score a *positive* z merely by losing more slowly than
+    the null.
+
+    `use_t` switches the gate to the t on mean R and REPLACES the binomial
+    check rather than AND-ing with it. AND would reject exactly the
+    low-win/high-R profile the t exists to admit, while the t alone already
+    rejects the 45%-tiny-scratch / 55%-full-stop shape (negative mean R).
+    """
     p0 = 1.0 / (1.0 + rr)
     se = math.sqrt(p0 * (1.0 - p0) / n_decided) if n_decided else 0.0
     z = (win_rate - p0) / se if se else 0.0
-    t = 0.0
-    if len(rs) > 2:
-        sd = statistics.stdev(rs)
-        t = statistics.mean(rs) / (sd / math.sqrt(len(rs))) if sd else 0.0
+    t = _t_from(rs)
     zc = bonferroni_z(n_tests)
+    gate = t if use_t else z
     return {"break_even": round(p0, 4), "z": round(z, 3), "z_crit_naive": 1.96,
             "z_crit_bonferroni": zc, "n_tests": n_tests,
-            "passes_naive": z > 1.96, "passes_corrected": z > zc,
+            "gate": "t" if use_t else "z",
+            "passes_naive": gate > 1.96, "passes_corrected": gate > zc,
             "t_stat_R": round(t, 3)}
 
 
@@ -471,7 +501,7 @@ def _z_from(trades, rr: float, p0: float) -> float:
 
 def permutation_test(bars, trades, k_atr, rr, horizon, permutations=1000, seed=19,
                      spread: float = 0.0, close_utc: str | None = None,
-                     live_exits: bool = True) -> dict | None:
+                     live_exits: bool = True, use_t: bool = False) -> dict | None:
     """Random-entry permutation null for the strategy's z-score.
 
     Why not "shuffle the returns": the statistic is a function of the mean and
@@ -487,6 +517,15 @@ def permutation_test(bars, trades, k_atr, rr, horizon, permutations=1000, seed=1
     together) that the analytic z assumes away.
 
     p = (ge + 1) / (permutations + 1) — the add-one form, so p is never 0.
+
+    `passes` also requires the observation to be profitable (statistic > 0).
+    Without that guard the test only asks "did you lose more slowly than random
+    entries?", which a -0.67R strategy answers yes: measured on EURNZD M15 it
+    returned p = 0.0233 with an average of -0.670R per trade.
+
+    `use_t` scores the null on the mean-R t instead of the win-rate z, for the
+    same reason significance() offers it: under the live exit policy there is
+    no +rr target, so p0 is unreachable and the binomial degenerates.
     """
     c = bars["c"].tolist()
     n_bars = len(c)
@@ -496,7 +535,8 @@ def permutation_test(bars, trades, k_atr, rr, horizon, permutations=1000, seed=1
     if k < 20:
         return None
     p0 = 1.0 / (1.0 + rr)
-    actual = _z_from(trades, rr, p0)
+    actual = (_t_from([t["R"] for t in trades]) if use_t
+              else _z_from(trades, rr, p0))
 
     lo_i, hi_i = 20, n_bars - horizon - 2
     if hi_i - lo_i < 50:
@@ -533,26 +573,28 @@ def permutation_test(bars, trades, k_atr, rr, horizon, permutations=1000, seed=1
                 r = (rr if outcome == "target"
                      else -1.0 if outcome == "stop" else gross)
             perm.append({"outcome": outcome or "neither", "R": r})
-        z = _z_from(perm, rr, p0)
-        zs.append(z)
-        if z >= actual:
+        stat = (_t_from([p["R"] for p in perm]) if use_t
+                else _z_from(perm, rr, p0))
+        zs.append(stat)
+        if stat >= actual:
             ge += 1
 
     zs.sort()
     return {
         "permutations": permutations,
+        "statistic": "t" if use_t else "z",
         "actual_z": round(actual, 3),
         "null_z_mean": round(statistics.mean(zs), 3),
         "null_z_p95": round(zs[min(len(zs) - 1, int(0.95 * len(zs)))], 3),
         "p_value": round((ge + 1) / (permutations + 1), 4),
-        "passes": (ge + 1) / (permutations + 1) < 0.05,
+        "passes": actual > 0 and (ge + 1) / (permutations + 1) < 0.05,
     }
 
 
 def analyse(symbol, tf="H1", strategy="donchian", don_n=20, ema_fast=50, ema_slow=200,
             atr_k=1.5, rr=1.5, horizon=None, sides="both", bars_n=5000,
             replays=10000, seed=19, window=2, pool_bars=1500, n_tests=1,
-            permutations=0, close_utc=None) -> dict | None:
+            permutations=0, close_utc=None, use_t: bool = False) -> dict | None:
     """Full Time Machine for one symbol. Returns None when there is nothing to say."""
     if horizon is None:
         horizon = HORIZON_DEFAULT[tf]
@@ -603,7 +645,7 @@ def analyse(symbol, tf="H1", strategy="donchian", don_n=20, ema_fast=50, ema_slo
 
     rs = [t["R"] for t in trades]
     win = sum(1 for r in rs if r > 0) / len(rs) if rs else 0.0
-    sig = significance(win, len(rs), rr, rs, n_tests)
+    sig = significance(win, len(rs), rr, rs, n_tests, use_t=use_t)
 
     a = md.atr(bars["h"], bars["l"], bars["c"], 14)
     atr_now = float(a[-1]) if not math.isnan(a[-1]) else float("nan")
@@ -634,7 +676,7 @@ def analyse(symbol, tf="H1", strategy="donchian", don_n=20, ema_fast=50, ema_slo
     mc = simulate(pool, ref, stop, target, start_slot, horizon, rr, replays, seed, window, side, tf)
 
     perm = (permutation_test(bars, trades, atr_k, rr, horizon, permutations, seed,
-                             spread_px, close_utc, live_exits=True)
+                             spread_px, close_utc, live_exits=True, use_t=use_t)
             if permutations else None)
 
     return {
@@ -692,12 +734,17 @@ def main() -> int:
     ap.add_argument("--window", type=int, default=2)
     ap.add_argument("--pool-bars", type=int, default=1500)
     ap.add_argument("--trials", type=int, default=1, help="independent tests tried (botlab DSR / Bonferroni)")
+    ap.add_argument("--permutations", type=int, default=0,
+                    help="random-entry permutations (0 = skip the null)")
+    ap.add_argument("--t-gate", action="store_true",
+                    help="gate on the mean-R t instead of the win-rate z "
+                         "(required under trailing exits: p0 has no target to hit)")
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args()
 
     doc = analyse(a.symbol, a.timeframe, a.strategy, a.donchian, a.ema_fast, a.ema_slow,
                   a.atr_k, a.rr, a.horizon, a.sides, a.bars, a.replays, a.seed,
-                  a.window, a.pool_bars, a.trials)
+                  a.window, a.pool_bars, a.trials, a.permutations, None, a.t_gate)
     if doc is None:
         print(f"{a.symbol}: no setups or no data", file=sys.stderr)
         return 1
