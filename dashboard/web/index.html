@@ -51,6 +51,73 @@
   a.pill:hover{border-color:var(--ink)}
   .scrollx{overflow-x:auto}
 
+  /* ---- pipeline canvas: fixed pitch, so the wires never need measuring ---- */
+  .pipewrap{overflow-x:auto;overflow-y:hidden;padding:var(--s4);
+    background-image:radial-gradient(#252f3d 1px,transparent 1px);background-size:16px 16px;
+    border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .track{position:relative;display:flex;gap:40px;width:max-content;height:168px;padding-right:8px}
+  .wires{position:absolute;left:0;top:0;pointer-events:none}
+  .wire{fill:none;stroke:var(--line);stroke-width:2}
+  .wire.on{stroke:var(--good);stroke-dasharray:5 5;animation:flow .9s linear infinite}
+  @keyframes flow{to{stroke-dashoffset:-10}}
+  @media (prefers-reduced-motion:reduce){.wire.on{animation:none}}
+  .stop{position:absolute;transform:translate(-50%,-50%);z-index:3;pointer-events:none;
+    font-size:9px;letter-spacing:.01em;padding:2px 5px;border-radius:999px;
+    background:#1b2028;border:1px solid rgba(210,153,34,.45);color:var(--warn);white-space:nowrap}
+  .node{position:relative;width:190px;flex:0 0 190px;background:#101820;border:1px solid var(--line);
+    border-left:3px solid var(--faint);border-radius:10px;padding:10px 11px;cursor:pointer;
+    display:flex;flex-direction:column;gap:6px;text-align:left;font:inherit;color:inherit}
+  .node:hover{border-color:#2c3947;border-left-color:var(--dim)}
+  .node:focus-visible{outline:2px solid var(--warn);outline-offset:2px}
+  .node.good{border-left-color:var(--good)} .node.warn{border-left-color:var(--warn)}
+  .node.bad{border-left-color:var(--bad)}  .node.dim{border-left-color:#39424f}
+  .node.sel{box-shadow:0 0 0 2px rgba(210,153,34,.5)}
+  .node::before,.node::after{content:"";position:absolute;top:50%;width:8px;height:8px;margin-top:-4px;
+    border-radius:50%;background:#0a0c0f;border:1px solid #39424f}
+  .node::before{left:-6px} .node::after{right:-6px}
+  .nh{display:flex;align-items:baseline;gap:6px;font-size:12px;line-height:1.25}
+  .nh b{font-weight:600}
+  .idx{font-size:9px;color:var(--faint);border:1px solid var(--line);border-radius:4px;padding:0 3px}
+  .nsub{font-size:11px;color:var(--dim)}
+  .npills{display:flex;flex-wrap:wrap;gap:4px;margin-top:auto}
+  .np{font-size:10px;color:var(--dim);background:#0d1319;border:1px solid var(--line);border-radius:5px;padding:1px 5px}
+  .np b{font-weight:600;color:var(--ink)}
+  .nbar{height:4px;border-radius:2px;background:#0d1319;overflow:hidden}
+  .nbar span{display:block;height:100%;background:var(--dim)}
+  .insp{padding:var(--s4);display:flex;flex-direction:column;gap:var(--s3)}
+  .inshead{display:flex;align-items:baseline;gap:var(--s2);font-size:12px;color:var(--dim)}
+  .inshead b{color:var(--ink);font-size:13px}
+  .sched{position:relative;height:56px;border-radius:6px;background:#0d1319;border:1px solid var(--line)}
+  .band{position:absolute;top:0;bottom:0;border-right:1px solid var(--line)}
+  .band.on{background:rgba(63,185,80,.07)}
+  .band b{position:absolute;top:5px;left:5px;font-size:10px;color:var(--faint);font-weight:500}
+  .band i{position:absolute;bottom:4px;left:5px;font-size:9px;font-style:normal;color:var(--faint)}
+  .nowline{position:absolute;top:0;bottom:0;width:2px;background:var(--good)}
+  .nowline b{position:absolute;top:-2px;left:4px;font-size:9px;color:var(--good);font-weight:600}
+  .conv{display:flex;flex-direction:column;gap:5px}
+  .convrow{display:grid;grid-template-columns:130px 1fr 52px;align-items:center;gap:8px;font-size:11px}
+  .convrow i{font-style:normal;color:var(--dim)}
+  .convbar{height:8px;border-radius:4px;background:#0d1319;overflow:hidden}
+  .convbar span{display:block;height:100%;background:var(--dim)}
+  .gates{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:10px}
+  .gate{border:1px solid var(--line);border-radius:8px;padding:10px;background:#0d1319;font-size:11px}
+  .gate h4{margin:0 0 4px;font-size:12px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .gauge{position:relative;height:10px;border-radius:5px;background:#131a22;margin:12px 0 5px;
+    border:1px solid var(--line)}
+  .gauge span{position:absolute;top:1px;bottom:1px;background:var(--bad);border-radius:5px}
+  .gauge span.ok{background:var(--good)}
+  .gauge u{position:absolute;top:-4px;bottom:-4px;width:1px;background:var(--faint);text-decoration:none}
+  .glegend{display:flex;justify-content:space-between;font-size:10px;color:var(--faint)}
+  .tel{display:flex;align-items:flex-end;gap:3px;height:64px}
+  .tel div{flex:1;background:var(--dim);border-radius:2px 2px 0 0;min-height:2px;position:relative}
+  .tel div.hit{background:var(--warn)}
+  .telcap{display:flex;justify-content:space-between;font-size:10px;color:var(--faint)}
+  .rules{display:flex;flex-direction:column;gap:6px;font-size:11px;color:var(--dim)}
+  .rules b{color:var(--ink)}
+  .badge{font-size:10px;border-radius:5px;padding:1px 6px;border:1px solid var(--line);color:var(--dim)}
+  .badge.pass{color:var(--good);border-color:rgba(63,185,80,.45)}
+  .badge.rej{color:var(--bad);border-color:rgba(248,81,73,.45)}
+
   /* flex-wrap lets the error pills push the header onto a second row; without
      this the equity lands alone at the far left of that row. */
   .equity{display:flex;align-items:baseline;gap:6px;margin-left:auto}
@@ -210,6 +277,251 @@ function LogPane({lines, empty, missing, raw}) {
       className=${lineClass(l) + (healthy >= 0 && i > healthy && isError(l) ? " l-past" : "")}>${l}</div>`)}</div>`;
 }
 
+// ---- pipeline: n8n-style stage graph -----------------------------------
+// 40px gap keeps six nodes inside a 1440px card (6*190 + 5*40 = 1340).
+const NODE_W = 190, NODE_GAP = 40, NODE_H = 168, PITCH = NODE_W + NODE_GAP;
+const pct = (a, b) => (a == null || !b ? 0 : Math.max(0, Math.min(100, (a / b) * 100))) + "%";
+const pick = (...v) => { for (const x of v) if (x !== null && x !== undefined) return x; return null; };
+const nowUtcHours = () => { const d = new Date(); return d.getUTCHours() + d.getUTCMinutes() / 60; };
+
+// ponytail: mirrors run_funnel.SESSION_MATRIX. Every ledger row prints
+// strategies=N, so a drift between this table and the runner shows up on screen
+// as a mismatch rather than staying invisible.
+const sessionNow = () => {
+  const h = nowUtcHours();
+  const fams = h < 5 || h >= 17 ? []
+    : h < 8 ? ["donchian"] : h < 13 ? ["donchian", "bollinger"] : ["donchian", "bollinger", "rsi"];
+  return { h, open: fams.length > 0, fams };
+};
+
+// The ledger line is the fallback when tier2/tier3 are absent (most of the day).
+const FUNNEL_RE = /^(\S+) \| universe=(\d+) tested=(\d+) strategies=(\d+) total_tests=(\d+) triggering=(\d+) deduped=(\d+) shortlist=(\d+) passed_both=(\d+) trials=(\d+) cumulative=(\d+)(?: permutations=(\d+))? \| (\w+)/;
+function lastFunnel(lines) {
+  for (const l of [...(lines || [])].reverse()) {
+    const m = FUNNEL_RE.exec(l);
+    if (m) return { ts: m[1], universe: +m[2], tested: +m[3], strategies: +m[4], total_tests: +m[5],
+      triggering: +m[6], deduped: +m[7], shortlist: +m[8], passed: +m[9], trials: +m[10],
+      cumulative: +m[11], permutations: m[12] ? +m[12] : null, verdict: m[13] };
+  }
+  return null;
+}
+const jsonLines = (lines) => (lines || []).map((l) => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean);
+
+function pipeline(d) {
+  const t2 = d && d.tier2 && d.tier2.symbols_in !== undefined ? d.tier2 : null;
+  const t3 = d && d.tier3 && d.tier3.results !== undefined ? d.tier3 : null;
+  const f = lastFunnel(d && d.funnel);
+  const x = {
+    in: pick(t2 && t2.symbols_in, f && f.universe),
+    fresh: pick(t2 && t2.symbols_tested, f && f.tested),
+    fams: pick(t2 && t2.strategies_tested, f && f.strategies),
+    tests: pick(t2 && t2.total_tests, f && f.total_tests),
+    trig: pick(t2 && t2.triggering, f && f.triggering),
+    ded: t2 ? (t2.deduped || []).length : (f ? f.deduped : null),
+    short: t2 ? (t2.top || []).length : (f ? f.shortlist : null),
+    passed: t3 ? (t3.passed_both_gates || []).length : (f ? f.passed : null),
+    cum: pick(t3 && t3.trials_cumulative, f && f.cumulative),
+    zc: t3 && t3.z_crit_corrected,
+    perms: pick(t3 && t3.permutations, f && f.permutations),
+    t2, t3, f, s: sessionNow(),
+  };
+  x.stale = x.in != null && x.fresh != null ? Math.max(0, x.in - x.fresh) : null;
+  x.empty = !t2 && !t3 && !f;
+  return x;
+}
+
+function NodeCard({ n, i, sel, on }) {
+  return html`<button className=${"node " + n.state + (sel ? " sel" : "")} onClick=${() => on(i)}
+      aria-pressed=${String(sel)} title=${n.title + " — click for detail"}>
+    <div className="nh"><span className="idx">${i + 1}</span><b>${n.title}</b></div>
+    <div className="nsub">${n.sub}</div>
+    ${n.bar ? html`<div className="nbar"><span style=${{ width: n.bar }}></span></div>` : null}
+    <div className="npills">${n.pills.map(([k, v]) => html`<span className="np" key=${k}>${k}<b> ${v}</b></span>`)}</div>
+  </button>`;
+}
+
+function SessionPanel({ x }) {
+  const h = x.s.h;
+  const left = (hh) => ((hh - 5) / 12) * 100;
+  return html`<div className="insp">
+    <div className="sched">
+      ${[[5, 8, "05:00–08:00", 1], [8, 13, "08:00–13:00", 2], [13, 17, "13:00–17:00", 3]].map(([a, b, label, f]) => html`
+        <div key=${label} className=${"band" + (h >= a && h < b ? " on" : "")}
+             style=${{ left: left(a) + "%", width: ((b - a) / 12 * 100) + "%" }}>
+          <b>${label}</b><i>${f} famil${f === 1 ? "y" : "ies"}</i>
+        </div>`)}
+      ${h >= 5 && h < 17 ? html`<div className="nowline" style=${{ left: left(h) + "%" }}><b>now</b></div>` : null}
+    </div>
+    <div className="conv">
+      <div className="convrow"><i>fresh (≤45 min)</i>
+        <div className="convbar"><span style=${{ width: pct(x.fresh, x.in), background: "var(--good)" }}></span></div>
+        <b className="mono">${x.fresh ?? "—"}</b></div>
+      <div className="convrow"><i>stale skipped</i>
+        <div className="convbar"><span style=${{ width: pct(x.stale, x.in), background: "var(--warn)" }}></span></div>
+        <b className="mono">${x.stale ?? "—"}</b></div>
+      <div className="convrow"><i>symbols in universe</i>
+        <div className="convbar"><span style=${{ width: "100%" }}></span></div>
+        <b className="mono">${x.in ?? "—"}</b></div>
+    </div>
+  </div>`;
+}
+
+function Tier2Panel({ x }) {
+  const t2 = x.t2 || {};
+  const top = t2.top || [];
+  const dropped = t2.deduped || [];
+  const rows = [["universe", x.in], ["fresh", x.fresh], ["triggering", x.trig],
+                ["after ρ dedupe", x.short], ["shortlist", x.short]];
+  const base = x.in || 1;
+  return html`<div className="insp">
+    <div className="conv">
+      ${rows.map(([label, v], k) => html`<div className="convrow" key=${label}>
+        <i>${label}</i>
+        <div className="convbar"><span style=${{ width: pct(v, base), background: k === 3 || k === 4 ? "var(--warn)" : "var(--dim)" }}></span></div>
+        <b className="mono">${v ?? "—"}</b></div>`)}
+    </div>
+    ${t2.per_family ? html`<div className="npills">${Object.entries(t2.per_family).map(([k, v]) =>
+        html`<span className="np" key=${k}>${k}<b> ${v}</b></span>`)}</div>` : null}
+    ${top.length ? html`<div className="conv">
+      ${top.map((c, k) => html`<div className="convrow" key=${c.symbol + k}>
+        <i>${c.symbol} · ${c.strategy}</i>
+        <div className="convbar"><span style=${{ width: pct(c.score, 1) }}></span></div>
+        <b className="mono">${c.side || ""} ${(c.score ?? 0).toFixed(2)}</b></div>`)}
+    </div>` : html`<div className="empty">No candidate survived to the shortlist this scan.</div>`}
+    ${dropped.length ? html`<div className="rules">
+      ${dropped.map((c, k) => html`<div key=${k}>dropped <b>${c.symbol} ${c.strategy}</b>
+        — |ρ| ${c.correlation} against a stronger hit</div>`)}
+    </div>` : null}
+  </div>`;
+}
+
+function Gate({ r }) {
+  const s = r.significance || {}, p = r.permutation || {}, h = r.history || {};
+  const useT = s.gate === "t";
+  const stat = useT ? s.t_stat_R : s.z;
+  const zc = s.z_crit_bonferroni || 4.5;
+  const span = Math.max(5, zc * 1.6);
+  const at = (v) => Math.max(0, Math.min(100, ((v + span) / (2 * span)) * 100));
+  const statPct = stat == null ? 50 : at(stat);
+  const pv = p.p_value;
+  const pass1 = Boolean(s.passes_corrected), pass2 = Boolean(p.passes);
+  const side = (r.tier2 && r.tier2.side) || "—";
+  const statLabel = (useT ? "t_stat_R " : "z ") + (stat == null ? "—" : stat.toFixed(2));
+  const winLabel = h.win_rate == null ? "—" : (h.win_rate * 100).toFixed(1) + "%";
+  const avgLabel = h.avg_R == null ? "—" : h.avg_R.toFixed(2);
+  const ddLabel = h.max_drawdown_R == null ? "—" : h.max_drawdown_R.toFixed(0) + "R";
+  const pLabel = pv == null ? "—" : pv.toFixed(4);
+  const nullLabel = p.null_z_mean == null ? "—" : p.null_z_mean.toFixed(2);
+  const bar1 = { left: Math.min(50, statPct) + "%", width: Math.abs(statPct - 50) + "%",
+                 background: pass1 ? "var(--good)" : "var(--bad)" };
+  const bar2 = { left: "0%", width: (pv == null ? 0 : Math.max(0, Math.min(1, pv)) * 100) + "%" };
+  const left196 = { left: at(1.96) + "%" }, leftZc = { left: at(zc) + "%" }, left05 = { left: "5%" };
+  return html`<div className="gate">
+    <h4>${r.symbol} <span className="badge">${r.strategy}</span>
+      <span className=${"badge " + (side === "short" ? "rej" : "pass")}>${side}</span>
+      <span className=${"badge " + (pass1 ? "pass" : "rej")}>gate 1 ${pass1 ? "PASS" : "REJECT"}</span>
+      <span className=${"badge " + (pass2 ? "pass" : "rej")}>gate 2 ${pass2 ? "PASS" : "REJECT"}</span></h4>
+    <div className="glegend"><span>${statLabel}</span><span>naive 1.96 · corrected ${zc}</span></div>
+    <div className="gauge"><span style=${bar1}></span><u style=${left196}></u><u style=${leftZc}></u></div>
+    <div className="glegend"><span>n=${h.n_decided ?? "—"} · win ${winLabel} · avgR ${avgLabel}</span>
+      <span>DD ${ddLabel}</span></div>
+    <div className="glegend"><span>permutation p ${pLabel}</span><span>null ${nullLabel}</span></div>
+    <div className="gauge"><span style=${bar2}></span><u style=${left05}></u></div>
+    <div className="glegend"><span>0</span><span>threshold 0.05</span><span>1</span></div>
+  </div>`;
+}
+
+function Tier3Panel({ x }) {
+  const r = (x.t3 && x.t3.results) || [];
+  if (!r.length) return html`<div className="insp"><div className="empty">
+    ${x.f ? "No survivor reached the deep test this scan — the funnel stopped at Tier 2." : "No deep-test results on disk."}</div></div>`;
+  return html`<div className="insp"><div className="gates">${r.slice(0, 8).map((c, k) => html`<${Gate} r=${c} key=${c.symbol + k} />`)}</div></div>`;
+}
+
+function VerdictPanel({ x, data }) {
+  const rows = (data && data.funnel) || [];
+  const tail = rows.slice(-12);
+  const dur = jsonLines(data && data.mcp).slice(-12);
+  const tested = tail.map((l) => { const m = FUNNEL_RE.exec(l); return m ? +m[3] : null; });
+  const hits = tail.map((l) => { const m = FUNNEL_RE.exec(l); return m ? +m[6] : 0; });
+  const max = Math.max(1, ...tested.filter((v) => v != null));
+  return html`<div className="insp">
+    <div className="rules">
+      <div><b>Order path</b> — human types APPROVED, then the bridge issues a single-use token. No endpoint on this page can place, modify or close anything.</div>
+      <div><b>Caps</b> — 0.01 lot per trade · demo server required by pre-flight · AutoTrading stays off.</div>
+      <div><b>Verdict</b> — ${x.passed > 0 ? (x.t3 && x.t3.survivors || []).map((s) => s.symbol).join(", ") || "proposal pending" : "STAND DOWN — no candidate cleared both gates."}</div>
+      <div><b>Supervisor</b> — ${data && data.engine ? (data.positions ? data.positions + " open, trailing" : "flat, holding") : "no engine state"}
+        · trails stops and closes at 17:00Z.</div>
+    </div>
+    <div className="telcap"><span>last ${tail.length} scans · bars = symbols tested · amber = triggering</span>
+      <span>${dur.length ? "dur " + dur[dur.length - 1].dur_s + "s" : ""}</span></div>
+    <div className="tel">
+      ${tested.map((v, k) => html`<div key=${k} className=${hits[k] ? "hit" : ""}
+        style=${{ height: (v == null ? 0 : (v / max) * 100) + "%" }}
+        title=${v == null ? "unparsed" : v + " tested"}></div>`)}
+    </div>
+    <div className="telcap"><span>oldest</span><span>newest</span></div>
+  </div>`;
+}
+
+function Inspect({ i, x, data }) {
+  if (i < 2) return html`<${SessionPanel} x=${x} />`;
+  if (i === 2) return html`<${Tier2Panel} x=${x} />`;
+  if (i === 3) return html`<${Tier3Panel} x=${x} />`;
+  return html`<${VerdictPanel} x=${x} data=${data} />`;
+}
+
+function Pipe({ data }) {
+  const [sel, setSel] = useState(3);
+  const x = pipeline(data);
+  const age = data && data.engine_age_s;
+  const hasEngine = Boolean(data && data.engine);
+  const stale = age != null && age > 30;
+  const n = (v, s) => (v == null ? "—" : v + (s || ""));
+  const nodes = [
+    { title: "Schedule & pre-flight", state: x.s.open ? "good" : "dim",
+      sub: x.s.open ? x.s.fams.length + "/3 families" : "off-window",
+      pills: [["session", x.s.open ? "open" : "closed"], ["fams", x.s.fams.length ? x.s.fams.join(" ") : "—"],
+              ["pin", data && data.server ? String(data.server).replace("PepperstoneUK-", "") : "—"]] },
+    { title: "Tier 1 · universe", state: x.fresh > 0 ? "good" : x.in > 0 ? "bad" : "dim",
+      sub: n(x.in, " symbols in"), bar: pct(x.fresh, x.in),
+      pills: [["fresh", n(x.fresh)], ["stale", n(x.stale)]] },
+    { title: "Tier 2 · matrix", state: x.trig > 0 ? "good" : x.tests > 0 ? "warn" : "dim",
+      sub: n(x.tests, " tests"), bar: pct(x.trig, x.tests),
+      pills: [["triggers", n(x.trig)], ["deduped", n(x.ded)], ["shortlist", n(x.short)]] },
+    { title: "Tier 3 · deep test", state: x.passed > 0 ? "good" : (x.t3 && x.t3.results && x.t3.results.length) || x.short > 0 ? "warn" : "dim",
+      sub: n(x.short, " in → ") + n(x.passed, " passed"), bar: pct(x.short, x.tests),
+      pills: [["gate", x.t3 && x.t3.results && x.t3.results[0] ? (x.t3.results[0].significance || {}).gate : "t"],
+              ["z_crit", x.zc == null ? "—" : x.zc.toFixed(3)], ["perm", n(x.perms)]] },
+    { title: "Verdict & consent", state: x.passed > 0 ? "good" : "warn",
+      sub: x.passed > 0 ? "proposal" : "STAND DOWN",
+      pills: [["lot cap", "0.01"], ["approval", "human"]] },
+    { title: "Supervisor", state: !hasEngine ? "bad" : stale ? "warn" : "good",
+      sub: !hasEngine ? "no engine state" : data.positions ? data.positions + " open" : "holding",
+      pills: [["age", age == null ? "—" : age + "s"], ["close", "17:00Z"]] },
+  ];
+  const flow = [x.s.open, x.fresh > 0, x.trig > 0, x.short > 0, x.passed > 0];
+  const W = nodes.length * NODE_W + (nodes.length - 1) * NODE_GAP;
+  const y = NODE_H / 2;
+  return html`<div>
+    <div className="pipewrap"><div className="track" style=${{ width: W + "px" }}>
+      <svg className="wires" width=${W} height=${NODE_H} viewBox=${"0 0 " + W + " " + NODE_H} aria-hidden="true">
+        ${flow.map((on, i) => {
+          const x1 = i * PITCH + NODE_W, x2 = (i + 1) * PITCH;
+          return html`<path key=${i} className=${"wire" + (on ? " on" : "")}
+            d=${"M " + x1 + " " + y + " C " + (x1 + 24) + " " + y + ", " + (x2 - 24) + " " + y + ", " + x2 + " " + y} />`;
+        })}
+      </svg>
+      ${flow.map((on, i) => on ? null : html`<span className="stop" key=${"s" + i}
+        style=${{ left: (i * PITCH + NODE_W + NODE_GAP / 2) + "px", top: y + "px" }}>
+        ${i === 0 && !x.s.open ? "off-window" : i === 1 ? "0 fresh" : i === 2 ? "0 triggers" : i === 3 ? "0 shortlist" : "0 passed"}</span>`)}
+      ${nodes.map((nd, i) => html`<${NodeCard} n=${nd} i=${i} key=${i} sel=${i === sel} on=${setSel} />`)}
+    </div></div>
+    ${x.empty ? html`<div className="insp"><div className="empty">No scan data — no funnel row, no tier2/tier3 artifact. The funnel has not run since this tree was written to.</div></div>`
+      : html`<${Inspect} i=${sel} x=${x} data=${data} />`}
+  </div>`;
+}
+
 function App() {
   const [data, setData] = useState(null);
   const [up, setUp] = useState(false);
@@ -307,6 +619,12 @@ function App() {
       <div className="note">${!hasEngine ? "no engine state"
         : `AutoTrading off · ${data?.engine?.applied ? "APPLY ENABLED" : "dry run"} · 0.01 lot cap`}</div>
     </div></section>
+
+    <${Card} title="Pipeline workflow" wide="tap12"
+      count=${data?.tier3?.generated_utc ? "tier3 · " + data.tier3.generated_utc
+        : data?.tier2?.generated_utc ? "tier2 · " + data.tier2.generated_utc : null}>
+      <${Pipe} data=${data} />
+    <//>
 
     <${Card} title="Positions" wide="tap12">
       ${positions.length

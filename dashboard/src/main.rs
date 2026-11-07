@@ -106,6 +106,15 @@ fn resolve_audit(root: &Path) -> Option<PathBuf> {
     .find(|p| !p.as_os_str().is_empty() && p.exists())
 }
 
+/// Null when the file is absent or mid-write: the snapshot must never fail
+/// because a producer was between `open()` and `write()`.
+fn read_json(path: &Path) -> Value {
+    std::fs::read_to_string(path)
+        .ok()
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or(Value::Null)
+}
+
 fn build(root: &Path) -> Value {
     let engine_path = newest_state(root);
     let engine: Value = std::fs::read_to_string(&engine_path)
@@ -130,10 +139,17 @@ fn build(root: &Path) -> Value {
 
     let mcp = resolve_audit(root).and_then(|p| tail(&p, TAIL));
 
+    // The two stage artifacts the funnel leaves behind. Absent outside a scan
+    // window, which is the normal state most of the day.
+    let tier2 = read_json(&root.join("tier2_candidates.json"));
+    let tier3 = read_json(&root.join("tier3_results.json"));
+
     json!({
         "ts": SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),
         "engine": engine,
         "engine_age_s": age_secs(&engine_path),
+        "tier2": tier2,
+        "tier3": tier3,
         "equity": equity,
         "balance": balance,
         "currency": currency,

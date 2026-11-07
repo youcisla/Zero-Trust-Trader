@@ -259,7 +259,7 @@ when launched from either the repo root or `dashboard/`.
 | --- | --- | --- |
 | `GET /` | read | the UI (single embedded HTML, React vendored — no CDN, no build step) |
 | `GET /api/snapshot` | read | one-shot state |
-| `GET /ws` | read | pushed updates, only when something changes |
+| `GET /ws` | read | updates on change, plus a 1 Hz heartbeat so `engine_age_s` keeps ticking |
 
 - **Never add** an endpoint, button, or socket message that places, modifies, or
   closes an order. If someone asks for one, the answer is no: execution goes
@@ -267,7 +267,9 @@ when launched from either the repo root or `dashboard/`.
 - **Never make the engine depend on the dashboard.** There is no IPC and no
   callback. The backend tails files the engine already writes:
   `engine_state.json`, `funnel_history.log`, `position_manager.log`,
-  `audit.jsonl`. Kill the dashboard and trading is unaffected; kill the engine
+  `audit.jsonl`, and — for the pipeline canvas — the two stage artifacts
+  `tier2_candidates.json` and `tier3_results.json` (absent outside a scan
+  window, which renders as unknown, not as zero). Kill the dashboard and trading is unaffected; kill the engine
   and the UI shows an amber age badge instead of inventing data.
 - **React is vendored** in `web/vendor/`. Do not swap it back to a CDN — that
   reintroduces an offline failure mode and an SRI hash to maintain.
