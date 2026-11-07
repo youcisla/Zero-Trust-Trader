@@ -28,7 +28,7 @@
   button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   button:focus-visible,a:focus-visible{outline:2px solid var(--warn);outline-offset:2px;border-radius:6px}
 
-  header{display:flex;align-items:center;gap:var(--s3);padding:var(--s3) var(--s5);
+  header{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s3);padding:var(--s3) var(--s5);
     border-bottom:1px solid var(--line);position:sticky;top:0;background:rgba(10,12,15,.92);
     backdrop-filter:blur(6px);z-index:5}
   .brand{display:flex;align-items:center;gap:var(--s2)}
@@ -47,8 +47,9 @@
   .pill.stale{color:var(--warn);border-color:rgba(210,153,34,.4)}
   .pill.tz{color:var(--faint);font-family:ui-monospace,"Cascadia Mono",Menlo,Consolas,monospace;
     letter-spacing:0}
-  a.pill{text-decoration:none;color:var(--fg)}
-  a.pill:hover{border-color:var(--fg)}
+  a.pill{text-decoration:none;color:var(--ink)}
+  a.pill:hover{border-color:var(--ink)}
+  .scrollx{overflow-x:auto}
 
   .equity{display:flex;align-items:baseline;gap:6px}
   .equity b{font-size:22px;font-weight:600;letter-spacing:-.015em}
@@ -115,10 +116,16 @@
 const {useState, useEffect, useCallback} = React;
 const html = htm.bind(React.createElement);
 
-const money = (v, c) =>
-  v === null || v === undefined ? "—"
-  : `${Number(v).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})} ${c||""}`.trim();
+const money = (v, c) => {
+  if (v === null || v === undefined) return "—";
+  // producer rounds to 2dp, so a sub-cent P&L arrives as -0.0 and would print
+  // "-0.00" while the row is coloured green by a >= 0 test. Collapse the dust.
+  const n = Math.abs(Number(v)) < 0.005 ? 0 : Number(v);
+  return `${n.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})} ${c||""}`.trim();
+};
 const num = (v, d=5) => v === null || v === undefined ? "—" : Number(v).toFixed(d);
+// Keep enough to recognise the account, not enough to leak it into a screenshot.
+const maskLogin = (l) => l ? "account •••" + String(l).slice(-3) : "waiting for supervisor";
 
 // Logs are written in UTC and must stay that way: the ledger is HMAC-chained
 // over its exact bytes, and a local timestamp in the file would break
@@ -135,7 +142,8 @@ const localize = (line) => String(line).replace(
     const at = new Date(`${date}T${time}Z`);
     if (Number.isNaN(at.getTime())) return `${date}T${time}Z`;
     const hms = clock.format(at);
-    return date === todayLocal() ? hms : `${date.slice(5)} ${hms}`;
+    const localDate = at.toLocaleDateString("sv-SE");
+    return localDate === todayLocal() ? hms : `${localDate.slice(5)} ${hms}`;
   });
 
 // Colour by meaning, not by position: a failure should be findable by eye in a
@@ -181,7 +189,10 @@ function Card({title, which, count, wide, children}) {
   </section>`;
 }
 
-function LogPane({lines, empty}) {
+function LogPane({lines, empty, missing}) {
+  // null (file absent) is not [] (file empty): the first is usually a wrong
+  // ZTT_ROOT and must not read as "nothing has happened yet".
+  if (lines === null) return html`<div className="empty">${missing || "Log file not found on disk — check ZTT_ROOT"}</div>`;
   if (!lines || !lines.length) return html`<div className="empty">${empty}</div>`;
   // Newest first: the last line is what is happening now. Oldest-first made a
   // fixed failure look current for as long as the tail window was full.
@@ -228,6 +239,7 @@ function App() {
   }, []);
 
   const age = data?.engine_age_s;
+  const hasEngine = Boolean(data?.engine);
   const stale = age !== null && age !== undefined && age > 30;
   const positions = data?.engine?.positions || [];
   const account = data?.engine?.account || {};
@@ -246,6 +258,7 @@ function App() {
       <span className="dot"></span>${up ? "live" : "disconnected"}
     </span>
     ${stale ? html`<span className="pill stale">engine ${age}s stale</span>` : null}
+    ${data && !hasEngine ? html`<span className="pill down">engine state missing</span>` : null}
     <span className="pill tz" title="Logs are stored in UTC; times are shown in your own zone">${TZ}</span>
     <a className="pill" href="/api/report/latest" target="_blank" rel="noopener"
        title="The newest per-scan report: every candidate, both gates, why each was rejected">last report ↗</a>
@@ -270,27 +283,29 @@ function App() {
 
     <section className="card tap4"><div className="tile">
       <div className="label">Open positions</div>
-      <div className="value mono">${data?.positions ?? 0}</div>
-      <div className="note">${positions.length ? "supervised" : "flat — funnel standing down"}</div>
+      <div className="value mono">${data?.positions ?? "—"}</div>
+      <div className="note">${!hasEngine ? "no engine state"
+        : positions.length ? "supervised" : "flat — funnel standing down"}</div>
     </div></section>
 
     <section className="card tap4"><div className="tile">
       <div className="label">Engine heartbeat</div>
-      <div className="value mono small" style=${{color: stale ? "var(--warn)" : "var(--good)"}}>
-        ${age === null || age === undefined ? "no data" : age + "s ago"}
+      <div className="value mono small"
+        style=${{color: !hasEngine ? "var(--bad)" : stale ? "var(--warn)" : "var(--good)"}}>
+        ${age === null || age === undefined ? "no engine state" : age + "s ago"}
       </div>
-      <div className="note">${account.login ? "account " + account.login : "waiting for supervisor"}</div>
+      <div className="note">${maskLogin(account.login)}</div>
     </div></section>
 
     <section className="card tap4"><div className="tile">
       <div className="label">Mode</div>
-      <div className="value small">${positions.length ? "supervising" : "holding"}</div>
-      <div className="note">AutoTrading off · dry run · 0.01 lot cap</div>
+      <div className="value small">${!hasEngine ? "unknown" : positions.length ? "supervising" : "holding"}</div>
+      <div className="note">AutoTrading off · ${data?.engine?.applied ? "APPLY ENABLED" : "dry run"} · 0.01 lot cap</div>
     </div></section>
 
     <${Card} title="Positions" wide="tap12">
       ${positions.length
-        ? html`<table>
+        ? html`<div className="scrollx"><table>
             <thead><tr><th>Symbol</th><th>Side</th><th>Lots</th><th>Entry</th><th>Price</th><th>Stop</th><th>P&L</th></tr></thead>
             <tbody>${positions.map(p => html`
               <tr key=${p.ticket}>
@@ -302,8 +317,9 @@ function App() {
                 <td className="mono">${p.sl ? num(p.sl) : "none"}</td>
                 <td className=${"mono " + ((p.profit ?? 0) >= 0 ? "pos" : "neg")}>${money(p.profit, data?.currency)}</td>
               </tr>`)}</tbody>
-          </table>`
-        : html`<div className="empty">Flat — no open positions. The funnel is standing down.</div>`}
+          </table></div>`
+        : html`<div className="empty">${!hasEngine ? "No engine state — position count unknown."
+          : "Flat — no open positions. The funnel is standing down."}</div>`}
     <//>
 
     <${Card} title="Audit trail" which="audit" wide="tap6"

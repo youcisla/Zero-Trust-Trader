@@ -7,9 +7,10 @@
 //! and the dashboard shows a stale-data age instead of lying.
 //!
 //! Endpoints
-//!   GET /              the UI (single embedded HTML file, React from CDN)
+//!   GET /              the UI (single embedded HTML file, React vendored locally)
 //!   GET /api/snapshot  current state, one shot
-//!   GET /ws            streaming updates, pushed only when something changes
+//!   GET /ws            updates on change, plus a 1 Hz heartbeat so engine_age_s
+//!                      ticks in the browser instead of freezing between writes
 
 use axum::{
     extract::{
@@ -39,18 +40,24 @@ struct AppState {
     root: PathBuf,
 }
 
-fn tail(path: &Path, n: usize) -> Vec<String> {
+fn tail(path: &Path, n: usize) -> Option<Vec<String>> {
     // ponytail: blocking read on an async runtime. Files are log-sized and this
     // runs once a second; move to spawn_blocking if logs ever reach megabytes.
+    //
+    // None means the file is absent or unreadable; Some(vec![]) means it exists
+    // and is empty. Those are different facts: a missing ledger is usually a
+    // wrong ZTT_ROOT, and rendering it as "no runs yet" hides that.
     match std::fs::read_to_string(path) {
         Ok(s) => {
             let lines: Vec<&str> = s.lines().filter(|l| !l.trim().is_empty()).collect();
-            lines[lines.len().saturating_sub(n)..]
-                .iter()
-                .map(|l| l.to_string())
-                .collect()
+            Some(
+                lines[lines.len().saturating_sub(n)..]
+                    .iter()
+                    .map(|l| l.to_string())
+                    .collect(),
+            )
         }
-        Err(_) => Vec::new(),
+        Err(_) => None,
     }
 }
 
@@ -85,6 +92,20 @@ fn newest_state(dir: &Path) -> PathBuf {
         .unwrap_or_else(|| dir.join("engine_state.json"))
 }
 
+/// The bridge writes audit.jsonl next to its own config (pre-migration) or in
+/// the tree; both readers must resolve it the same way or the pane shows lines
+/// the Copy button cannot fetch.
+fn resolve_audit(root: &Path) -> Option<PathBuf> {
+    [
+        root.join("audit.jsonl"),
+        std::env::var("APPDATA")
+            .map(|p| PathBuf::from(p).join("mt5-mcp").join("audit.jsonl"))
+            .unwrap_or_default(),
+    ]
+    .into_iter()
+    .find(|p| !p.as_os_str().is_empty() && p.exists())
+}
+
 fn build(root: &Path) -> Value {
     let engine_path = newest_state(root);
     let engine: Value = std::fs::read_to_string(&engine_path)
@@ -92,11 +113,12 @@ fn build(root: &Path) -> Value {
         .and_then(|s| serde_json::from_str(&s).ok())
         .unwrap_or(Value::Null);
 
+    // None, not 0: no engine state means we do not know the position count.
+    // Reporting 0 there is the difference between "flat" and "blind".
     let positions = engine
         .get("positions")
         .and_then(Value::as_array)
-        .map(|v| v.len())
-        .unwrap_or(0);
+        .map(|v| v.len());
     let equity = engine.get("account").and_then(|a| a.get("equity")).cloned();
     let balance = engine.get("account").and_then(|a| a.get("balance")).cloned();
     let currency = engine
@@ -106,19 +128,7 @@ fn build(root: &Path) -> Value {
         .unwrap_or(json!(""));
     let server = engine.get("account").and_then(|a| a.get("server")).cloned();
 
-    // The bridge writes audit.jsonl next to its config when a mutating tool is
-    // called; it may legitimately not exist yet.
-    let audit_candidates = [
-        root.join("audit.jsonl"),
-        std::env::var("APPDATA")
-            .map(|p| PathBuf::from(p).join("mt5-mcp").join("audit.jsonl"))
-            .unwrap_or_default(),
-    ];
-    let mcp = audit_candidates
-        .iter()
-        .find(|p| p.exists())
-        .map(|p| tail(p, TAIL))
-        .unwrap_or_default();
+    let mcp = resolve_audit(root).and_then(|p| tail(&p, TAIL));
 
     json!({
         "ts": SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),
@@ -192,15 +202,19 @@ async fn full_log(AxumPath(which): AxumPath<String>, State(st): State<AppState>)
     // The snapshot only carries the last 12 lines: enough to glance at, useless
     // for debugging. This serves the whole file so the Copy button copies
     // everything. Loopback-only listener, so no new exposure.
-    let name = match which.as_str() {
-        "funnel" => "funnel_history.log",
-        "actions" => "position_manager.log",
-        "audit" => "audit.jsonl",
+    let path = match which.as_str() {
+        "funnel" => Some(st.root.join("funnel_history.log")),
+        "actions" => Some(st.root.join("position_manager.log")),
+        "audit" => resolve_audit(&st.root),
         _ => return (StatusCode::NOT_FOUND, String::from("unknown log")),
     };
-    let text = std::fs::read_to_string(st.root.join(name)).unwrap_or_default();
-    // ponytail: whole file up to 4 MB. Stream it if a log ever outgrows memory.
-    (StatusCode::OK, text.chars().take(4_000_000).collect::<String>())
+    // A missing file must not answer 200 with "": the Copy button would flash
+    // "copied" and hand the operator an empty clipboard.
+    match path.and_then(|p| std::fs::read_to_string(p).ok()) {
+        // ponytail: whole file up to 4 MB. Stream it if a log ever outgrows memory.
+        Some(text) => (StatusCode::OK, text.chars().take(4_000_000).collect::<String>()),
+        None => (StatusCode::NOT_FOUND, String::from("log file not found")),
+    }
 }
 
 async fn index() -> Html<&'static str> {
