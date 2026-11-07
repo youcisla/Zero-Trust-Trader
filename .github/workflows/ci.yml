@@ -81,4 +81,5 @@ jobs:
       - name: Build and lint the dashboard
         run: |
           cargo build --release --manifest-path dashboard/Cargo.toml
+          cargo test --release --manifest-path dashboard/Cargo.toml
           cargo clippy --manifest-path dashboard/Cargo.toml -- -D warnings

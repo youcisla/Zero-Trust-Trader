@@ -98,7 +98,7 @@ size was not "too small to tell"; it was hiding nothing.
 | --- | --- | --- | --- |
 | 1 | **Universe filter** — live market, spread ≤ 15% of ATR, ≥ 160 days of history | this repo | trading an instrument that is shut, illiquid, or newly listed |
 | 2 | **Correlation dedupe** — collapse candidates above \|ρ\| 0.7 | this repo | `AMD.US-24` vs `AMD.US-PERP` measure **+0.997**: the same bet billed twice |
-| 3 | **Bonferroni-corrected z** | this repo | the scan itself — 5,388 hypotheses tried means the bar is 4.43, not 1.96 |
+| 3 | **Corrected significance** — Bonferroni z, or the *t* of mean R under `--t-gate` | this repo | the scan itself — 8,616 hypotheses tried means the bar is 4.53, not 1.96 |
 | 4 | **Permutation null** — random entries, same fills, costs and exits | this repo | autocorrelation and barrier geometry that the analytic z assumes away |
 | 5 | **Human `APPROVED`** | a human | the agent's own judgement |
 | 6 | **Bridge consent gate** | a separate process | a compromised or confused agent |
@@ -113,6 +113,14 @@ cannot tighten when the market turns.
 Gates 3 and 4 are not redundant. The permutation test is per-instrument and does
 **not** correct for the scan: at 576 tests, a p-value of 0.015 is expected ~8
 times per run. Passing one gate is not permission to trade.
+
+Gate 3 tests the win rate by default. `--t-gate` tests the **mean R** instead,
+because a binomial test on the win rate cannot see a low-win-rate, high-payoff
+edge — 35% at +2.5R beats break-even and the win rate calls it a loss. The two
+answer different questions and disagree on purpose: 55% at +0.01R with 45% at
+−1.0R scores z = +4.8 and t = −14.0. Whichever statistic is used, the gate also
+refuses a non-positive expectancy, so "lost more slowly than chance" cannot pass
+the permutation null.
 
 ---
 
@@ -178,11 +186,12 @@ touching the terminal.
 
 ## Live dashboard
 
-![Zero-Trust Trader dashboard](docs/dashboard.png)
+![Zero-Trust Trader dashboard](docs/dashboard_minecraft.png)
 
-A Rust (Axum) server streaming to a React UI: equity, open positions, supervisor
-actions, funnel history and MCP tool calls over a WebSocket. The screenshot is
-the real thing running against the demo account.
+A Rust (Axum) server streaming to a React UI: a six-stage pipeline canvas with
+live wires, a verdict banner, equity, open positions, supervisor actions, funnel
+history and MCP tool calls over a WebSocket. The screenshot is the real thing
+running against the demo account.
 
 ```bash
 cd dashboard && cargo run --release        # http://localhost:8787
@@ -193,14 +202,18 @@ no socket the Python side opens. The dashboard tails ordinary files the engine
 already writes (`engine_state.<ns>.json` — a fresh generation each tick, never
 a file a reader holds; `funnel_history.log`, `position_manager.log`,
 `audit.jsonl`). Kill the dashboard and trading is unaffected; kill the engine
-and the UI shows an amber staleness age rather than inventing numbers.
+and the UI shows an amber staleness age rather than inventing numbers. A missing
+file answers `null` and renders as `—` or "no engine state", never as `0`: a
+dashboard that says "flat — standing down" while blind is the same class of lie
+as a green "no data", and both were fixed here after being caught on screen.
 
 | Endpoint | Purpose |
 | --- | --- |
 | `GET /` | the UI — one embedded HTML file, React vendored, no build step |
 | `GET /api/snapshot` | one-shot state, last 12 lines of each log |
 | `GET /api/logs/{audit,funnel,actions}` | **whole log**, for the Copy buttons and for pasting into an issue |
-| `GET /ws` | pushed updates, sent only when something actually changes |
+| `GET /ws` | updates on change, plus a 1 Hz heartbeat so `engine_age_s` keeps ticking — a frozen age is indistinguishable from a dead supervisor |
+| `GET /architecture` | the generated stage map (Archify, embedded at build time) |
 | `GET /api/report/latest` | the newest per-scan HTML report (`reports/run-*.html`) |
 
 ### Read the argument, not just the verdict
@@ -249,10 +262,11 @@ scan.
 | Cumulative tests | z_crit |
 | --- | --- |
 | 1 (a single hypothesis) | 1.96 — no correction at all |
-| 132 (one M15 subset scan) | 3.55 |
+| 150 (one scan, three families) | 3.59 |
 | 525 (the aborted wide run) | 3.90 |
 | 1,791 (one full-universe run) | 4.19 |
-| 5,388 (today) | **4.43** |
+| 5,388 | 4.43 |
+| **8,616 (today)** | **4.53** |
 | 40,388 (a week at 5,000/day) | 4.85 |
 | 155,388 (a month at 5,000/day) | 5.11 |
 
@@ -263,10 +277,10 @@ rather than the 7,200 a naive 12-hour expansion would.
 
 ```bash
 $ python trials_total.py
-5388
+8616
 ```
 
-That number is what feeds `honest_backtest check trades.csv --trials 5388`.
+That number is what feeds `honest_backtest check trades.csv --trials 8616`.
 Under-counting trials is the classic way a backtest lies; this repository refuses
 to count only the runs that looked good.
 
@@ -279,7 +293,7 @@ Operational guarantees, each enforced in code rather than in documentation:
 | Guarantee | Enforced by |
 | --- | --- |
 | Demo only | pre-flight aborts on any server without `demo` — verified in tests |
-| No overlapping runs | `funnel.lock` with stale takeover; double-fire exits in 0.3 s |
+| No overlapping runs | `funnel.lock` and the supervisor's lock, both `O_CREAT\|O_EXCL` with stale takeover; double-fire exits in 0.3 s |
 | No stale signals | Tier 2 skips any instrument whose last bar is > 45 min old |
 | No silent failure | a crashed funnel logs `FAILED`; the report prints `[STALE]` rather than a quiet market |
 | No terminal pollution | every symbol the scanner selects into Market Watch is released afterwards |
@@ -304,6 +318,7 @@ pip install -r requirements.txt          # MetaTrader5, numpy, pandas
 python status.py                         # does the terminal answer? is it demo?
 python run_funnel.py --rebuild           # Tier 1 → liquid universe (~35 min)
 python run_funnel.py --window-utc 05:00-17:00   # one intraday scan
+python run_funnel.py --t-gate                   # gate on mean R instead of win rate
 python report_funnel.py --full           # today's verdict
 ```
 
@@ -328,7 +343,7 @@ see `docs/BOTLAB_COMMAND.txt` for the ledger/backtest workflow).
 
 ## Tests
 
-76 tests, **no trading terminal required** — `MetaTrader5` is Windows-only, so
+105 tests, **no trading terminal required** — `MetaTrader5` is Windows-only, so
 `tests/_mt5stub.py` stubs it and the indicator maths and safety guards run
 anywhere, including Linux CI:
 
@@ -370,14 +385,22 @@ agent can build is not consent.
 `ZTT_LEDGER_KEY` (env, or `.env` in the execution dir — never committed).
 `status.py` and `trials_total.py` verify the chain and print `!! LEDGER TAMPERED`
 if a row was edited, deleted or reordered. Rows written before the chain existed
-are reported as `unsigned` rather than silently trusted.
+are reported as `unsigned` rather than silently trusted, and writing a new
+unsigned row now says so on stderr — a fresh clone without `ZTT_LEDGER_KEY` gets
+a ledger that is only as trustworthy as the disk, and it tells you.
 
 | Suite | Covers |
 | --- | --- |
 | `test_math` | RSI / MACD / ATR / Donchian / Bollinger edge cases, Bonferroni values, naive-vs-corrected |
 | `test_safety` | demo-only pre-flight, the run window, lock acquire / refuse / stale takeover |
 | `test_ledger` | trials accounting, including that `LEGACY_TRIALS` is frozen |
-| `test_position_manager` | protective-direction rule as a 3,000-case property sweep, break-even, session close |
+| `test_position_manager` | protective-direction rule as a 3,000-case property sweep, break-even, session close, exclusive lock |
+| `test_parity` | every scanner is graded with the exit policy its null is graded on |
+| `test_t_gate` | z and t disagree in both directions; the gate refuses a non-positive expectancy |
+| `test_broker_offset` | a frozen weekend tick must not be mistaken for the broker clock |
+| `test_funnel_wiring` | `--t-gate` reaches tier 3 without appending a row to the production ledger |
+
+The dashboard has three Rust tests of its own (`cd dashboard && cargo test`).
 
 The suite exists because two bugs in this codebase were **silent**: RSI returned
 100 on a flat series (a dead instrument reading as overbought, firing a false

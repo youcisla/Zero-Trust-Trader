@@ -249,10 +249,10 @@ scan being judged.
 
 | Point | Cumulative trials | z_crit |
 | --- | --- | --- |
-| now | 5,388 | 4.43 |
-| +1 day | 10,388 | 4.57 |
-| +1 week | 40,388 | 4.85 |
-| +30 days | 155,388 | 5.11 |
+| now | 8,616 | 4.53 |
+| +1 day | 13,616 | 4.63 |
+| +1 week | 43,616 | 4.87 |
+| +30 days | 158,616 | 5.11 |
 
 A per-scan bar would have been 3.29 (50 tests), 3.48 (100), 3.59 (150). At 30
 days that is **1.52 sigma of unearned leniency** - the exact data-snooping error
