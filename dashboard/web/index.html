@@ -51,7 +51,9 @@
   a.pill:hover{border-color:var(--ink)}
   .scrollx{overflow-x:auto}
 
-  .equity{display:flex;align-items:baseline;gap:6px}
+  /* flex-wrap lets the error pills push the header onto a second row; without
+     this the equity lands alone at the far left of that row. */
+  .equity{display:flex;align-items:baseline;gap:6px;margin-left:auto}
   .equity b{font-size:22px;font-weight:600;letter-spacing:-.015em}
   .equity span{color:var(--dim);font-size:11px;letter-spacing:.08em}
 
@@ -189,14 +191,16 @@ function Card({title, which, count, wide, children}) {
   </section>`;
 }
 
-function LogPane({lines, empty, missing}) {
+function LogPane({lines, empty, missing, raw}) {
   // null (file absent) is not [] (file empty): the first is usually a wrong
   // ZTT_ROOT and must not read as "nothing has happened yet".
   if (lines === null) return html`<div className="empty">${missing || "Log file not found on disk — check ZTT_ROOT"}</div>`;
   if (!lines || !lines.length) return html`<div className="empty">${empty}</div>`;
   // Newest first: the last line is what is happening now. Oldest-first made a
   // fixed failure look current for as long as the tail window was full.
-  const view = lines.slice().reverse().map(localize);
+  // raw panes show the bytes as stored: localising inside JSON turns an ISO
+  // timestamp into "12:58:06", so the row stops being what the file says.
+  const view = raw ? lines.slice().reverse() : lines.slice().reverse().map(localize);
   // Anything failing BELOW the newest healthy row is history. Dim it rather
   // than hide it: the ledger is append-only and honest, the UI just stops
   // shouting about problems that were fixed hours ago.
@@ -300,7 +304,8 @@ function App() {
     <section className="card tap4"><div className="tile">
       <div className="label">Mode</div>
       <div className="value small">${!hasEngine ? "unknown" : positions.length ? "supervising" : "holding"}</div>
-      <div className="note">AutoTrading off · ${data?.engine?.applied ? "APPLY ENABLED" : "dry run"} · 0.01 lot cap</div>
+      <div className="note">${!hasEngine ? "no engine state"
+        : `AutoTrading off · ${data?.engine?.applied ? "APPLY ENABLED" : "dry run"} · 0.01 lot cap`}</div>
     </div></section>
 
     <${Card} title="Positions" wide="tap12">
@@ -324,7 +329,8 @@ function App() {
 
     <${Card} title="Audit trail" which="audit" wide="tap6"
       count=${data?.mcp?.length ? data.mcp.length + " shown" : null}>
-      <${LogPane} lines=${data?.mcp} empty="No audit records yet — audit.jsonl fills on the next run" />
+      <${LogPane} lines=${data?.mcp} raw
+        empty="No audit records yet — audit.jsonl fills on the next run" />
     <//>
 
     <${Card} title="Funnel history" which="funnel" wide="tap6"
