@@ -233,6 +233,13 @@ async fn full_log(AxumPath(which): AxumPath<String>, State(st): State<AppState>)
     }
 }
 
+/// The Archify diagram of this pipeline, committed as a static artifact.
+/// Embedded rather than read from disk: it is a build input, and a monitor that
+/// serves a missing diagram as a blank page would be the same lie as a zero.
+async fn architecture() -> Html<&'static str> {
+    Html(include_str!("../web/architecture.html"))
+}
+
 async fn index() -> Html<&'static str> {
     Html(include_str!("../web/index.html"))
 }
@@ -315,6 +322,7 @@ async fn main() {
 
     let app = Router::new()
         .route("/", get(index))
+        .route("/architecture", get(architecture))
         .route("/api/snapshot", get(snapshot))
         .route("/api/logs/:which", get(full_log))
         .route("/api/report/latest", get(latest_report))

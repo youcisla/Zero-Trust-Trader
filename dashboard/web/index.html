@@ -577,6 +577,8 @@ function App() {
     ${stale ? html`<span className="pill stale">engine ${age}s stale</span>` : null}
     ${data && !hasEngine ? html`<span className="pill down">engine state missing</span>` : null}
     <span className="pill tz" title="Logs are stored in UTC; times are shown in your own zone">${TZ}</span>
+    <a className="pill" href="/architecture" target="_blank" rel="noopener"
+       title="Stage map of this repository, rendered with Archify from the code">architecture ↗</a>
     <a className="pill" href="/api/report/latest" target="_blank" rel="noopener"
        title="The newest per-scan report: every candidate, both gates, why each was rejected">last report ↗</a>
     ${engineErr ? html`<span className="pill down" title=${engineErr}>engine refusing</span>` : null}

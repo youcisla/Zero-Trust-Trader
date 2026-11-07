@@ -260,6 +260,7 @@ when launched from either the repo root or `dashboard/`.
 | `GET /` | read | the UI (single embedded HTML, React vendored — no CDN, no build step) |
 | `GET /api/snapshot` | read | one-shot state |
 | `GET /ws` | read | updates on change, plus a 1 Hz heartbeat so `engine_age_s` keeps ticking |
+| `GET /architecture` | read | the stage map, embedded from `dashboard/web/architecture.html` |
 
 - **Never add** an endpoint, button, or socket message that places, modifies, or
   closes an order. If someone asks for one, the answer is no: execution goes
@@ -274,6 +275,11 @@ when launched from either the repo root or `dashboard/`.
 - **React is vendored** in `web/vendor/`. Do not swap it back to a CDN — that
   reintroduces an offline failure mode and an SRI hash to maintain.
 - Client WebSocket messages are intentionally ignored by the server.
+- **The architecture diagram is generated, not drawn.** `docs/architecture.archify.json`
+  is the source; regenerate with the Archify skill into
+  `dashboard/web/architecture.html`, then rebuild — the binary embeds it, so the
+  route cannot serve a stale or half-written file. `.archify/` working folders
+  are ignored because their receipts carry absolute machine paths.
 
 ### Why not Next.js
 

@@ -1,0 +1,324 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Zero-Trust Trader \u2014 research funnel and consent gate",
+    "subtitle": "The agent may research freely and may change the system. It may not trade.",
+    "output": "architecture.html",
+    "quality_profile": "showcase",
+    "visual_preset": "classic",
+    "legend": {
+      "mode": "auto"
+    }
+  },
+  "components": [
+    {
+      "id": "sched",
+      "type": "external",
+      "label": "Task Scheduler",
+      "sublabel": "HermesMT5Funnel",
+      "pos": [
+        40,
+        70
+      ],
+      "size": [
+        130,
+        62
+      ],
+      "tag": "every 15 min",
+      "icon": "clock"
+    },
+    {
+      "id": "preflight",
+      "type": "backend",
+      "label": "run_funnel",
+      "sublabel": "window \u00b7 lock \u00b7 demo pin",
+      "pos": [
+        220,
+        70
+      ],
+      "size": [
+        140,
+        62
+      ],
+      "tag": "fails closed"
+    },
+    {
+      "id": "tier1",
+      "type": "backend",
+      "label": "Tier 1 universe",
+      "sublabel": "tradable \u00b7 liquid \u00b7 live",
+      "pos": [
+        410,
+        70
+      ],
+      "size": [
+        140,
+        62
+      ],
+      "tag": "50 symbols"
+    },
+    {
+      "id": "tier2",
+      "type": "backend",
+      "label": "Tier 2 matrix",
+      "sublabel": "3 families \u00d7 symbols",
+      "pos": [
+        600,
+        70
+      ],
+      "size": [
+        140,
+        62
+      ],
+      "tag": "150 tests/scan"
+    },
+    {
+      "id": "tier3",
+      "type": "backend",
+      "label": "Tier 3 deep test",
+      "sublabel": "15k bars \u00b7 1000 permutations",
+      "pos": [
+        790,
+        120
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "tag": "two gates"
+    },
+    {
+      "id": "ledger",
+      "type": "database",
+      "label": "funnel_history.log",
+      "sublabel": "append-only \u00b7 HMAC chained",
+      "pos": [
+        700,
+        285
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "tag": "cumulative trials"
+    },
+    {
+      "id": "human",
+      "type": "external",
+      "label": "Operator",
+      "sublabel": "types APPROVED",
+      "pos": [
+        1000,
+        120
+      ],
+      "size": [
+        130,
+        62
+      ],
+      "icon": "person",
+      "tag": "no agent can"
+    },
+    {
+      "id": "bridge",
+      "type": "security",
+      "label": "MT5 MCP bridge",
+      "sublabel": "single-use token + idempotency",
+      "pos": [
+        1000,
+        300
+      ],
+      "size": [
+        130,
+        62
+      ],
+      "icon": "security",
+      "tag": "consent gate"
+    },
+    {
+      "id": "broker",
+      "type": "external",
+      "label": "Pepperstone demo",
+      "sublabel": "MetaTrader 5 terminal",
+      "pos": [
+        1000,
+        465
+      ],
+      "size": [
+        130,
+        62
+      ],
+      "tag": "server name must say demo"
+    },
+    {
+      "id": "supervisor",
+      "type": "backend",
+      "label": "position_manager",
+      "sublabel": "trail \u00b7 break-even \u00b7 17:00Z",
+      "pos": [
+        1000,
+        630
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "tag": "risk-reducing only"
+    },
+    {
+      "id": "dash",
+      "type": "frontend",
+      "label": "Dashboard",
+      "sublabel": "Rust / Axum \u00b7 read-only",
+      "pos": [
+        560,
+        400
+      ],
+      "size": [
+        150,
+        62
+      ],
+      "tag": "tailers + WS"
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "Research loop \u2014 analysis only, no order path",
+      "wraps": [
+        "sched",
+        "preflight",
+        "tier1",
+        "tier2",
+        "tier3",
+        "ledger"
+      ]
+    },
+    {
+      "kind": "security-group",
+      "label": "Consent gate \u2014 human approval, then a single-use token",
+      "wraps": [
+        "human",
+        "bridge"
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "tick",
+      "from": "sched",
+      "to": "preflight",
+      "label": "15 min"
+    },
+    {
+      "id": "gate1",
+      "from": "preflight",
+      "to": "tier1"
+    },
+    {
+      "id": "gate2",
+      "from": "tier1",
+      "to": "tier2"
+    },
+    {
+      "id": "gate3",
+      "from": "tier2",
+      "to": "tier3",
+      "label": "shortlist"
+    },
+    {
+      "id": "verdict",
+      "from": "tier3",
+      "to": "ledger",
+      "label": "verdict row",
+      "variant": "emphasis",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "proposal",
+      "from": "tier3",
+      "to": "human",
+      "label": "proposal",
+      "fromSide": "right",
+      "toSide": "top"
+    },
+    {
+      "id": "approve",
+      "from": "human",
+      "to": "bridge",
+      "label": "APPROVED",
+      "variant": "security",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "order",
+      "from": "bridge",
+      "to": "broker",
+      "label": "0.01 lot cap",
+      "variant": "security",
+      "fromSide": "bottom",
+      "toSide": "top"
+    },
+    {
+      "id": "fills",
+      "from": "broker",
+      "to": "supervisor",
+      "label": "positions"
+    },
+    {
+      "id": "trail",
+      "from": "supervisor",
+      "to": "broker",
+      "label": "trail / close",
+      "variant": "dashed"
+    },
+    {
+      "id": "state",
+      "from": "supervisor",
+      "to": "dash",
+      "label": "reads",
+      "fromSide": "left",
+      "toSide": "right"
+    },
+    {
+      "id": "tail",
+      "from": "ledger",
+      "to": "dash",
+      "label": "tails, never writes",
+      "variant": "dashed",
+      "fromSide": "left",
+      "toSide": "top"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "rose",
+      "title": "Fail-closed gates",
+      "items": [
+        "Demo-only pre-flight refuses any other server",
+        "Correlation dedupe at |rho| > 0.7 keeps the stronger hit",
+        "z above bonferroni_z(cumulative) and permutation p < 0.05"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "What the numbers mean",
+      "items": [
+        "150 tests per scan at 3 families, 50 at 1",
+        "Cumulative trial count, never per-scan",
+        "STAND_DOWN is the expected outcome, not a failure"
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "Read-only monitor",
+      "items": [
+        "Six-stage canvas streams over one WebSocket",
+        "Missing file renders as unknown, never as zero",
+        "No endpoint can place, modify or close anything"
+      ]
+    }
+  ]
+}
