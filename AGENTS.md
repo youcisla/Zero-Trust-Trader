@@ -280,6 +280,9 @@ when launched from either the repo root or `dashboard/`.
 - **React is vendored** in `web/vendor/`. Do not swap it back to a CDN — that
   reintroduces an offline failure mode and an SRI hash to maintain.
 - Client WebSocket messages are intentionally ignored by the server.
+- **The tail is bounded.** `tail()` seeks to the last 16 KiB instead of reading the
+  whole file, because the ledger is append-only and grows forever. Do not go back
+  to `read_to_string` on a file the engine appends to.
 - **The architecture diagram is generated, not drawn.** `docs/architecture.archify.json`
   is the source; regenerate with the Archify skill into
   `dashboard/web/architecture.html`, then rebuild — the binary embeds it, so the

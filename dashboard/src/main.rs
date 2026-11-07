@@ -24,6 +24,7 @@ use axum::{
 };
 use serde_json::{json, Value};
 use std::{
+    io::{Read, Seek, SeekFrom},
     net::SocketAddr,
     path::{Path, PathBuf},
     sync::Arc,
@@ -41,24 +42,40 @@ struct AppState {
 }
 
 fn tail(path: &Path, n: usize) -> Option<Vec<String>> {
-    // ponytail: blocking read on an async runtime. Files are log-sized and this
-    // runs once a second; move to spawn_blocking if logs ever reach megabytes.
+    // Reads a bounded window from the end instead of the whole file. The ledger
+    // is append-only and grows forever; `read_to_string` on it every second is
+    // the one place this monitor's cost scaled with history rather than with
+    // what it displays. 16 KiB holds a dozen lines at any realistic width.
     //
     // None means the file is absent or unreadable; Some(vec![]) means it exists
     // and is empty. Those are different facts: a missing ledger is usually a
     // wrong ZTT_ROOT, and rendering it as "no runs yet" hides that.
-    match std::fs::read_to_string(path) {
-        Ok(s) => {
-            let lines: Vec<&str> = s.lines().filter(|l| !l.trim().is_empty()).collect();
-            Some(
-                lines[lines.len().saturating_sub(n)..]
-                    .iter()
-                    .map(|l| l.to_string())
-                    .collect(),
-            )
-        }
-        Err(_) => None,
+    const WINDOW: u64 = 16 * 1024;
+    let mut f = std::fs::File::open(path).ok()?;
+    let len = f.metadata().ok()?.len();
+    let start = len.saturating_sub(WINDOW);
+    if start > 0 {
+        f.seek(SeekFrom::Start(start)).ok()?;
     }
+    let mut bytes = Vec::with_capacity((len - start) as usize);
+    f.read_to_end(&mut bytes).ok()?;
+    let text = String::from_utf8_lossy(&bytes);
+    // A cut at `start` lands mid-line; that first fragment is not a row.
+    let body = if start > 0 {
+        match text.find('\n') {
+            Some(i) => &text[i + 1..],
+            None => "",
+        }
+    } else {
+        &text[..]
+    };
+    let lines: Vec<&str> = body.lines().filter(|l| !l.trim().is_empty()).collect();
+    Some(
+        lines[lines.len().saturating_sub(n)..]
+            .iter()
+            .map(|l| l.to_string())
+            .collect(),
+    )
 }
 
 fn age_secs(path: &Path) -> Option<u64> {
@@ -175,6 +192,16 @@ async fn watch(state: AppState) {
     }
 }
 
+/// Truncate to `max` bytes on a UTF-8 boundary. `chars().take(max)` walked and
+/// copied the whole string; `truncate` drops the tail in place.
+fn clip(mut text: String, max: usize) -> String {
+    if text.len() > max {
+        let end = (0..=max).rev().find(|i| text.is_char_boundary(*i)).unwrap_or(0);
+        text.truncate(end);
+    }
+    text
+}
+
 async fn latest_report(State(st): State<AppState>) -> impl IntoResponse {
     // The per-scan HTML report is the deep view; this is the bridge to it from
     // the live view. Newest file wins -- one scan, one page.
@@ -226,9 +253,18 @@ async fn full_log(AxumPath(which): AxumPath<String>, State(st): State<AppState>)
     };
     // A missing file must not answer 200 with "": the Copy button would flash
     // "copied" and hand the operator an empty clipboard.
-    match path.and_then(|p| std::fs::read_to_string(p).ok()) {
+    //
+    // This is the only read that can be large, so it leaves the reactor:
+    // spawn_blocking keeps a 4 MB copy from stalling the WebSocket heartbeat.
+    let Some(path) = path else {
+        return (StatusCode::NOT_FOUND, String::from("log file not found"));
+    };
+    let read = tokio::task::spawn_blocking(move || std::fs::read_to_string(path).ok())
+        .await
+        .unwrap_or(None);
+    match read {
         // ponytail: whole file up to 4 MB. Stream it if a log ever outgrows memory.
-        Some(text) => (StatusCode::OK, text.chars().take(4_000_000).collect::<String>()),
+        Some(text) => (StatusCode::OK, clip(text, 4_000_000)),
         None => (StatusCode::NOT_FOUND, String::from("log file not found")),
     }
 }
@@ -335,9 +371,58 @@ async fn main() {
     let addr = SocketAddr::from(([127, 0, 0, 1], port));
     println!("zero-trust dashboard  http://localhost:{port}");
     println!("watching              {}", root.display());
-    if let Ok(l) = tokio::net::TcpListener::bind(addr).await {
-        let _ = axum::serve(l, app).await;
-    } else {
-        eprintln!("port {port} unavailable");
+    // Exit non-zero: Task Scheduler records Last Result, and a monitor that
+    // could not bind used to look exactly like a healthy start.
+    let listener = match tokio::net::TcpListener::bind(addr).await {
+        Ok(l) => l,
+        Err(e) => {
+            eprintln!("port {port} unavailable: {e}");
+            std::process::exit(1);
+        }
+    };
+    let _ = axum::serve(listener, app).await;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn tmp(name: &str) -> PathBuf {
+        let p = std::env::temp_dir().join(format!("ztt-{}-{}", std::process::id(), name));
+        let _ = std::fs::remove_file(&p);
+        p
+    }
+
+    #[test]
+    fn tail_reads_the_end_of_a_file_larger_than_its_window() {
+        let p = tmp("tail.log");
+        let mut body = String::new();
+        for i in 0..2000 {
+            body.push_str(&format!("line {i} {}\n", "x".repeat(40)));
+        }
+        std::fs::write(&p, &body).unwrap();          // ~100 KiB, well past 16 KiB
+        let got = tail(&p, 3).expect("file exists");
+        assert_eq!(got.len(), 3);
+        assert!(got[2].starts_with("line 1999"), "{got:?}");
+        std::fs::remove_file(&p).ok();
+    }
+
+    #[test]
+    fn a_missing_file_is_none_and_an_empty_one_is_some_empty() {
+        let missing = tmp("missing.log");
+        assert!(tail(&missing, 3).is_none());
+
+        let empty = tmp("empty.log");
+        std::fs::write(&empty, "").unwrap();
+        assert_eq!(tail(&empty, 3), Some(vec![]));
+        std::fs::remove_file(&empty).ok();
+    }
+
+    #[test]
+    fn clip_never_splits_a_character() {
+        assert_eq!(clip("abcdef".to_string(), 3), "abc");
+        let wide: String = std::iter::repeat('\u{e9}').take(10).collect(); // 2 bytes each
+        let out = clip(wide, 5);                        // 5 would split the third char
+        assert!(out.len() <= 5 && out.chars().all(|c| c == '\u{e9}'), "{out:?}");
     }
 }
