@@ -323,7 +323,7 @@ cd dashboard && cargo run --release            # http://localhost:8787
 Windows Task Scheduler drives the cadence; `run_funnel.cmd` and
 `run_rebuild.cmd` are provided. Nothing scheduled can place an order.
 
-The consent-gate policy lives in `<execution-dir>\config.toml` (not committed —
+The consent-gate policy lives in `config.toml` at the repository root (not committed —
 see `docs/BOTLAB_COMMAND.txt` for the ledger/backtest workflow).
 
 ## Tests

@@ -44,7 +44,7 @@ Relevant files:
 No credentials are stored in this repository and CI fails the build if a
 machine path, broker account number, or key prefix appears in a commit. The
 consent-gate policy lives outside version control
-(`<execution-dir>\config.toml`) because it is per-installation.
+(`config.toml` at the repository root) because it is per-installation.
 
 ## Not in scope
 

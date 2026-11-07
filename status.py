@@ -56,13 +56,12 @@ def config_block() -> None:
     hint = pin or ("not set in THIS shell (the launchers pin it; "
                    "a scan run without it refuses by design)")
     print(f"  expected login: {hint}")
-    cfg = Path(os.environ.get("APPDATA", "")) / "mt5-mcp" / "config.toml"
-    # Single-tree installs keep the policy next to this script; prefer the
-    # copy in the tree when the per-user one is absent.
+    # This tree is the installation: its config.toml is the policy in force.
+    # The per-user %APPDATA% copy is the pre-migration location, read only as a
+    # fallback so a stale one cannot mask the policy the scan actually uses.
+    cfg = Path(__file__).resolve().parent / "config.toml"
     if not cfg.exists():
-        local = Path(__file__).resolve().parent / "config.toml"
-        if local.exists():
-            cfg = local
+        cfg = Path(os.environ.get("APPDATA", "")) / "mt5-mcp" / "config.toml"
     if cfg.exists():
         print(f"  policy        : {cfg}")
         for ln in cfg.read_text(encoding="utf-8").splitlines():

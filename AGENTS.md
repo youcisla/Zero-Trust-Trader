@@ -56,26 +56,36 @@ dashboard/                   read-only viewer (Rust), tails files, never writes
 | `status.py` | read-only diagnostic: terminal, policy, tasks, universe |
 | `dashboard/` | Rust read-only viewer; tails files, never mutates state |
 
-### Execution environment vs mirror
+### One tree
 
-There are two trees and they are **not interchangeable**:
+This repository is **the** tree:
+the git repository, the execution environment Task Scheduler runs, and the
+directory the ledger lives in. There is no second copy and nothing to sync.
 
-| Tree | Role |
+| What | Where |
 | --- | --- |
-| `<execution-dir>` | **the execution environment.** Task Scheduler runs `run_funnel.cmd` here. The trials ledger (`funnel_history.log`), `trades.csv`, `stops.json`, `liquid_universe.json` and `engine_state.json` live here and are the only copies that matter. |
-| `_publish/Zero-Trust-Trader` | **the mirror.** This git repository. A sanitised copy for publication; it holds no ledger, no credentials and no account number. |
+| Code | this repository (tracked) |
+| Execution | the same directory — `HermesMT5Funnel` runs `run_funnel.local.cmd` here, `HermesMT5Rebuild` runs `run_rebuild.local.cmd` here |
+| Ledger | `funnel_history.log`, `trades.csv`, `stops.json`, `liquid_universe.json`, `engine_state.json`, `audit.jsonl`, `idempotency.db` — same directory, gitignored |
+| Policy | `config.toml` at the root — gitignored, pinned by both the MCP `--config` argument and its own `[audit]` / `[idempotency]` paths |
+| Dashboard | `dashboard/target/release/zero-trust-dashboard.exe`, launched through `dashboard/start_dashboard.bat` |
 
 Rules that follow from this:
 
-- **Every runtime script must exist in the workspace.** When you add a component,
-  copy it into `<execution-dir>` *and* commit it here. A repo-only script cannot
-  be scheduled and is one disk failure from being lost.
-- The two copies must stay identical **except** for sanitisation: the workspace
-  holds real paths and the broker login, the repo holds `<project-dir>` and an
-  env-var login. Never "fix" one copy without the other.
-- The dashboard reads the execution tree, not the repo. If the supervisor runs
-  from the workspace, launch the dashboard with `ZTT_ROOT=<execution-dir>` or
-  it will show a permanently stale heartbeat.
+- **Commit the script and it is scheduled.** A new component goes into this tree;
+  nothing has to be copied anywhere else first.
+- **Runtime state is gitignored, never mirrored** (§4.5) — it carries the broker
+  account number, so it must not appear in a commit, a copy or a publish build.
+- **The launchers are local-only.** `run_funnel.local.cmd` and
+  `run_rebuild.local.cmd` pin `MT5_EXPECTED_LOGIN` and are excluded through
+  `.git/info/exclude`; the tracked `run_funnel.cmd` stays portable and sanitised.
+- **The dashboard reads this directory.** `start_dashboard.bat` sets `ZTT_ROOT`
+  to the parent of `dashboard\` (this tree). Launch it through the `.bat`, never
+  the raw `.exe` — the exe would inherit `System32` as its working directory and
+  find no files.
+- **Publication is a build, not a tree.** `build_public.py` sanitises a copy into
+  `_publish/` and refuses to ship if it finds a machine path. Never edit
+  `_publish/`; rebuild it.
 
 ---
 
@@ -312,18 +322,18 @@ no terminal and no chat session.
 
 - It launches **at logon** from `HKCU\Software\Microsoft\Windows\CurrentVersion\Run`
   → `dashboard\start_dashboard.bat`. That batch file sets `ZTT_ROOT` to the
-  execution environment; the raw `.exe` would inherit `System32` as its working
+  this tree; the raw `.exe` would inherit `System32` as its working
   directory and find no files, so always launch it through the `.bat`. If the
   panel is missing, run that `.bat` manually.
 - The dashboard is a **monitor, never a control surface**. Nothing on it can
   place, modify or close anything — see §9.
 - For what the dashboard does not show — policy in force, Task Scheduler
   next/last run, trials and the current z bar, the liquid universe — run
-  `python status.py` from the execution environment. That is the authoritative read.
+  `python status.py` from this tree. That is the authoritative read.
 
 ### The supervisor is not scheduled, on purpose
 
-`start_supervisor.bat` exists in the execution environment but is **not** in
+`start_supervisor.bat` exists in this tree but is **not** in
 Task Scheduler. It runs `position_manager.py --interval 5` with **no `--apply`**,
 so it can only print what it would do.
 
