@@ -13,11 +13,12 @@
 <style>
   :root{
     /* one type scale: 11 / 12 / 13 / 15 / 22  ·  one 4px spacing scale */
-    --bg:#0a0c0f; --panel:#101419; --line:#1d242d; --line-soft:#161c23;
-    --ink:#e8eef5; --dim:#7b8794; --faint:#55606c;
-    --good:#3fb950; --warn:#d29922; --bad:#f85149;
+    --bg:#2c2c2c; --panel:#3b3b3b; --line:#1a1a1a; --line-soft:#262626;
+    --ink:#e0e0e0; --dim:#b0b0b0; --faint:#a2a2a2;
+    --good:#7fb04a; --warn:#c8a94e; --bad:#b25353;
+    --mc-accent:#4a7a9b; --mc-slot:#2b2b2b;
     --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px;
-    --r:10px;
+    --r:0px;
   }
   *{box-sizing:border-box}
   html,body{height:100%}
@@ -52,7 +53,7 @@
   .scrollx{overflow-x:auto}
 
   /* ---- pipeline canvas: fixed pitch, so the wires never need measuring ---- */
-  .pipewrap{overflow-x:auto;overflow-y:hidden;padding:var(--s4);
+  .pipewrap{overflow-x:auto;overflow-y:hidden;padding:var(--s3);
     background-image:radial-gradient(#252f3d 1px,transparent 1px);background-size:16px 16px;
     border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
   .track{position:relative;display:flex;gap:40px;width:max-content;height:168px;padding-right:8px}
@@ -121,7 +122,7 @@
   /* flex-wrap lets the error pills push the header onto a second row; without
      this the equity lands alone at the far left of that row. */
   .equity{display:flex;align-items:baseline;gap:6px;margin-left:auto}
-  .equity b{font-size:22px;font-weight:600;letter-spacing:-.015em}
+  .equity b{font-size:20px;font-weight:600;letter-spacing:-.015em}
   .equity span{color:var(--dim);font-size:11px;letter-spacing:.08em}
 
   main{padding:var(--s5);display:grid;gap:var(--s4);
@@ -177,12 +178,80 @@
 
   footer{color:var(--faint);font-size:11px;text-align:center;padding:0 var(--s5) var(--s5)}
   @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+  /* ---- Minecraft skin -------------------------------------------------
+     Blocks, not cards: 3px bevel, no radius, no gradients except the XP bar.
+     The palette came from the stone/cobblestone/grass/sandstone/redstone set;
+     --dim/--faint were lifted from #8a8a8a to #b0b0b0/#9a9a9a so body text
+     clears 4.5:1 on cobblestone instead of guessing. */
+  body{font-family:"Courier New",ui-monospace,monospace;-webkit-font-smoothing:none;
+    letter-spacing:.2px}
+  header{gap:6px}
+  *,*::before,*::after{border-radius:0 !important}
+  h1,.tile .label,.card h2,.sub,th,.brand .mark{text-transform:uppercase;letter-spacing:.09em}
+  .mc, .card, header, .node, .gate, .sched{
+    border:3px solid;border-color:#5a5a5a #1a1a1a #1a1a1a #5a5a5a;
+    box-shadow:inset 1px 1px 0 #6a6a6a, inset -1px -1px 0 #222}
+  .card{background:var(--panel)}
+  .tile{background:#444}
+  .stop,.np,.badge,.idx,.pill,.copy,.mark{background:var(--mc-slot)}
+  .pill{border-width:2px}
+  .log{background:#262626}
+
+  /* health: one heart per open position, ten slots */
+  .hearts{display:flex;gap:3px;margin-top:6px}
+  .hearts i{width:12px;height:11px;display:block;background:#5a2020;
+    clip-path:polygon(50% 100%,0 40%,0 15%,25% 0,50% 20%,75% 0,100% 15%,100% 40%)}
+  .hearts i.on{background:#c0392b}
+
+  /* hunger: the age bar, full = fresh */
+  .hunger{display:flex;gap:2px;margin-top:6px}
+  .hunger i{width:9px;height:10px;display:block;background:#4a3a1c;
+    clip-path:polygon(20% 100%,0 55%,35% 40%,50% 0,65% 40%,100% 55%,80% 100%)}
+  .hunger i.on{background:#c8a94e}
+
+  /* XP bar for the significance bar */
+  .xp{display:flex;align-items:center;gap:8px}
+  .xp .track2{position:relative;width:90px;height:9px;background:#222;
+    border:2px solid #1a1a1a;box-shadow:inset 1px 1px 0 #000}
+  .xp .fill{height:100%;background:linear-gradient(90deg,#5d8a3c,#8fd14f)}
+  .xp .lbl{font-size:10px;color:var(--dim);white-space:nowrap}
+
+  /* verdict banner */
+  .verdict{grid-column:1/-1;display:flex;align-items:center;gap:12px;padding:14px 18px;
+    background:#3b3b3b;border:3px solid;border-color:#5a5a5a #1a1a1a #1a1a1a #5a5a5a;
+    box-shadow:inset 1px 1px 0 #6a6a6a}
+  .verdict b{font-size:15px;letter-spacing:.12em}
+  .verdict .toastbadge{font-size:10px;padding:2px 6px;background:#222;border:2px solid #1a1a1a;
+    color:var(--faint);text-transform:uppercase;letter-spacing:.1em}
+  .verdict.down b{color:var(--warn)}
+  .verdict.up b{color:#f0c440;text-shadow:0 0 6px rgba(240,196,64,.45)}
+  .verdict.up{border-color:#f0c440 #6b5200 #6b5200 #f0c440}
+  .verdict small{color:var(--dim);font-size:11px}
+
+  /* hotbar slots */
+  .hotbar{grid-column:1/-1;display:flex;gap:6px;align-items:stretch}
+  .slot{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--mc-slot);
+    border:3px solid;border-color:#5a5a5a #1a1a1a #1a1a1a #5a5a5a;font:inherit;
+    color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.1em}
+  .slot:hover{color:var(--ink)}
+  .slot.on{color:var(--ink);border-color:#8a8a8a #000 #000 #8a8a8a;background:#4a4a4a}
+  .slot .icon{font-size:14px;line-height:1}
+  .card.open{grid-column:1/-1 !important}
+  .card.open .log{max-height:50vh}
+
+  /* death screen */
+  .death{position:fixed;inset:0;z-index:20;display:grid;place-items:center;
+    background:rgba(60,10,10,.55);backdrop-filter:blur(2px);pointer-events:none}
+  .death div{background:#3b3b3b;border:3px solid;border-color:#6a6a6a #1a1a1a #1a1a1a #6a6a6a;
+    padding:20px 28px;text-align:center;font-size:13px;letter-spacing:.08em}
+  .death b{display:block;font-size:17px;color:var(--bad);margin-bottom:6px;letter-spacing:.14em}
 </style>
 </head>
 <body>
 <div id="root"></div>
 <script>
-const {useState, useEffect, useCallback} = React;
+const {useState, useEffect, useCallback, useRef} = React;
 const html = htm.bind(React.createElement);
 
 const money = (v, c) => {
@@ -246,8 +315,8 @@ function CopyBtn({which, label}) {
   </button>`;
 }
 
-function Card({title, which, count, wide, children}) {
-  return html`<section className=${`card ${wide || ""}`}>
+function Card({title, which, count, wide, open, children}) {
+  return html`<section className=${`card ${wide || ""}${open ? " open" : ""}`}>
     <header>
       <h2>${title}</h2>
       ${count ? html`<span className="count">${count}</span>` : null}
@@ -557,6 +626,17 @@ function App() {
 
   const age = data?.engine_age_s;
   const hasEngine = Boolean(data?.engine);
+  const t3 = data?.tier3;
+  const fRow = lastFunnel(data?.funnel);
+  const cum = t3?.trials_cumulative ?? fRow?.cumulative ?? null;
+  const zc = t3?.z_crit_corrected ?? null;
+  // null is not "stood down": an absent artifact means nobody measured a verdict.
+  const stoodDown = t3 ? Boolean(t3.stood_down) : fRow ? fRow.verdict !== "PROPOSAL" : null;
+  const survivors = (t3?.survivors || []).map(v => (v && v.symbol) || v).filter(Boolean);
+  const hunger = age == null ? 0 : age <= 10 ? 10 : Math.max(0, 10 - Math.floor((age - 10) / 12));
+  const [hot, setHot] = useState(null);
+  const wasUp = useRef(false);
+  if (up) wasUp.current = true;
   const stale = age !== null && age !== undefined && age > 30;
   const positions = data?.engine?.positions || [];
   const account = data?.engine?.account || {};
@@ -574,7 +654,7 @@ function App() {
     <span className=${`pill ${up ? "live" : "down"}`}>
       <span className="dot"></span>${up ? "live" : "disconnected"}
     </span>
-    ${stale ? html`<span className="pill stale">engine ${age}s stale</span>` : null}
+    ${stale ? html`<span className="pill stale" title="the supervisor has not written engine_state recently">${age}s stale</span>` : null}
     ${data && !hasEngine ? html`<span className="pill down">engine state missing</span>` : null}
     <span className="pill tz" title="Logs are stored in UTC; times are shown in your own zone">${TZ}</span>
     <a className="pill" href="/architecture" target="_blank" rel="noopener"
@@ -584,6 +664,12 @@ function App() {
     ${engineErr ? html`<span className="pill down" title=${engineErr}>engine refusing</span>` : null}
     ${err ? html`<span className="pill down">${err}</span>` : null}
     <span className="spacer"></span>
+    <div className="xp" title=${`${cum == null ? "no ledger" : cum.toLocaleString() + " cumulative trials"} · bar z̄ ${zc == null ? "—" : zc.toFixed(3)}`}>
+      <div className="track2" style=${{ width: "110px" }}><div className="fill" style=${{ width: Math.min(100, ((zc ?? 0) / 6) * 100) + "%" }}></div></div>
+    </div>
+    <div className="hunger" title=${!hasEngine ? "no engine state" : age + "s since the supervisor last wrote"}>
+      ${Array.from({ length: 10 }).map((_, i) => html`<i key=${i} className=${age != null && i < hunger ? "on" : ""}></i>`)}
+    </div>
     <button className=${`copy ${allState}`} onClick=${copyAll}
       aria-label="Copy all logs to clipboard" title="Copy audit, funnel and supervisor logs">
       ${allState === "done" ? "copied ✓" : allState === "fail" ? "copy failed" : "copy all logs"}
@@ -594,6 +680,15 @@ function App() {
   </header>
 
   <main>
+    ${data == null ? null : html`
+    <div className=${"verdict " + (stoodDown === false ? "up" : "down")}>
+      <span className="toastbadge">${stoodDown === false ? "edge" : stoodDown === true ? "verdict" : "pending"}</span>
+      <b>${stoodDown === false ? "EDGE CANDIDATE: " + (survivors.join(", ") || "unnamed")
+        : stoodDown === true ? "STANDING DOWN — no edge found"
+        : "NO SCAN YET — the funnel has not run in this tree"}</b>
+      <small>${cum == null ? "" : cum.toLocaleString() + " cumulative trials · bar z̄ " + (zc == null ? "—" : zc.toFixed(3))}</small>
+    </div>`}
+
     <section className="card tap4"><div className="tile">
       <div className="label">Balance</div>
       <div className="value mono">${money(data?.balance, data?.currency)}</div>
@@ -603,8 +698,11 @@ function App() {
     <section className="card tap4"><div className="tile">
       <div className="label">Open positions</div>
       <div className="value mono">${data?.positions ?? "—"}</div>
+      <div className="hearts" aria-hidden="true">
+        ${Array.from({ length: 10 }).map((_, i) => html`<i key=${i} className=${i < Math.min(10, positions.length) ? "on" : ""}></i>`)}
+      </div>
       <div className="note">${!hasEngine ? "no engine state"
-        : positions.length ? "supervised" : "flat — funnel standing down"}</div>
+        : positions.length ? "supervised · 10 slots shown" : "flat — funnel standing down"}</div>
     </div></section>
 
     <section className="card tap4"><div className="tile">
@@ -648,22 +746,34 @@ function App() {
           : "Flat — no open positions. The funnel is standing down."}</div>`}
     <//>
 
-    <${Card} title="Audit trail" which="audit" wide="tap6"
+    <div className="hotbar" role="tablist" aria-label="log panes">
+      ${[["audit", "🪵", "audit trail"], ["funnel", "⛏", "funnel history"], ["actions", "📜", "supervisor"]].map(([key, icon, label]) => html`
+        <button key=${key} role="tab" aria-selected=${String(hot === key)} className=${"slot" + (hot === key ? " on" : "")}
+          onClick=${() => setHot(hot === key ? null : key)}>
+          <span className="icon" aria-hidden="true">${icon}</span>${label}
+        </button>`)}
+    </div>
+
+    <${Card} title="Audit trail" which="audit" wide="tap6" open=${hot === "audit"}
       count=${data?.mcp?.length ? data.mcp.length + " shown" : null}>
       <${LogPane} lines=${data?.mcp} raw
         empty="No audit records yet — audit.jsonl fills on the next run" />
     <//>
 
-    <${Card} title="Funnel history" which="funnel" wide="tap6"
+    <${Card} title="Funnel history" which="funnel" wide="tap6" open=${hot === "funnel"}
       count=${data?.funnel?.length ? data.funnel.length + " shown" : null}>
       <${LogPane} lines=${data?.funnel} empty="No funnel runs logged yet" />
     <//>
 
-    <${Card} title="Supervisor" which="actions" wide="tap12"
+    <${Card} title="Supervisor" which="actions" wide="tap12" open=${hot === "actions"}
       count=${data?.actions?.length ? data.actions.length + " shown" : null}>
       <${LogPane} lines=${data?.actions} empty="No stop changes yet (position_manager.py)" />
     <//>
   </main>
+
+  ${!up && wasUp.current ? html`<div className="death" role="status">
+    <div><b>DISCONNECTED</b>You died! …but the engine didn't.<br/>
+      Reconnecting — the numbers below are frozen, not fresh.</div></div>` : null}
 
   <footer>
     read-only mirror · the engine never calls this process · files are tailed, nothing is written
