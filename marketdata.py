@@ -33,11 +33,32 @@ def connect() -> None:
         raise SystemExit(f"mt5.initialize failed: {mt5.last_error()}")
 
 
+_OFFSET_PROBES = ("BTCUSD", "ETHUSD", "US30", "EURUSD")
+_LAST_OFFSET: int | None = None
+
+
 def broker_offset() -> int:
-    """Seconds the broker clock runs ahead of UTC, rounded to 30 min."""
-    tick = mt5.symbol_info_tick("EURUSD")
+    """Seconds the broker clock runs ahead of UTC, rounded to 30 min.
+
+    Taken from the freshest tick of a probe set, never from a single symbol.
+    After a weekend close EURUSD's last tick is frozen at Friday 23:59 while the
+    real clock keeps advancing, so a one-symbol probe reports a shrinking offset
+    (-0.5 h by Saturday morning instead of +2.0 h). That drags server_now back to
+    Friday's close, which makes every shut instrument report bar_age_min ~ 12 min
+    — so tier 2 scans frozen Friday bars all weekend — and makes fetch() discard
+    the live bars of the instruments that ARE open.
+
+    If every probe is stale (maintenance, or a weekend with no 24/7 symbol) the
+    last plausible offset is reused. With none on record it returns 0, i.e. UTC:
+    everything then looks older than it is and callers skip it. Fail closed.
+    """
+    global _LAST_OFFSET
     now = time.time()
-    return round(((tick.time if tick else now) - now) / 1800) * 1800
+    fresh = max((t.time for t in (mt5.symbol_info_tick(s) for s in _OFFSET_PROBES)
+                 if t and t.time), default=0)
+    if fresh and now - fresh < 3600:
+        _LAST_OFFSET = round((fresh - now) / 1800) * 1800
+    return _LAST_OFFSET if _LAST_OFFSET is not None else 0
 
 
 _AUTO_SELECTED: set[str] = set()
