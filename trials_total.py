@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import sys
 import os
 import re
 from pathlib import Path
@@ -85,10 +86,22 @@ def last_sig(path: Path | None = None) -> str:
     return "genesis"
 
 
+_WARNED_UNSIGNED = False
+
+
 def sign_line(body: str, path: Path | None = None, key: bytes | None = None) -> str:
     """Append the chain signature to one ledger line."""
+    global _WARNED_UNSIGNED
     k = key if key is not None else ledger_key()
     if k is None:
+        # Unsigned is a supported state, not an error, but it must not be a
+        # quiet one: an operator who never set ZTT_LEDGER_KEY ends up with a
+        # ledger only as trustworthy as the disk, while believing otherwise.
+        if not _WARNED_UNSIGNED:
+            _WARNED_UNSIGNED = True
+            print("WARNING: no ZTT_LEDGER_KEY (env or .env) — the ledger is being "
+                  "written UNSIGNED and cannot be checked for tampering",
+                  file=sys.stderr)
         return body
     return f"{body}{SIG_PREFIX}{line_sig(k, last_sig(path), body)}"
 

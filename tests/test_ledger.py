@@ -138,6 +138,26 @@ class TestLedgerChain(unittest.TestCase):
             log.write_text("\n".join([rows[0], rows[2]]) + "\n", encoding="utf-8")
             self.assertEqual(tt.verify(log, self.KEY)[0], "broken")
 
+    def test_unsigned_append_warns_once_on_stderr(self):
+        """Silent degradation is the failure mode this project keeps hitting."""
+        import contextlib
+        import io
+        import tempfile
+        from unittest import mock
+
+        with tempfile.TemporaryDirectory() as d:
+            log = pathlib.Path(d) / "ledger.log"
+            tt._WARNED_UNSIGNED = False
+            err = io.StringIO()
+            with mock.patch.object(tt, "ledger_key", lambda *a, **k: None), \
+                    contextlib.redirect_stderr(err):
+                first = tt.sign_line("body", log)
+                second = tt.sign_line("body2", log)
+            self.assertEqual(first, "body")
+            self.assertEqual(second, "body2")
+            self.assertEqual(err.getvalue().count("WARNING"), 1, "warn once, not per row")
+            tt._WARNED_UNSIGNED = False
+
     def test_unsigned_rows_are_reported_not_trusted(self):
         with tempfile.TemporaryDirectory() as d:
             log = pathlib.Path(d) / "ledger.log"

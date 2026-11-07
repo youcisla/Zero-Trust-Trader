@@ -232,6 +232,11 @@ strategy family that could never fire). Neither raised an exception.
 `tests/test_position_manager.py` asserts these as a property sweep over 3,000
 randomised positions. If your change breaks it, your change is wrong — not the test.
 
+The supervisor takes its lock with `O_CREAT | O_EXCL` (`position_manager.acquire_lock`),
+not by checking-and-writing: two supervisors starting in the same millisecond once
+both slipped through and could both move stops. A stale lock is still taken over —
+a crashed supervisor must not stop the system forever.
+
 **The supervisor runs in dry-run mode until there is a real open trade to manage.**
 Do not add `--apply` to any scheduled task speculatively.
 

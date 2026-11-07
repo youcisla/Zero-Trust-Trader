@@ -234,6 +234,48 @@ class TestApplyGuard(unittest.TestCase):
         import position_manager as pm
         self.assertEqual(pm.apply_allowed(False, {}), (False, ""))
 
+class TestSupervisorLock(unittest.TestCase):
+    def setUp(self):
+        import tempfile
+        self.dir = tempfile.TemporaryDirectory()
+        self.path = pathlib.Path(self.dir.name) / "position_manager.lock"
+        self.addCleanup(self.dir.cleanup)
+
+    def test_a_second_supervisor_cannot_acquire_a_live_lock(self):
+        import position_manager as pm
+        self.assertTrue(pm.acquire_lock(60, self.path))
+        self.assertFalse(pm.acquire_lock(60, self.path))
+
+    def test_a_stale_lock_is_taken_over(self):
+        """A crashed supervisor must not stop the system forever."""
+        import position_manager as pm
+        self.path.write_text("dead")
+        import os
+        import time
+        old = time.time() - 3600          # an hour stale, not a timestamp in the future
+        os.utime(self.path, (old, old))
+        self.assertTrue(pm.acquire_lock(60, self.path))
+
+    def test_exactly_one_thread_wins_a_simultaneous_start(self):
+        """The bug this replaced: both saw exists()==False and both ran."""
+        import threading
+        import position_manager as pm
+        barrier, results = threading.Barrier(8), []
+        lock = threading.Lock()
+
+        def start():
+            barrier.wait()
+            got = pm.acquire_lock(60, self.path)
+            with lock:
+                results.append(got)
+
+        threads = [threading.Thread(target=start) for _ in range(8)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+        self.assertEqual(sum(results), 1)
+
 
 if __name__ == "__main__":
     unittest.main()

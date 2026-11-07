@@ -301,6 +301,33 @@ def write_state(doc: dict, keep: int = 2) -> bool:
     return True
 
 
+def acquire_lock(max_age_s: float, path: Path | None = None) -> bool:
+    """Exclusive-create the supervisor lock. False when a live one holds it.
+
+    check-then-write left a window: two supervisors starting in the same
+    millisecond both saw LOCK.exists() == False and both went on to move stops.
+    O_EXCL makes the create the decision, and a stale lock is still taken over
+    rather than obeyed — a crashed supervisor must not stop the system forever.
+    """
+    lock = path or LOCK
+    for attempt in (0, 1):
+        try:
+            fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
+        except FileExistsError:
+            try:
+                fresh = time.time() - lock.stat().st_mtime < max_age_s
+            except FileNotFoundError:
+                continue  # released between the two calls: retry once
+            if fresh or attempt:
+                return False
+            lock.unlink(missing_ok=True)
+            continue
+        os.write(fd, str(time.time()).encode())
+        os.close(fd)
+        return True
+    return False
+
+
 def log_line(text: str) -> None:
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     with LOG.open("a", encoding="utf-8") as fh:
@@ -327,10 +354,9 @@ def main() -> int:
             print("Set ZTT_ALLOW_APPLY=1 in your own shell to enable it.")
         print("Use --apply (with that variable) to act.\n")
 
-    if LOCK.exists() and time.time() - LOCK.stat().st_mtime < a.interval * 4:
+    if not acquire_lock(a.interval * 4):
         print(f"another supervisor is running (lock {LOCK.name})")
         return 0
-    LOCK.write_text(str(time.time()))
     log_line(f"supervisor up | interval={a.interval}s | apply={a.apply} | "
              f"session-close={a.session_close}")
 
