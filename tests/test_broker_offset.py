@@ -20,6 +20,10 @@ from unittest import mock
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(ROOT), str(ROOT / "tests")]
 
+from _mt5stub import install  # noqa: E402
+
+install()  # before marketdata: MetaTrader5 is Windows-only, CI has no wheel
+
 import marketdata as md  # noqa: E402
 
 
