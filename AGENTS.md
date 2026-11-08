@@ -280,6 +280,10 @@ when launched from either the repo root or `dashboard/`.
 - **React is vendored** in `web/vendor/`. Do not swap it back to a CDN — that
   reintroduces an offline failure mode and an SRI hash to maintain.
 - Client WebSocket messages are intentionally ignored by the server.
+- **The canvas must fit the viewport.** Six stages are a CSS grid (6/3/2 columns)
+  and the wires are measured from the nodes with a `ResizeObserver`. Do not
+  reintroduce a fixed node pitch and a horizontally scrolling track — the page
+  must never scroll sideways.
 - **The tail is bounded.** `tail()` seeks to the last 16 KiB instead of reading the
   whole file, because the ledger is append-only and grows forever. Do not go back
   to `read_to_string` on a file the engine appends to.
