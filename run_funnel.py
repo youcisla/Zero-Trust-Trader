@@ -331,6 +331,7 @@ def main() -> int:
         # The deep test must close at the end of the window it is testing into;
         # deriving it from --window-utc stops the two from drifting apart.
         t3_args += ["--session-close", a.window_utc.partition("-")[2].strip()]
+    t3_started = time.time()
     t3 = run(t3_args)
     # tier3 exits 2 on a clean stand-down: that is success, not failure
     if t3.returncode not in (0, 2):
@@ -338,8 +339,20 @@ def main() -> int:
         return 1
     print(tail(t3.stdout, 14))
 
+    # An exit code is the child's claim about itself. Check the artifact it was
+    # supposed to write: a scan that dies between its last write and its exit
+    # leaves last run's file in place, and reading that would report a previous
+    # verdict — and log it to the audit trail — as if this scan had produced it.
+    art = HERE / "tier3_results.json"
     try:
-        doc = json.loads((HERE / "tier3_results.json").read_text())
+        if art.stat().st_mtime < t3_started - 1:
+            log("FAILED tier3 wrote no artifact this run — refusing to report a "
+                "previous scan's verdict")
+            return 1
+        doc = json.loads(art.read_text())
+    except FileNotFoundError:
+        log("FAILED tier3 wrote no artifact this run")
+        return 1
     except Exception as e:
         log(f"FAILED reading tier3_results.json: {e}")
         return 1
