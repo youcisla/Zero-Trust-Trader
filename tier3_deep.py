@@ -172,10 +172,14 @@ def main() -> int:
         return 0
 
     zc = tm.bonferroni_z(trials)
-    print(f"Tier 2 shortlist: {len(top)} | declaring {trials} tests "
+    # These were two different numbers printed as one sentence: the cumulative
+    # count went out as "declaring 8952 tests (62 symbols x 3 strategies)", and
+    # 62 x 3 is 186. Anyone reading the log would think the accounting was
+    # broken. Say which number is which.
+    print(f"Tier 2 shortlist: {len(top)} | this scan declares {scan_tests} tests "
           f"({src.get('symbols_tested', '?')} symbols x {src.get('strategies_tested', '?')} "
-          f"strategies) | z_crit {zc:.2f} | permutations {a.permutations} | "
-          f"corr_max {a.corr_max}\n")
+          f"strategies) | cumulative {trials} | z_crit {zc:.2f} | "
+          f"permutations {a.permutations} | corr_max {a.corr_max}\n")
 
     md.connect()
     results = []
