@@ -209,3 +209,49 @@ that survives 9,000 comparisons), cost per trade (spread — EURUSD's is 16% of
 its M15 ATR), and the fraction of the account risked per trade. A guarantee of
 win rate is not among them, and any system that offers one has moved the risk
 somewhere you cannot see it.
+
+---
+
+## Scalping, and why the timeframe is the strategy
+
+The spread is a fixed toll per round trip. A stop is a fixed distance. The
+ratio between them is the fraction of your risk unit you hand over before the
+trade can do anything, and it is set almost entirely by the timeframe you
+choose.
+
+EURUSD, 12-point spread, same Donchian rule and 1.5xATR stop at every scale,
+15,000 bars each:
+
+| tf | span | ATR | spread/ATR | cost per 1R | trades | win | avg R |
+|---|---|---|---|---|---|---|---|
+| M1 | 14 d | 0.00013 | **91.8%** | **61.2%** | 576 | 7.8% | −1.042 |
+| M5 | 74 d | 0.00020 | 59.8% | 39.9% | 477 | 16.4% | −0.559 |
+| M15 | 220 d | 0.00038 | 31.4% | 20.9% | 406 | 24.1% | −0.282 |
+| M30 | 441 d | 0.00075 | 15.9% | 10.6% | 434 | 25.6% | −0.118 |
+| H1 | 881 d | 0.00100 | 12.0% | 8.0% | 457 | 32.4% | −0.162 |
+| H4 | 3,520 d | 0.00244 | 4.9% | **3.3%** | 350 | 28.3% | **−0.025** |
+
+Read the last two columns against the fifth. The result is essentially
+`−cost per 1R` at every scale: there is no edge anywhere in the family, and
+what looks like "the strategy works better on higher timeframes" is just the
+toll getting smaller. Nothing else changed — same rule, same stops, same
+instrument.
+
+**What this means for scalping specifically.** On M1 you pay 61% of your risk
+unit per trade. You begin every position down 0.61R, so a strategy must predict
+61% of a risk unit merely to break even — 24x the edge H4 needs to break even
+(2.5%). And M1 is where the trade count is highest, so the toll is paid 576
+times instead of 350, in a fourteenth of the calendar time. Scalping is not a
+faster path to the same destination; it is a steeper price for the same zero.
+
+**Two consequences for this repository:**
+
+1. `marketdata.TIMEFRAMES` has no M1 or M5 entry. That is not an oversight to
+   fix in a hurry — adding them would make every one of the above numbers worse,
+   not better.
+2. A new strategy family would be introduced into a field where the toll alone
+   is 3.3% of 1R (H4) or 20.9% (M15), and it would add 50 tests per scan to a
+   bar that is already at 4.54. The cheapest available improvement is not
+   another family; it is the cheapest instrument-timeframe pair in the universe,
+   which `tools/vol_dispersion.py` already measures (a 640x spread between the
+   cheapest and most expensive symbol at the same nominal 0.01 lots).
