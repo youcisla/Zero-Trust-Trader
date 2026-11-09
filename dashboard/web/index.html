@@ -11,276 +11,254 @@
 <script src="/vendor/react-dom.production.min.js"></script>
 <script src="/vendor/htm.umd.js"></script>
 <style>
+  /* ---- design tokens ---------------------------------------------------
+     One dark surface scale, one accent, one type scale (11/12/13/15/20/28).
+     Radius only on surfaces and controls; no bevels, no gradients except the
+     significance meter. Numbers are tabular; prose is never mono. */
   :root{
-    /* one type scale: 11 / 12 / 13 / 15 / 22  ·  one 4px spacing scale */
-    --bg:#2c2c2c; --panel:#3b3b3b; --line:#1a1a1a; --line-soft:#262626;
-    --ink:#e0e0e0; --dim:#b0b0b0; --faint:#a2a2a2;
-    --good:#7fb04a; --warn:#c8a94e; --bad:#b25353;
-    --mc-accent:#4a7a9b; --mc-slot:#2b2b2b;
-    --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px;
-    --r:0px;
+    --bg:#0a0b0d; --surface:#111317; --surface2:#161a20; --surface3:#1b2028;
+    --line:#20252d; --line2:#2a313b;
+    --ink:#e7eaf0; --dim:#98a2b3; --faint:#69737f;
+    --accent:#5b8def; --accent-dim:rgba(91,141,239,.14);
+    --good:#3fb950; --good-dim:rgba(63,185,80,.14);
+    --warn:#d6a02a; --warn-dim:rgba(214,160,42,.14);
+    --bad:#f0564f; --bad-dim:rgba(240,86,79,.13);
+    --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px;
+    --r:10px; --r-sm:7px;
   }
   *{box-sizing:border-box}
-  html,body{height:100%}
-  body{margin:0;background:var(--bg);color:var(--ink);
-    font:13px/1.5 ui-sans-serif,-apple-system,"Segoe UI",system-ui,sans-serif;
+  html,body{height:100%;margin:0}
+  body{background:var(--bg);color:var(--ink);
+    font:13px/1.55 ui-sans-serif,-apple-system,"Segoe UI",Inter,system-ui,sans-serif;
     -webkit-font-smoothing:antialiased}
-  .mono{font-family:ui-monospace,"Cascadia Mono",Menlo,Consolas,monospace;font-variant-numeric:tabular-nums}
+  .mono{font-family:ui-monospace,"SF Mono","Cascadia Mono",Menlo,Consolas,monospace;
+    font-variant-numeric:tabular-nums;letter-spacing:-.01em}
   button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
-  button:focus-visible,a:focus-visible{outline:2px solid var(--warn);outline-offset:2px;border-radius:6px}
+  a{color:inherit}
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:var(--r-sm)}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:#242a33;border-radius:99px;border:2px solid var(--bg)}
 
-  header{display:flex;flex-wrap:wrap;align-items:center;gap:var(--s3);padding:var(--s3) var(--s5);
-    border-bottom:1px solid var(--line);position:sticky;top:0;background:rgba(10,12,15,.92);
-    backdrop-filter:blur(6px);z-index:5}
-  .brand{display:flex;align-items:center;gap:var(--s2)}
-  .mark{width:18px;height:18px;border-radius:5px;border:1px solid var(--line);
-    display:grid;place-items:center;color:var(--warn);font-size:11px;font-weight:700}
-  h1{font-size:13px;letter-spacing:.02em;margin:0;font-weight:600}
-  .sub{color:var(--faint);font-size:11px;letter-spacing:.08em;text-transform:uppercase}
+  /* ---- shell ----------------------------------------------------------- */
+  .app{display:grid;grid-template-columns:212px 1fr;min-height:100vh}
+  .side{position:sticky;top:0;height:100vh;display:flex;flex-direction:column;
+    background:#0c0e11;border-right:1px solid var(--line);padding:var(--s4) var(--s3)}
+  .brand{display:flex;align-items:center;gap:10px;padding:0 var(--s2) var(--s5)}
+  .mark{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;
+    background:linear-gradient(160deg,#2a3a5c,#1a2333);border:1px solid #2e3b52;
+    color:#9cc0ff;font-size:12px;font-weight:700;letter-spacing:.02em}
+  .brand h1{font-size:13px;margin:0;font-weight:600;letter-spacing:-.01em}
+  .brand .sub{color:var(--faint);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase}
+  .nav{display:flex;flex-direction:column;gap:2px}
+  .navitem{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:7px;
+    color:var(--dim);font-size:12.5px;text-align:left;transition:background .12s,color .12s}
+  .navitem svg{width:14px;height:14px;flex:0 0 14px;opacity:.75}
+  .navitem:hover{background:var(--surface2);color:var(--ink)}
+  .navitem.on{background:var(--accent-dim);color:#cfe0ff}
+  .navitem.on svg{opacity:1;color:var(--accent)}
+  .navitem .kbd{margin-left:auto;font-size:9.5px;color:var(--faint);font-family:ui-monospace,monospace}
+  .side .grow{flex:1}
+  .sidenote{padding:var(--s3) var(--s2);border-top:1px solid var(--line);font-size:11px;color:var(--faint)}
+  .sidenote b{color:var(--dim);font-weight:500;display:block;margin-bottom:4px}
+  .sidelink{display:flex;align-items:center;gap:6px;padding:5px 9px;border-radius:6px;
+    color:var(--dim);font-size:12px;text-decoration:none}
+  .sidelink:hover{background:var(--surface2);color:var(--ink)}
+
+  .main{min-width:0;display:flex;flex-direction:column}
+  .topbar{position:sticky;top:0;z-index:6;display:flex;align-items:center;gap:var(--s3);
+    padding:14px var(--s6);background:rgba(10,11,13,.88);backdrop-filter:blur(8px);
+    border-bottom:1px solid var(--line)}
+  .pagetitle{font-size:15px;font-weight:600;letter-spacing:-.01em}
+  .pagesub{color:var(--faint);font-size:11.5px}
   .spacer{flex:1}
 
-  .pill{display:inline-flex;align-items:center;gap:6px;font-size:11px;letter-spacing:.04em;
-    padding:3px 9px;border-radius:999px;border:1px solid var(--line);color:var(--dim);
-    transition:color .15s ease,border-color .15s ease}
+  .pill{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;
+    padding:4px 10px;border-radius:99px;border:1px solid var(--line2);color:var(--dim);
+    white-space:nowrap}
   .pill .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
-  .pill.live{color:var(--good);border-color:rgba(63,185,80,.35)}
-  .pill.down{color:var(--bad);border-color:rgba(248,81,73,.35)}
-  .pill.stale{color:var(--warn);border-color:rgba(210,153,34,.4)}
-  .pill.tz{color:var(--faint);font-family:ui-monospace,"Cascadia Mono",Menlo,Consolas,monospace;
-    letter-spacing:0}
-  a.pill{text-decoration:none;color:var(--ink)}
-  a.pill:hover{border-color:var(--ink)}
-  .scrollx{overflow-x:auto}
+  .pill.live{color:var(--good);border-color:rgba(63,185,80,.32);background:rgba(63,185,80,.07)}
+  .pill.down{color:var(--bad);border-color:rgba(240,86,79,.32);background:var(--bad-dim)}
+  .pill.stale{color:var(--warn);border-color:rgba(214,160,42,.32);background:var(--warn-dim)}
+  .pill.tz{color:var(--faint);font-size:11px}
+  a.pill{text-decoration:none}
+  .equity{display:flex;align-items:baseline;gap:7px;margin-left:auto}
+  .equity b{font-size:20px;font-weight:600;letter-spacing:-.02em}
+  .equity span{color:var(--faint);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase}
 
-  /* ---- pipeline canvas: fixed pitch, so the wires never need measuring ---- */
-  .pipewrap{overflow:visible;padding:var(--s3);
-    background-image:radial-gradient(#252f3d 1px,transparent 1px);background-size:16px 16px;
-    border-top:1px solid var(--line);border-bottom:1px solid var(--line)}
+  .page{padding:var(--s5) var(--s6) var(--s6);display:grid;gap:var(--s4);
+    grid-template-columns:repeat(12,1fr);align-items:start;max-width:1480px;width:100%}
+  .tap3{grid-column:span 3} .tap4{grid-column:span 4} .tap6{grid-column:span 6}
+  .tap8{grid-column:span 8} .tap12{grid-column:1/-1}
+  @media (max-width:1180px){ .tap3,.tap4{grid-column:span 6} .tap6,.tap8{grid-column:span 12} }
+  @media (max-width:720px){ .page{padding:var(--s4)} .tap3,.tap4{grid-column:span 12} }
+  @media (max-width:900px){ .app{grid-template-columns:64px 1fr} .side{padding:var(--s3) 6px}
+    .brand h1,.brand .sub,.navitem span,.sidenote,.sidelink span{display:none}
+    .brand{justify-content:center;padding:0 0 var(--s4)} .navitem{justify-content:center}
+    .topbar{padding:12px var(--s4)} }
+
+  /* ---- surfaces -------------------------------------------------------- */
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
+    overflow:hidden;box-shadow:0 1px 0 rgba(255,255,255,.02) inset}
+  .card>header{display:flex;align-items:center;gap:var(--s2);padding:11px 14px;
+    border-bottom:1px solid var(--line)}
+  .card h2{margin:0;font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;
+    color:var(--dim);font-weight:600}
+  .card .count{color:var(--faint);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .tile{padding:14px 16px}
+  .tile .label{color:var(--faint);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase}
+  .tile .value{font-size:24px;font-weight:600;letter-spacing:-.02em;margin-top:3px}
+  .tile .value.small{font-size:16px;font-weight:500}
+  .tile .note{color:var(--faint);font-size:11.5px;margin-top:3px}
+
+  .verdict{grid-column:1/-1;display:flex;align-items:center;gap:12px;padding:13px 16px;
+    border-radius:var(--r);border:1px solid var(--line);background:var(--surface)}
+  .verdict b{font-size:14px;font-weight:600}
+  .verdict small{margin-left:auto;color:var(--faint);font-size:11.5px}
+  .verdict .tag{font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:2px 7px;
+    border-radius:5px;border:1px solid var(--line2);color:var(--faint)}
+  .verdict.down{border-color:rgba(214,160,42,.28);background:linear-gradient(90deg,var(--warn-dim),var(--surface) 55%)}
+  .verdict.down b{color:#f0c776} .verdict.down .tag{color:#f0c776;border-color:rgba(214,160,42,.3)}
+  .verdict.up{border-color:rgba(63,185,80,.35);background:linear-gradient(90deg,var(--good-dim),var(--surface) 55%)}
+  .verdict.up b{color:#6ee787}
+
+  /* ---- pipeline -------------------------------------------------------- */
+  .pipewrap{padding:var(--s4)}
   .track{position:relative;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:22px 20px}
   @media (max-width:1240px){.track{grid-template-columns:repeat(3,minmax(0,1fr))}}
   @media (max-width:760px){.track{grid-template-columns:repeat(2,minmax(0,1fr))}}
   .wires{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
-  .wire{fill:none;stroke:#6a6a6a;stroke-width:2}
-  .wire.on{stroke:var(--good);stroke-dasharray:5 5;animation:flow .9s linear infinite}
-  @keyframes flow{to{stroke-dashoffset:-10}}
+  .wire{fill:none;stroke:#2b323d;stroke-width:1.5}
+  .wire.on{stroke:var(--accent);stroke-dasharray:4 4;animation:flow .9s linear infinite}
+  @keyframes flow{to{stroke-dashoffset:-8}}
   @media (prefers-reduced-motion:reduce){.wire.on{animation:none}}
   .stop{position:absolute;transform:translate(-50%,-50%);z-index:4;pointer-events:none;
     width:16px;height:16px;display:grid;place-items:center;font-size:10px;line-height:1;
-    background:#1b2028;border:1px solid rgba(200,169,78,.6);color:var(--warn);white-space:nowrap}
-  .node{position:relative;width:auto;min-width:0;background:#101820;border:1px solid var(--line);
-    border-left:3px solid var(--faint);border-radius:10px;padding:10px 11px;cursor:pointer;
-    display:flex;flex-direction:column;gap:6px;text-align:left;font:inherit;color:inherit}
-  .node:hover{border-color:#2c3947;border-left-color:var(--dim)}
-  .node:focus-visible{outline:2px solid var(--warn);outline-offset:2px}
+    border-radius:50%;background:#1a1f27;border:1px solid rgba(214,160,42,.5);color:var(--warn)}
+  .node{position:relative;width:auto;min-width:0;background:var(--surface2);
+    border:1px solid var(--line);border-left:2px solid var(--line2);border-radius:var(--r-sm);
+    padding:10px 11px;cursor:pointer;display:flex;flex-direction:column;gap:6px;
+    text-align:left;font:inherit;color:inherit;transition:border-color .12s,background .12s}
+  .node:hover{background:var(--surface3);border-color:var(--line2)}
   .node.good{border-left-color:var(--good)} .node.warn{border-left-color:var(--warn)}
   .node.bad{border-left-color:var(--bad)}  .node.dim{border-left-color:#39424f}
-  .node.sel{box-shadow:0 0 0 2px rgba(210,153,34,.5)}
-  .node::before,.node::after{content:"";position:absolute;top:50%;width:8px;height:8px;margin-top:-4px;
-    border-radius:50%;background:#0a0c0f;border:1px solid #39424f}
-  .node::before{left:-6px} .node::after{right:-6px}
-  .nh{display:flex;align-items:baseline;gap:6px;font-size:12px;line-height:1.25}
-  .nh b{font-weight:600}
-  .idx{font-size:9px;color:var(--faint);border:1px solid var(--line);border-radius:4px;padding:0 3px}
-  .nsub{font-size:11px;color:var(--dim)}
+  .node.sel{box-shadow:0 0 0 1px var(--accent),0 0 0 4px var(--accent-dim)}
+  .nh{display:flex;align-items:baseline;gap:6px;font-size:12px;line-height:1.3}
+  .nh b{font-weight:600;letter-spacing:-.01em}
+  .idx{font-size:9.5px;color:var(--faint);border:1px solid var(--line2);border-radius:4px;
+    padding:0 4px;font-variant-numeric:tabular-nums}
+  .nsub{font-size:11.5px;color:var(--dim)}
   .npills{display:flex;flex-wrap:wrap;gap:4px;margin-top:auto}
-  .np{font-size:10px;color:var(--dim);background:#0d1319;border:1px solid var(--line);border-radius:5px;padding:1px 5px}
-  .np b{font-weight:600;color:var(--ink)}
-  .nbar{height:4px;border-radius:2px;background:#0d1319;overflow:hidden}
-  .nbar span{display:block;height:100%;background:var(--dim)}
+  .np{font-size:10px;color:var(--faint);background:var(--surface);border:1px solid var(--line);
+    border-radius:5px;padding:1px 5px}
+  .np b{font-weight:600;color:var(--dim)}
+  .nbar{height:3px;border-radius:2px;background:#1c2129;overflow:hidden}
+  .nbar span{display:block;height:100%;background:var(--accent)}
+
   .insp{padding:var(--s4);display:flex;flex-direction:column;gap:var(--s3)}
-  .inshead{display:flex;align-items:baseline;gap:var(--s2);font-size:12px;color:var(--dim)}
+  .inshead{display:flex;align-items:baseline;gap:var(--s2);font-size:12px;color:var(--dim);
+    flex-wrap:wrap}
   .inshead b{color:var(--ink);font-size:13px}
-  .sched{position:relative;height:56px;border-radius:6px;background:#0d1319;border:1px solid var(--line)}
-  .band{position:absolute;top:0;bottom:0;border-right:1px solid var(--line)}
-  .band.on{background:rgba(63,185,80,.07)}
-  .band b{position:absolute;top:5px;left:5px;font-size:10px;color:var(--faint);font-weight:500}
-  .band i{position:absolute;bottom:4px;left:5px;font-size:9px;font-style:normal;color:var(--faint)}
-  .nowline{position:absolute;top:0;bottom:0;width:2px;background:var(--good)}
-  .nowline b{position:absolute;top:-2px;left:4px;font-size:9px;color:var(--good);font-weight:600}
-  .conv{display:flex;flex-direction:column;gap:5px}
-  .convrow{display:grid;grid-template-columns:130px 1fr 52px;align-items:center;gap:8px;font-size:11px}
-  .convrow i{font-style:normal;color:var(--dim)}
-  .convbar{height:8px;border-radius:4px;background:#0d1319;overflow:hidden}
-  .convbar span{display:block;height:100%;background:var(--dim)}
-  .gates{display:grid;grid-template-columns:repeat(auto-fit,minmax(290px,1fr));gap:10px}
-  .gate{border:1px solid var(--line);border-radius:8px;padding:10px;background:#0d1319;font-size:11px}
-  .gate h4{margin:0 0 4px;font-size:12px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-  .gauge{position:relative;height:10px;border-radius:5px;background:#131a22;margin:12px 0 5px;
+  .sched{position:relative;height:54px;border-radius:var(--r-sm);background:var(--surface);
     border:1px solid var(--line)}
-  .gauge span{position:absolute;top:1px;bottom:1px;background:var(--bad);border-radius:5px}
+  .band{position:absolute;top:0;bottom:0;border-right:1px solid var(--line)}
+  .band.on{background:rgba(91,141,239,.09)}
+  .band b{position:absolute;top:5px;left:6px;font-size:10px;color:var(--faint);font-weight:500}
+  .band i{position:absolute;bottom:4px;left:6px;font-size:9.5px;font-style:normal;color:var(--faint)}
+  .nowline{position:absolute;top:0;bottom:0;width:2px;background:var(--accent)}
+  .nowline b{position:absolute;top:-3px;left:4px;font-size:9px;color:var(--accent)}
+  .conv{display:flex;flex-direction:column;gap:6px}
+  .convrow{display:grid;grid-template-columns:132px 1fr 54px;align-items:center;gap:8px;font-size:11.5px}
+  .convrow i{font-style:normal;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .convbar{height:6px;border-radius:3px;background:#1c2129;overflow:hidden}
+  .convbar span{display:block;height:100%;background:var(--accent)}
+  .gates{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px}
+  .gate{border:1px solid var(--line);border-radius:var(--r-sm);padding:11px;
+    background:var(--surface);font-size:11.5px}
+  .gate h4{margin:0 0 7px;font-size:12.5px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
+  .gauge{position:relative;height:8px;border-radius:4px;background:#1c2129;margin:10px 0 4px;
+    border:1px solid var(--line)}
+  .gauge span{position:absolute;top:1px;bottom:1px;background:var(--bad);border-radius:4px}
   .gauge span.ok{background:var(--good)}
-  .gauge u{position:absolute;top:-4px;bottom:-4px;width:1px;background:var(--faint);text-decoration:none}
-  .glegend{display:flex;justify-content:space-between;font-size:10px;color:var(--faint)}
-  .tel{display:flex;align-items:flex-end;gap:3px;height:64px}
-  .tel div{flex:1;background:var(--dim);border-radius:2px 2px 0 0;min-height:2px;position:relative}
+  .gauge u{position:absolute;top:-3px;bottom:-3px;width:1px;background:var(--faint);text-decoration:none}
+  .glegend{display:flex;justify-content:space-between;font-size:10.5px;color:var(--faint)}
+  .tel{display:flex;align-items:flex-end;gap:3px;height:56px}
+  .tel div{flex:1;background:#2a313b;border-radius:2px 2px 0 0;min-height:2px}
   .tel div.hit{background:var(--warn)}
   .telcap{display:flex;justify-content:space-between;font-size:10px;color:var(--faint)}
-  .rules{display:flex;flex-direction:column;gap:6px;font-size:11px;color:var(--dim)}
-  .rules b{color:var(--ink)}
-  .badge{font-size:10px;border-radius:5px;padding:1px 6px;border:1px solid var(--line);color:var(--dim)}
-  .badge.pass{color:var(--good);border-color:rgba(63,185,80,.45)}
-  .badge.rej{color:var(--bad);border-color:rgba(248,81,73,.45)}
+  .rules{display:flex;flex-direction:column;gap:7px;font-size:12px;color:var(--dim)}
+  .rules b{color:var(--ink);font-weight:600}
+  .badge{font-size:10px;border-radius:5px;padding:1px 6px;border:1px solid var(--line2);color:var(--dim)}
+  .badge.pass{color:var(--good);border-color:rgba(63,185,80,.4);background:var(--good-dim)}
+  .badge.rej{color:var(--bad);border-color:rgba(240,86,79,.4);background:var(--bad-dim)}
 
-  /* flex-wrap lets the error pills push the header onto a second row; without
-     this the equity lands alone at the far left of that row. */
-  .equity{display:flex;align-items:baseline;gap:6px;margin-left:auto}
-  .equity b{font-size:20px;font-weight:600;letter-spacing:-.015em}
-  .equity span{color:var(--dim);font-size:11px;letter-spacing:.08em}
-
-  main{padding:var(--s5);display:grid;gap:var(--s4);
-    grid-template-columns:repeat(12,1fr);align-items:start;max-width:1500px;margin:0 auto}
-  .tap4{grid-column:span 3}
-  .tap6{grid-column:span 6}
-  .tap12{grid-column:1/-1}
-  @media (max-width:1100px){ .tap4{grid-column:span 6} .tap6{grid-column:span 12} }
-  @media (max-width:640px){ main{padding:var(--s4)} .tap4{grid-column:span 12} }
-
-  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);overflow:hidden}
-  .card header{position:static;display:flex;align-items:center;gap:var(--s2);
-    padding:var(--s2) var(--s3);border-bottom:1px solid var(--line-soft);
-    background:transparent;backdrop-filter:none}
-  .card h2{margin:0;font-size:11px;letter-spacing:.1em;text-transform:uppercase;
-    color:var(--dim);font-weight:600}
-  .card .count{color:var(--faint);font-size:11px}
-
-  .tile{padding:var(--s4)}
-  .tile .label{color:var(--dim);font-size:11px;letter-spacing:.09em;text-transform:uppercase}
-  .tile .value{font-size:22px;font-weight:600;letter-spacing:-.015em;margin-top:var(--s1)}
-  .tile .value.small{font-size:15px;font-weight:500}
-  .tile .note{color:var(--faint);font-size:11px;margin-top:2px}
-
-  .row{display:flex;justify-content:space-between;gap:var(--s3);padding:var(--s2) 0;font-size:13px}
-  .row+.row{border-top:1px solid rgba(255,255,255,.04)}
-  .k{color:var(--dim)}
-
-  table{width:100%;border-collapse:collapse}
-  th,td{text-align:right;padding:var(--s2) var(--s3);font-size:13px}
-  th{color:var(--dim);font-weight:500;font-size:11px;text-transform:uppercase;
-    letter-spacing:.08em;border-bottom:1px solid var(--line-soft)}
-  th:first-child,td:first-child{text-align:left}
-  tbody tr+tr td{border-top:1px solid rgba(255,255,255,.04)}
-  .pos{color:var(--good)} .neg{color:var(--bad)}
-
-  .log{font-family:ui-monospace,"Cascadia Mono",Menlo,Consolas,monospace;
-    font-size:12px;line-height:1.65;color:#aab6c2;max-height:260px;overflow:auto;
-    white-space:pre-wrap;word-break:break-word;padding:var(--s2) 0;margin:0;
-    scrollbar-width:thin;scrollbar-color:var(--line) transparent}
-  .log div{padding:2px var(--s3);border-bottom:1px solid rgba(255,255,255,.025)}
-  .log div:last-child{border-bottom:0}
-  .l-bad{color:#ff9a92} .l-good{color:#7ee787} .l-dim{color:var(--faint)}
-  /* An error older than the newest healthy row is history, not an alert. */
-  .l-past{opacity:.32}
-  .empty{color:var(--faint);font-style:italic;padding:var(--s4) var(--s3);font-size:12px}
-
-  .copy{border:1px solid var(--line);border-radius:7px;padding:3px 9px;font-size:11px;
-    color:var(--dim);transition:color .15s ease,border-color .15s ease,background .15s ease}
-  .copy:hover{color:var(--ink);border-color:#2b3542;background:#151b22}
-  .copy.done{color:var(--good);border-color:rgba(63,185,80,.4)}
-  .copy.fail{color:var(--bad);border-color:rgba(248,81,73,.4)}
-
-  footer{color:var(--faint);font-size:11px;text-align:center;padding:0 var(--s5) var(--s5)}
-  @media (prefers-reduced-motion:reduce){*{transition:none!important}}
-
-  /* ---- Minecraft skin -------------------------------------------------
-     Blocks, not cards: 3px bevel, no radius, no gradients except the XP bar.
-     The palette came from the stone/cobblestone/grass/sandstone/redstone set;
-     --dim/--faint were lifted from #8a8a8a to #b0b0b0/#9a9a9a so body text
-     clears 4.5:1 on cobblestone instead of guessing. */
-  body{font-family:"Courier New",ui-monospace,monospace;-webkit-font-smoothing:none;
-    letter-spacing:.2px}
-  header{gap:6px}
-  *,*::before,*::after{border-radius:0 !important}
-  h1,.tile .label,.card h2,.sub,th,.brand .mark{text-transform:uppercase;letter-spacing:.09em}
-  .mc, .card, header, .node, .gate, .sched{
-    border:3px solid;border-color:#5a5a5a #1a1a1a #1a1a1a #5a5a5a;
-    box-shadow:inset 1px 1px 0 #6a6a6a, inset -1px -1px 0 #222}
-  .card{background:var(--panel)}
-  .tile{background:#444}
-  .stop,.np,.badge,.idx,.pill,.copy,.mark{background:var(--mc-slot)}
-  .pill{border-width:2px}
-  .log{background:#262626}
-
-  /* health: one heart per open position, ten slots */
-  .hearts{display:flex;gap:3px;margin-top:6px}
-  .hearts i{width:12px;height:11px;display:block;background:#5a2020;
-    clip-path:polygon(50% 100%,0 40%,0 15%,25% 0,50% 20%,75% 0,100% 15%,100% 40%)}
-  .hearts i.on{background:#c0392b}
-
-  /* hunger: the age bar, full = fresh */
-  .hunger{display:flex;gap:2px;margin-top:6px}
-  .hunger i{width:9px;height:10px;display:block;background:#4a3a1c;
-    clip-path:polygon(20% 100%,0 55%,35% 40%,50% 0,65% 40%,100% 55%,80% 100%)}
-  .hunger i.on{background:#c8a94e}
-
-  /* XP bar for the significance bar */
-  .xp{display:flex;align-items:center;gap:8px}
-  .xp .track2{position:relative;width:90px;height:9px;background:#222;
-    border:2px solid #1a1a1a;box-shadow:inset 1px 1px 0 #000}
-  .xp .fill{height:100%;background:linear-gradient(90deg,#5d8a3c,#8fd14f)}
-  .xp .lbl{font-size:10px;color:var(--dim);white-space:nowrap}
-
-  /* verdict banner */
-  .verdict{grid-column:1/-1;display:flex;align-items:center;gap:12px;padding:14px 18px;
-    background:#3b3b3b;border:3px solid;border-color:#5a5a5a #1a1a1a #1a1a1a #5a5a5a;
-    box-shadow:inset 1px 1px 0 #6a6a6a}
-  .verdict b{font-size:15px;letter-spacing:.12em}
-  .verdict .toastbadge{font-size:10px;padding:2px 6px;background:#222;border:2px solid #1a1a1a;
-    color:var(--faint);text-transform:uppercase;letter-spacing:.1em}
-  .verdict.down b{color:var(--warn)}
-  .verdict.up b{color:#f0c440;text-shadow:0 0 6px rgba(240,196,64,.45)}
-  .verdict.up{border-color:#f0c440 #6b5200 #6b5200 #f0c440}
-  .verdict small{color:var(--dim);font-size:11px}
-
-  /* hotbar slots */
-  .hotbar{grid-column:1/-1;display:flex;gap:6px;align-items:stretch}
-  .slot{display:flex;align-items:center;gap:8px;padding:8px 12px;background:var(--mc-slot);
-    border:3px solid;border-color:#5a5a5a #1a1a1a #1a1a1a #5a5a5a;font:inherit;
-    color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:.1em}
-  .slot:hover{color:var(--ink)}
-  .slot.on{color:var(--ink);border-color:#8a8a8a #000 #000 #8a8a8a;background:#4a4a4a}
-  .slot .icon{font-size:14px;line-height:1}
-  .card.open{grid-column:1/-1 !important}
-  .card.open .log{max-height:50vh}
-
-  /* death screen */
-  .death{position:fixed;inset:0;z-index:20;display:grid;place-items:center;
-    background:rgba(60,10,10,.55);backdrop-filter:blur(2px);pointer-events:none}
-  .death div{background:#3b3b3b;border:3px solid;border-color:#6a6a6a #1a1a1a #1a1a1a #6a6a6a;
-    padding:20px 28px;text-align:center;font-size:13px;letter-spacing:.08em}
-  .death b{display:block;font-size:17px;color:var(--bad);margin-bottom:6px;letter-spacing:.14em}
-
-  /* analytics: the same numbers the nodes carry, as shapes you can compare */
-  .analytics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:0;
-    border-top:3px solid #1a1a1a;background:#333}
+  /* ---- analytics ------------------------------------------------------- */
+  .analytics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));
+    border-top:1px solid var(--line);background:var(--surface)}
   @media (max-width:1100px){.analytics{grid-template-columns:1fr}}
-  .ana{padding:12px 14px;border-right:2px solid #262626;min-width:0}
+  .ana{padding:14px 16px;border-right:1px solid var(--line);min-width:0}
   .ana:last-child{border-right:0}
-  .ana h3{margin:0 0 8px;font-size:10px;letter-spacing:.12em;color:var(--faint);
+  .ana h3{margin:0 0 9px;font-size:10.5px;letter-spacing:.09em;color:var(--faint);
     text-transform:uppercase;font-weight:600;display:flex;justify-content:space-between;gap:8px}
-  .ana h3 b{color:var(--dim);font-weight:500;letter-spacing:.04em}
-  .fstep{display:grid;grid-template-columns:104px 1fr 46px;align-items:center;gap:8px;
-    font-size:11px;color:var(--dim);padding:3px 0}
+  .ana h3 b{color:var(--dim);font-weight:500;letter-spacing:0;text-transform:none}
+  .fstep{display:grid;grid-template-columns:94px 1fr 40px;align-items:center;gap:8px;
+    font-size:11.5px;color:var(--dim);padding:2px 0}
   .fstep i{font-style:normal;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .fstep b{text-align:right;color:var(--ink);font-weight:600}
-  .fstep .fb{height:9px;background:#262626;border:1px solid #1a1a1a}
-  .fstep .fb span{display:block;height:100%;background:#4a7a9b}
+  .fstep .fb{height:7px;background:#1c2129;border-radius:4px;overflow:hidden}
+  .fstep .fb span{display:block;height:100%;background:var(--accent)}
   .fstep.gone .fb span{background:#7a3a3a}
-  .drop{font-size:10px;color:var(--faint);margin-left:112px;line-height:1}
-  .runs{display:flex;align-items:flex-end;gap:4px;height:74px;margin-top:2px}
-  .runs div{flex:1;min-width:3px;background:#5a5f66;position:relative}
-  .runs div.hit{background:var(--good)}
-  .runs div.none{background:#7a3a3a}
-  .runlbl{display:flex;justify-content:space-between;font-size:10px;color:var(--faint);margin-top:4px}
-  .gaterow{display:grid;grid-template-columns:1fr 96px 74px;gap:8px;align-items:center;font-size:11px;padding:3px 0}
-  .gaterow .fb{height:9px;background:#262626;border:1px solid #1a1a1a;position:relative;overflow:hidden}
-  .gaterow .fb span{display:block;height:100%}
+  .drop{font-size:10px;color:var(--faint);margin-left:102px;line-height:1.4}
+  .runs{display:flex;align-items:flex-end;gap:4px;height:66px}
+  .runs div{flex:1;min-width:3px;background:#39424f;border-radius:2px 2px 0 0}
+  .runs div.hit{background:var(--good)} .runs div.none{background:#6d3434}
+  .runlbl{display:flex;justify-content:space-between;font-size:10px;color:var(--faint);margin-top:5px}
+  .gaterow{display:grid;grid-template-columns:1fr 96px 76px;gap:8px;align-items:center;
+    font-size:11.5px;padding:3px 0}
   .gaterow i{font-style:normal;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .gaterow b{font-weight:600;text-align:right}
-</style>
+  .gaterow .fb{height:7px;background:#1c2129;border-radius:4px;position:relative;overflow:hidden}
+  .gaterow .fb span{display:block;height:100%;border-radius:4px}
+
+  /* ---- logs & controls ------------------------------------------------- */
+  table{width:100%;border-collapse:collapse}
+  th,td{text-align:right;padding:8px 14px;font-size:12.5px}
+  th{color:var(--faint);font-weight:500;font-size:10.5px;text-transform:uppercase;
+    letter-spacing:.07em;border-bottom:1px solid var(--line)}
+  th:first-child,td:first-child{text-align:left}
+  tbody tr+tr td{border-top:1px solid rgba(255,255,255,.04)}
+  tbody tr:hover td{background:rgba(255,255,255,.015)}
+  .pos{color:var(--good)} .neg{color:var(--bad)}
+  .scrollx{overflow-x:auto}
+  .log{font-family:ui-monospace,"SF Mono","Cascadia Mono",Menlo,Consolas,monospace;
+    font-size:11.5px;line-height:1.7;color:#9aa7b6;max-height:300px;overflow:auto;
+    white-space:pre-wrap;word-break:break-word;padding:6px 0;margin:0}
+  .log div{padding:2px 14px;border-bottom:1px solid rgba(255,255,255,.025)}
+  .log div:last-child{border-bottom:0}
+  .l-bad{color:#ff9a92} .l-good{color:#7ee787} .l-dim{color:var(--faint)}
+  .l-past{opacity:.35}
+  .empty{color:var(--faint);font-style:italic;padding:18px 16px;font-size:12px}
+  .copy{border:1px solid var(--line2);border-radius:6px;padding:3px 9px;font-size:11px;
+    color:var(--dim);transition:color .12s,border-color .12s,background .12s}
+  .copy:hover{color:var(--ink);background:var(--surface2)}
+  .copy.done{color:var(--good);border-color:rgba(63,185,80,.4)}
+  .copy.fail{color:var(--bad);border-color:rgba(240,86,79,.4)}
+
+  .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:20;
+    background:#2a1518;border:1px solid rgba(240,86,79,.45);color:#ffb4ae;
+    padding:9px 14px;border-radius:8px;font-size:12px;box-shadow:0 8px 30px rgba(0,0,0,.5)}
+  .toast b{display:block;color:var(--bad);font-size:11px;letter-spacing:.1em;text-transform:uppercase}
+
+  .contents{display:contents}
+</style></style>
 </head>
 <body>
 <div id="root"></div>
 <script>
+// A blank page is the worst failure mode for a monitor: surface the error.
+window.addEventListener("error", (e) => {
+  const r = document.getElementById("root");
+  if (r && !r.firstChild) r.textContent = "render error: " + (e.message || e.type) + " @" + (e.lineno || "?");
+});
 const {useState, useEffect, useCallback, useRef} = React;
 const html = htm.bind(React.createElement);
 
@@ -569,7 +547,7 @@ function Inspect({ i, x, data }) {
   return html`<${VerdictPanel} x=${x} data=${data} />`;
 }
 
-function Pipe({ data }) {
+function Pipe({ data, detail }) {
   const [sel, setSel] = useState(3);
   const [geom, setGeom] = useState(null);
   const wrap = useRef(null);
@@ -665,7 +643,8 @@ function Pipe({ data }) {
         style=${{ left: e.mx + "px", top: e.my + "px" }}>⊘</span>`) : null}
     </div></div>
     <${Analytics} x=${x} data=${data} />
-    ${x.empty ? html`<div className="insp"><div className="empty">No scan data — no funnel row, no tier2/tier3 artifact. The funnel has not run since this tree was written to.</div></div>`
+    ${detail === false ? null : x.empty
+      ? html`<div className="insp"><div className="empty">No scan data — no funnel row, no tier2/tier3 artifact. The funnel has not run since this tree was written to.</div></div>`
       : html`<${Inspect} i=${sel} x=${x} data=${data} />`}
   </div>`;
 }
@@ -715,10 +694,10 @@ function Analytics({ x, data }) {
       <h3>Last runs <b>${rows.length ? rows[rows.length - 1].tests + " tests, newest" : "no rows"}</b></h3>
       ${rows.length ? html`<div className="runs">${rows.map((r, k) => html`<div key=${k}
           className=${r.passed ? "hit" : r.trig ? "" : "none"}
-          style=${{ height: Math.max(6, (r.tests / maxT) * 100) + "%" }}
+          style=${{ height: Math.max(10, Math.sqrt(r.tests / maxT) * 100) + "%" }}
           title=${r.ts + " · " + r.tests + " tests · " + r.trig + " triggering · " + r.passed + " passed"}></div>`)}</div>
         <div className="runlbl"><span>${rows[0].ts.slice(5, 16)}</span><span>${rows[rows.length - 1].ts.slice(5, 16)}</span></div>
-        <div className="runlbl"><span>bar = tests run</span><span>green = passed</span></div>`
+        <div className="runlbl"><span>bar = tests run (√ scale)</span><span>green = passed</span></div>`
         : html`<div className="empty">No funnel rows in this tree.</div>`}
     </div>
   </div>`;
@@ -763,11 +742,70 @@ function Desk({ agent }) {
   </div>`;
 }
 
+const ICONS = {
+  overview: "M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z",
+  pipeline: "M3 12h4l3-7 4 14 3-7h4",
+  trials: "M4 20V10M10 20V4M16 20v-6M22 20v-9",
+  logs: "M4 6h16M4 12h16M4 18h10",
+};
+
+function useRoute() {
+  const read = () => (location.hash.replace(/^#\/?/, "") || "overview");
+  const [r, setR] = useState(read);
+  useEffect(() => {
+    const on = () => setR(read());
+    window.addEventListener("hashchange", on);
+    return () => window.removeEventListener("hashchange", on);
+  }, []);
+  return r;
+}
+
+function Trials({ data, x }) {
+  const rows = ((data && data.funnel) || []).map((l) => FUNNEL_RE.exec(l)).filter(Boolean).slice(-14)
+    .map((m) => ({ ts: m[1], universe: +m[2], tested: +m[3], strategies: +m[4], tests: +m[5],
+      trig: +m[6], deduped: +m[7], short: +m[8], passed: +m[9], cumulative: +m[11],
+      perms: m[12] ? +m[12] : null, verdict: m[13] })).reverse();
+  const cum = x.cum, zc = x.zc;
+  const maxCum = Math.max(1, ...rows.map((r) => r.cumulative));
+  const first = rows.length ? rows[rows.length - 1].cumulative : null;
+  return html`<div className="insp">
+    <div className="conv" style=${{ maxWidth: "520px" }}>
+      <div className="convrow"><i>cumulative trials</i>
+        <div className="convbar"><span style=${{ width: "100%" }}></span></div>
+        <b className="mono">${cum == null ? "—" : cum.toLocaleString()}</b></div>
+      <div className="convrow"><i>bar this scan</i>
+        <div className="convbar"><span style=${{ width: Math.min(100, ((zc ?? 0) / 6) * 100) + "%", background: "var(--good)" }}></span></div>
+        <b className="mono">${zc == null ? "—" : "z " + zc.toFixed(3)}</b></div>
+      <div className="convrow"><i>added by these rows</i>
+        <div className="convbar"><span style=${{ width: pct(cum - first, cum) }}></span></div>
+        <b className="mono">${cum == null || first == null ? "—" : "+" + (cum - first).toLocaleString()}</b></div>
+    </div>
+    ${rows.length ? html`<div className="scrollx"><table>
+      <thead><tr><th>when (UTC)</th><th>universe</th><th>tested</th><th>tests</th>
+        <th>triggered</th><th>shortlist</th><th>passed</th><th>cumulative</th><th>verdict</th></tr></thead>
+      <tbody>${rows.map((r) => html`<tr key=${r.ts}>
+        <td className="mono">${r.ts.slice(5, 16)}</td>
+        <td className="mono">${r.universe}</td>
+        <td className="mono">${r.tested}</td>
+        <td className="mono">${r.tests}</td>
+        <td className="mono">${r.trig}</td>
+        <td className="mono">${r.short}</td>
+        <td className=${"mono " + (r.passed ? "pos" : "")}>${r.passed}</td>
+        <td className="mono">${r.cumulative.toLocaleString()}</td>
+        <td className=${r.verdict === "PROPOSAL" ? "pos" : ""}>${r.verdict.replace(/_/g, " ")}</td>
+      </tr>`)}</tbody></table></div>` : html`<div className="empty">
+        No funnel rows yet — the ledger is written by tier3_deep.py at the end of a scan.</div>`}
+    <div className="runlbl"><span>${rows.length} rows shown, newest first</span>
+      <span>cumulative counts every hypothesis ever tested</span></div>
+  </div>`;
+}
+
 function App() {
   const [data, setData] = useState(null);
   const [up, setUp] = useState(false);
   const [err, setErr] = useState(null);
   const [allState, setAllState] = useState("");
+  const route = useRoute();
 
   useEffect(() => {
     let alive = true, ws, retry;
@@ -801,164 +839,199 @@ function App() {
   const fRow = lastFunnel(data?.funnel);
   const cum = t3?.trials_cumulative ?? fRow?.cumulative ?? null;
   const zc = t3?.z_crit_corrected ?? null;
-  // null is not "stood down": an absent artifact means nobody measured a verdict.
   const stoodDown = t3 ? Boolean(t3.stood_down) : fRow ? fRow.verdict !== "PROPOSAL" : null;
   const survivors = (t3?.survivors || []).map(v => (v && v.symbol) || v).filter(Boolean);
-  const hunger = age == null ? 0 : age <= 10 ? 10 : Math.max(0, 10 - Math.floor((age - 10) / 12));
-  const [hot, setHot] = useState(null);
   const wasUp = useRef(false);
   if (up) wasUp.current = true;
   const stale = age !== null && age !== undefined && age > 30;
   const positions = data?.engine?.positions || [];
   const account = data?.engine?.account || {};
   const engineErr = data?.engine && data.engine.ok === false ? data.engine.error : null;
+  const x = pipeline(data);
+  const title = { overview: "Overview", pipeline: "Pipeline", trials: "Trials", logs: "Logs" }[route] || "Overview";
+
+  const nav = [["overview", "Overview", "1"], ["pipeline", "Pipeline", "2"],
+               ["trials", "Trials", "3"], ["logs", "Logs", "4"]];
 
   return html`
-  <header>
-    <div className="brand">
-      <div className="mark">Z</div>
-      <div>
-        <h1>Zero-Trust Trader</h1>
-        <div className="sub">demo · read-only</div>
+  <div className="app">
+    <aside className="side">
+      <div className="brand">
+        <div className="mark">ZT</div>
+        <div><h1>Zero-Trust</h1><div className="sub">demo · read-only</div></div>
       </div>
-    </div>
-    <span className=${`pill ${up ? "live" : "down"}`}>
-      <span className="dot"></span>${up ? "live" : "disconnected"}
-    </span>
-    ${stale ? html`<span className="pill stale" title="the supervisor has not written engine_state recently">${age}s stale</span>` : null}
-    ${data && !hasEngine ? html`<span className="pill down">engine state missing</span>` : null}
-    <span className="pill tz" title="Logs are stored in UTC; times are shown in your own zone">${TZ}</span>
-    <a className="pill" href="/architecture" target="_blank" rel="noopener"
-       title="Stage map of this repository, rendered with Archify from the code">architecture ↗</a>
-    <a className="pill" href="/api/report/latest" target="_blank" rel="noopener"
-       title="The newest per-scan report: every candidate, both gates, why each was rejected">last report ↗</a>
-    ${engineErr ? html`<span className="pill down" title=${engineErr}>engine refusing</span>` : null}
-    ${err ? html`<span className="pill down">${err}</span>` : null}
-    <span className="spacer"></span>
-    <div className="xp" title=${`${cum == null ? "no ledger" : cum.toLocaleString() + " cumulative trials"} · bar z̄ ${zc == null ? "—" : zc.toFixed(3)}`}>
-      <div className="track2" style=${{ width: "110px" }}><div className="fill" style=${{ width: Math.min(100, ((zc ?? 0) / 6) * 100) + "%" }}></div></div>
-    </div>
-    <div className="hunger" title=${!hasEngine ? "no engine state" : age + "s since the supervisor last wrote"}>
-      ${Array.from({ length: 10 }).map((_, i) => html`<i key=${i} className=${age != null && i < hunger ? "on" : ""}></i>`)}
-    </div>
-    <button className=${`copy ${allState}`} onClick=${copyAll}
-      aria-label="Copy all logs to clipboard" title="Copy audit, funnel and supervisor logs">
-      ${allState === "done" ? "copied ✓" : allState === "fail" ? "copy failed" : "copy all logs"}
-    </button>
-    <div className="equity mono">
-      <b>${money(data?.equity, data?.currency)}</b><span>equity</span>
-    </div>
-  </header>
-
-  <main>
-    ${data == null ? null : html`
-    <div className=${"verdict " + (stoodDown === false ? "up" : "down")}>
-      <span className="toastbadge">${stoodDown === false ? "edge" : stoodDown === true ? "verdict" : "pending"}</span>
-      <b>${stoodDown === false ? "EDGE CANDIDATE: " + (survivors.join(", ") || "unnamed")
-        : stoodDown === true ? "STANDING DOWN — no edge found"
-        : "NO SCAN YET — the funnel has not run in this tree"}</b>
-      <small>${cum == null ? "" : cum.toLocaleString() + " cumulative trials · bar z̄ " + (zc == null ? "—" : zc.toFixed(3))}</small>
-    </div>`}
-
-    <section className="card tap4"><div className="tile">
-      <div className="label">Balance</div>
-      <div className="value mono">${money(data?.balance, data?.currency)}</div>
-      <div className="note">server ${data?.server ?? "—"}</div>
-    </div></section>
-
-    <section className="card tap4"><div className="tile">
-      <div className="label">Open positions</div>
-      <div className="value mono">${data?.positions ?? "—"}</div>
-      <div className="hearts" aria-hidden="true">
-        ${Array.from({ length: 10 }).map((_, i) => html`<i key=${i} className=${i < Math.min(10, positions.length) ? "on" : ""}></i>`)}
+      <nav className="nav" aria-label="pages">
+        ${nav.map(([k, label, key]) => html`<a key=${k} href=${"#/" + k}
+          className=${"navitem" + (route === k ? " on" : "")} aria-current=${route === k ? "page" : "false"}>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+            strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d=${ICONS[k]} /></svg>
+          <span>${label}</span><span className="kbd">${key}</span>
+        </a>`)}
+      </nav>
+      <div className="grow"></div>
+      <div className="sidenote">
+        <b>${fRow ? "last scan " + fRow.ts.slice(11, 16) + "Z" : "no scan yet"}</b>
+        ${x.in == null ? "no universe on disk" : x.in + " symbols · " + (x.tests ?? 0) + " tests"}
       </div>
-      <div className="note">${!hasEngine ? "no engine state"
-        : positions.length ? "supervised · 10 slots shown" : "flat — funnel standing down"}</div>
-    </div></section>
+      <a className="sidelink" href="/architecture" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
+          strokeWidth="1.8" aria-hidden="true"><path d="M4 20V8l8-4 8 4v12M4 20h16" /></svg>
+        <span>Architecture ↗</span></a>
+      <a className="sidelink" href="/api/report/latest" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
+          strokeWidth="1.8" aria-hidden="true"><path d="M6 3h9l4 4v14H6z" /><path d="M9 12h7M9 16h5" /></svg>
+        <span>Last report ↗</span></a>
+    </aside>
 
-    <section className="card tap4"><div className="tile">
-      <div className="label">Engine heartbeat</div>
-      <div className="value mono small"
-        style=${{color: !hasEngine ? "var(--bad)" : stale ? "var(--warn)" : "var(--good)"}}>
-        ${age === null || age === undefined ? "no engine state" : age + "s ago"}
+    <div className="main">
+      <div className="topbar">
+        <div>
+          <div className="pagetitle">${title}</div>
+          <div className="pagesub">${route === "overview" ? "what the desk knows right now"
+            : route === "pipeline" ? "six stages, and where the funnel stopped"
+            : route === "trials" ? "every hypothesis ever tested, and the bar it set"
+            : "the raw files the engine writes — nothing here can change them"}</div>
+        </div>
+        <span className="spacer"></span>
+        <span className=${`pill ${up ? "live" : "down"}`}><span className="dot"></span>${up ? "live" : "disconnected"}</span>
+        ${stale ? html`<span className="pill stale" title="the supervisor has not written engine_state recently">${age}s stale</span>` : null}
+        ${data && !hasEngine ? html`<span className="pill down">engine state missing</span>` : null}
+        ${engineErr ? html`<span className="pill down" title=${engineErr}>engine refusing</span>` : null}
+        ${err ? html`<span className="pill down">${err}</span>` : null}
+        <span className="pill tz" title="Logs are stored in UTC; times are shown in your own zone">${TZ}</span>
+        <button className=${`copy ${allState}`} onClick=${copyAll}>copy all logs</button>
+        <div className="equity mono"><b>${money(data?.equity, data?.currency)}</b><span>equity</span></div>
       </div>
-      <div className="note">${maskLogin(account.login)}</div>
-    </div></section>
 
-    <section className="card tap4"><div className="tile">
-      <div className="label">Mode</div>
-      <div className="value small">${!hasEngine ? "unknown" : positions.length ? "supervising" : "holding"}</div>
-      <div className="note">${!hasEngine ? "no engine state"
-        : `AutoTrading off · ${data?.engine?.applied ? "APPLY ENABLED" : "dry run"} · 0.01 lot cap`}</div>
-    </div></section>
+      <main className="page">
+        ${route === "overview" ? html`<div className="contents">
+          ${data == null ? null : html`
+          <div className=${"verdict " + (stoodDown === false ? "up" : "down")}>
+            <span className="tag">${stoodDown === false ? "edge" : stoodDown === true ? "verdict" : "pending"}</span>
+            <b>${stoodDown === false ? "EDGE CANDIDATE: " + (survivors.join(", ") || "unnamed")
+              : stoodDown === true ? "STANDING DOWN — no edge found"
+              : "NO SCAN YET — the funnel has not run in this tree"}</b>
+            <small>${cum == null ? "" : cum.toLocaleString() + " cumulative trials · bar z̄ " + (zc == null ? "—" : zc.toFixed(3))}</small>
+          </div>`}
 
-    <${Card} title="Pipeline workflow" wide="tap12"
-      count=${data?.tier3?.generated_utc ? "tier3 · " + data.tier3.generated_utc
-        : data?.tier2?.generated_utc ? "tier2 · " + data.tier2.generated_utc : null}>
-      <${Pipe} data=${data} />
-    <//>
+          <section className="card tap3"><div className="tile">
+            <div className="label">Balance</div>
+            <div className="value mono">${money(data?.balance, data?.currency)}</div>
+            <div className="note">server ${data?.server ?? "—"}</div>
+          </div></section>
 
-    <${Card} title="Desk · agent notes" wide="tap12"
-      count=${data?.agent?.generated_utc ? data.agent.model + " · " + data.agent.generated_utc : null}>
-      <${Desk} agent=${data?.agent} />
-    <//>
+          <section className="card tap3"><div className="tile">
+            <div className="label">Open positions</div>
+            <div className="value mono">${data?.positions ?? "—"}</div>
+            <div className="note">${!hasEngine ? "no engine state"
+              : positions.length ? "supervised · trailing" : "flat — funnel standing down"}</div>
+          </div></section>
 
-    <${Card} title="Positions" wide="tap12">
-      ${positions.length
-        ? html`<div className="scrollx"><table>
-            <thead><tr><th>Symbol</th><th>Side</th><th>Lots</th><th>Entry</th><th>Price</th><th>Stop</th><th>P&L</th></tr></thead>
-            <tbody>${positions.map(p => html`
-              <tr key=${p.ticket}>
-                <td className="mono">${p.symbol}</td>
-                <td style=${{color: p.side > 0 ? "var(--good)" : "var(--bad)"}}>${p.side > 0 ? "LONG" : "SHORT"}</td>
-                <td className="mono">${num(p.volume, 2)}</td>
-                <td className="mono">${num(p.entry)}</td>
-                <td className="mono">${num(p.price)}</td>
-                <td className="mono">${p.sl ? num(p.sl) : "none"}</td>
-                <td className=${"mono " + ((p.profit ?? 0) >= 0 ? "pos" : "neg")}>${money(p.profit, data?.currency)}</td>
-              </tr>`)}</tbody>
-          </table></div>`
-        : html`<div className="empty">${!hasEngine ? "No engine state — position count unknown."
-          : "Flat — no open positions. The funnel is standing down."}</div>`}
-    <//>
+          <section className="card tap3"><div className="tile">
+            <div className="label">Engine heartbeat</div>
+            <div className="value mono small"
+              style=${{ color: age == null ? "var(--bad)" : stale ? "var(--warn)" : "var(--good)" }}>
+              ${age === null || age === undefined ? "no engine state" : age + "s ago"}</div>
+            <div className="note">${!hasEngine ? "engine_state.json missing" : maskLogin(account.login)}</div>
+          </div></section>
 
-    <div className="hotbar" role="tablist" aria-label="log panes">
-      ${[["audit", "🪵", "audit trail"], ["funnel", "⛏", "funnel history"], ["actions", "📜", "supervisor"]].map(([key, icon, label]) => html`
-        <button key=${key} role="tab" aria-selected=${String(hot === key)} className=${"slot" + (hot === key ? " on" : "")}
-          onClick=${() => setHot(hot === key ? null : key)}>
-          <span className="icon" aria-hidden="true">${icon}</span>${label}
-        </button>`)}
+          <section className="card tap3"><div className="tile">
+            <div className="label">Mode</div>
+            <div className="value small">${!hasEngine ? "unknown" : positions.length ? "supervising" : "holding"}</div>
+            <div className="note">${!hasEngine ? "no engine state"
+              : `AutoTrading off · ${data?.engine?.applied ? "APPLY ENABLED" : "dry run"} · 0.01 lot cap`}</div>
+          </div></section>
+
+          <${Card} title="Pipeline workflow" wide="tap12"
+            count=${data?.tier3?.generated_utc ? "tier3 · " + data.tier3.generated_utc
+              : data?.tier2?.generated_utc ? "tier2 · " + data.tier2.generated_utc : null}>
+            <${Pipe} data=${data} detail=${false} />
+          <//>
+
+          <${Card} title="Positions" wide="tap12">
+            ${positions.length
+              ? html`<div className="scrollx"><table>
+                  <thead><tr><th>Symbol</th><th>Side</th><th>Lots</th><th>Entry</th><th>Price</th><th>Stop</th><th>P&amp;L</th></tr></thead>
+                  <tbody>${positions.map(p => html`
+                    <tr key=${p.ticket}>
+                      <td className="mono">${p.symbol}</td>
+                      <td style=${{color: p.side > 0 ? "var(--good)" : "var(--bad)"}}>${p.side > 0 ? "LONG" : "SHORT"}</td>
+                      <td className="mono">${num(p.volume, 2)}</td>
+                      <td className="mono">${num(p.entry)}</td>
+                      <td className="mono">${num(p.price)}</td>
+                      <td className="mono">${p.sl ? num(p.sl) : "none"}</td>
+                      <td className=${"mono " + ((p.profit ?? 0) >= 0 ? "pos" : "neg")}>${money(p.profit, data?.currency)}</td>
+                    </tr>`)}</tbody>
+                </table></div>`
+              : html`<div className="empty">${!hasEngine ? "No engine state — position count unknown."
+                : "Flat — no open positions. The funnel is standing down."}</div>`}
+          <//>
+        </div>` : null}
+
+        ${route === "pipeline" ? html`<div className="contents">
+          <${Card} title="Pipeline workflow" wide="tap12"
+            count=${data?.tier3?.generated_utc ? "tier3 · " + data.tier3.generated_utc
+              : data?.tier2?.generated_utc ? "tier2 · " + data.tier2.generated_utc : null}>
+            <${Pipe} data=${data} detail=${true} />
+          <//>
+        </div>` : null}
+
+        ${route === "trials" ? html`<div className="contents">
+          <${Card} title="Trial ledger" wide="tap12"
+            count=${data?.funnel?.length ? data.funnel.length + " lines in the ledger tail" : null}>
+            <${Trials} data=${data} x=${x} />
+          <//>
+          <${Card} title="Desk · agent notes" wide="tap12"
+            count=${data?.agent?.generated_utc ? data.agent.model + " · " + data.agent.generated_utc : null}>
+            <${Desk} agent=${data?.agent} />
+          <//>
+        </div>` : null}
+
+        ${route === "logs" ? html`<div className="contents">
+          <${Card} title="Audit trail" which="audit" wide="tap12"
+            count=${data?.mcp?.length ? data.mcp.length + " shown" : null}>
+            <${LogPane} lines=${data?.mcp} raw
+              empty="No audit records yet — audit.jsonl fills on the next run" />
+          <//>
+          <${Card} title="Funnel history" which="funnel" wide="tap6"
+            count=${data?.funnel?.length ? data.funnel.length + " shown" : null}>
+            <${LogPane} lines=${data?.funnel} empty="No funnel runs logged yet" />
+          <//>
+          <${Card} title="Supervisor" which="actions" wide="tap6"
+            count=${data?.actions?.length ? data.actions.length + " shown" : null}>
+            <${LogPane} lines=${data?.actions} empty="No stop changes yet (position_manager.py)" />
+          <//>
+        </div>` : null}
+
+        ${!["overview", "pipeline", "trials", "logs"].includes(route) ? html`
+          <div className="card tap12"><div className="empty">
+            Unknown page “${route}”. Pick one from the sidebar.</div></div>` : null}
+      </main>
+
+      ${!up && wasUp.current ? html`<div className="toast" role="status">
+        <b>disconnected</b>reconnecting — the numbers on screen are frozen, not fresh</div>` : null}
     </div>
-
-    <${Card} title="Audit trail" which="audit" wide="tap6" open=${hot === "audit"}
-      count=${data?.mcp?.length ? data.mcp.length + " shown" : null}>
-      <${LogPane} lines=${data?.mcp} raw
-        empty="No audit records yet — audit.jsonl fills on the next run" />
-    <//>
-
-    <${Card} title="Funnel history" which="funnel" wide="tap6" open=${hot === "funnel"}
-      count=${data?.funnel?.length ? data.funnel.length + " shown" : null}>
-      <${LogPane} lines=${data?.funnel} empty="No funnel runs logged yet" />
-    <//>
-
-    <${Card} title="Supervisor" which="actions" wide="tap12" open=${hot === "actions"}
-      count=${data?.actions?.length ? data.actions.length + " shown" : null}>
-      <${LogPane} lines=${data?.actions} empty="No stop changes yet (position_manager.py)" />
-    <//>
-  </main>
-
-  ${!up && wasUp.current ? html`<div className="death" role="status">
-    <div><b>DISCONNECTED</b>You died! …but the engine didn't.<br/>
-      Reconnecting — the numbers below are frozen, not fresh.</div></div>` : null}
-
-  <footer>
-    read-only mirror · the engine never calls this process · files are tailed, nothing is written
-    · dimmed rows are failures older than the last successful run
-    · times shown in ${TZ} (the logs themselves stay UTC)
-  </footer>`;
+  </div>`;
 }
 
-ReactDOM.createRoot(document.getElementById("root")).render(html`<${App} />`);
+// A monitor that paints nothing is worse than one that paints an error.
+class Boundary extends React.Component {
+  constructor(p) { super(p); this.state = { err: null }; }
+  static getDerivedStateFromError(err) { return { err }; }
+  componentDidCatch(err) { console.error("render failed", err); }
+  render() {
+    if (this.state.err) {
+      return React.createElement("div", { className: "empty", style: { padding: "24px", color: "var(--bad)" } },
+        React.createElement("b", null, "render failed"),
+        React.createElement("pre", { style: { whiteSpace: "pre-wrap", color: "var(--dim)", marginTop: "8px" } },
+          String(this.state.err && this.state.err.stack || this.state.err)));
+    }
+    return this.props.children;
+  }
+}
+
+ReactDOM.createRoot(document.getElementById("root"))
+  .render(React.createElement(Boundary, null, React.createElement(App)));
 </script>
 </body>
 </html>

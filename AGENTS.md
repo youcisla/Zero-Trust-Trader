@@ -333,10 +333,10 @@ python agent_brief.py               # needs DEEPSEEK_API_KEY (env or .env, never
 ```
 
 No key is a **failure**, not a quiet skip: the CLI exits 2 and the dashboard card
-says "no model key — nothing was called". Feeds live in `config.toml`:
+says "no model key — nothing was called". Feeds live in `desk.toml` — **not** `config.toml`, whose schema is the MCP
+bridge's own policy and rejects unknown sections:
 
 ```toml
-[agents]
 news_feeds = ["https://example.com/rss"]
 ```
 

@@ -186,12 +186,13 @@ touching the terminal.
 
 ## Live dashboard
 
-![Zero-Trust Trader dashboard](docs/dashboard_minecraft.png)
+![Zero-Trust Trader dashboard](docs/dashboard.png)
 
-A Rust (Axum) server streaming to a React UI: a six-stage pipeline canvas with
-live wires, a verdict banner, equity, open positions, supervisor actions, funnel
-history and MCP tool calls over a WebSocket. The screenshot is the real thing
-running against the demo account.
+A Rust (Axum) server streaming to a React UI: an app shell with four pages
+(overview, pipeline, trials, logs), a six-stage pipeline canvas with live wires,
+a verdict banner, the trial ledger with its cumulative bar, desk notes and the
+raw log panes. The screenshot is the real thing running against the demo
+account.
 
 ```bash
 cd dashboard && cargo run --release        # http://localhost:8787

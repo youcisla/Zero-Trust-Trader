@@ -23,12 +23,16 @@ HERE = Path(__file__).resolve().parent
 
 
 def feeds_from_config(root: Path) -> list[str]:
-    """`[agents] news_feeds = ["url", ...]` in config.toml, if it is there."""
-    cfg = root / "config.toml"
+    """`news_feeds = [...]` from desk.toml.
+
+    Deliberately not config.toml: that file is the MCP bridge's own policy, its
+    schema forbids unknown sections, and `[agents]` there broke policy_check.py
+    with extra_forbidden.
+    """
     try:
         import tomllib
-        data = tomllib.loads(cfg.read_text(encoding="utf-8"))
-        return [u for u in (data.get("agents", {}).get("news_feeds") or []) if isinstance(u, str)]
+        data = tomllib.loads((root / "desk.toml").read_text(encoding="utf-8"))
+        return [u for u in (data.get("news_feeds") or []) if isinstance(u, str)]
     except (OSError, ValueError):
         return []
 

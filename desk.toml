@@ -1,0 +1,7 @@
+# Feeds the desk's scout may read. Empty = the scout reports "no feed configured"
+# and makes no model call.
+#
+# Kept out of config.toml on purpose: that file is the MCP bridge's claim about
+# its own policy, and its schema rejects unknown sections — adding [agents]
+# there made policy_check.py fail with extra_forbidden.
+news_feeds = []
