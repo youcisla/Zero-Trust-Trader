@@ -366,7 +366,7 @@ in any of those four places is the exact thing this repository exists to prevent
 
 | Trap | Symptom |
 | --- | --- |
-| `mt5.symbol_select()` leaks Market Watch entries | Market Watch grew to 1,628; always call `release_auto_selected()` |
+| `mt5.symbol_select()` leaks Market Watch entries | Market Watch grew to 1,628; always call `release_auto_selected()`. It only releases what *this* process selected, so an accumulated leak survives every run: it sat at 1,626 of 1,723 until it was cleared by hand. Count with `[s for s in mt5.symbols_get() if s.visible]` — `symbols_get()` alone returns the whole server (1,723) and overstates the leak by ~97 |
 | EA / indicator warm-up NaNs | MACD signal went all-NaN and the family silently never fired |
 | Forming-bar inclusion | Look-ahead bias; `fetch` drops the in-progress bar by design |
 | Reporting a stale file as fresh | `report_funnel` prints `[STALE]`; keep the 3-hour guard |
