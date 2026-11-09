@@ -187,8 +187,14 @@ def _main() -> int:
                    "stood_down": True, "trials_declared": scan_tests,
                    "trials_cumulative": trials, "z_crit_corrected": zc,
                    "permutations": a.permutations}
-        OUT.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        # Ledger row first, artifact second. The reverse left a 349-byte
+        # tier3_results.json claiming 90 trials and cumulative 9183 at
+        # 2026-11-09T21:28:53Z with no matching ledger row: the artifact is the
+        # claim, the ledger is the accounting, and the accounting has to win. A
+        # row without an artifact is recoverable; an artifact without a row
+        # silently understates every future bar.
         log_run(src, payload)
+        OUT.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
         return 0
 
     # These were two different numbers printed as one sentence: the cumulative
@@ -250,8 +256,9 @@ def _main() -> int:
                "correlation_filtered": dropped,
                "survivors": [d["symbol"] for d in kept],
                "stood_down": not kept}
-    OUT.write_text(json.dumps(payload, indent=2) + "\n")
+    # See the no-candidates path: accounting before claim.
     log_run(src, payload)
+    OUT.write_text(json.dumps(payload, indent=2) + "\n")
 
     # One readable page per scan, next to the machine-readable JSON. A scan that
     # produces only a log line is very hard to argue with six weeks later.

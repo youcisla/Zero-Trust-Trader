@@ -149,5 +149,36 @@ class VendorTests(unittest.TestCase):
             self.assertIn("Apache License" if asset["package"] == "htm" else "MIT", text)
 
 
+
+class MaintenanceVisibilityTests(unittest.TestCase):
+    """A fail-closed sentinel must not stop the system silently.
+
+    `.ztt-maintenance` was left behind after a remediation. The only symptom was
+    HermesMT5Funnel reporting Last Result=2 while still showing "Ready" - the
+    operator had nothing to read. status.py now reports it with its age and the
+    note that was left in it.
+    """
+
+    def _render(self, root):
+        out = io.StringIO()
+        with mock.patch.object(status, "HERE", root), contextlib.redirect_stdout(out):
+            status.maintenance_block()
+        return out.getvalue()
+
+    def test_an_active_sentinel_names_its_age_and_reason(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / ".ztt-maintenance").write_text("audit remediation\n", encoding="utf-8")
+            text = self._render(root)
+        self.assertIn("ACTIVE", text)
+        self.assertIn("audit remediation", text)
+        self.assertIn("clear with", text)
+
+    def test_absent_sentinel_says_none_instead_of_staying_silent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            text = self._render(Path(directory))
+        self.assertIn("maintenance   : none", text)
+        self.assertNotIn("ACTIVE", text)
+
 if __name__ == "__main__":
     unittest.main()

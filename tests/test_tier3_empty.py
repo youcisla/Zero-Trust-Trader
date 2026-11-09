@@ -63,6 +63,41 @@ class TestEmptyShortlist(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertGreaterEqual(payload["trials_cumulative"], 90)
 
+    def test_a_failed_ledger_append_writes_no_artifact(self):
+        """The artifact must never outlive a failed ledger row.
+
+        A real run left a 349-byte tier3_results.json claiming 90 declared
+        trials and cumulative 9183 at 2026-11-09T21:28:53Z, with no matching
+        row anywhere in funnel_history.log. The artifact was written first, so
+        whatever failed between the two steps erased the accounting while
+        keeping the evidence. Accounting goes first: a row without an artifact
+        is recoverable, an artifact without a row silently weakens every future
+        Bonferroni bar.
+        """
+        import tier3_deep as t3
+        import trials_total
+
+        with tempfile.TemporaryDirectory() as d:
+            src = pathlib.Path(d) / "candidates.json"
+            src.write_text(json.dumps({"top": [], "total_tests": 90,
+                                       "symbols_tested": 45, "strategies_tested": 2,
+                                       "triggering": 0}), encoding="utf-8")
+            out = pathlib.Path(d) / "tier3.json"
+
+            def boom(scan_src, payload):
+                raise OSError("ledger append failed")
+
+            with mock.patch.object(t3, "log_run", boom), \
+                 mock.patch.object(t3, "OUT", out), \
+                 mock.patch.object(t3, "HERE", pathlib.Path(d)), \
+                 mock.patch.object(trials_total, "required_trials", lambda count: 6500 + count), \
+                 mock.patch.object(sys, "argv", ["tier3_deep.py", "--tier2", str(src)]):
+                with self.assertRaises(OSError):
+                    t3.main()
+
+            self.assertFalse(out.exists(),
+                             "no artifact may claim a scan the ledger never recorded")
+
 
 if __name__ == "__main__":
     unittest.main()

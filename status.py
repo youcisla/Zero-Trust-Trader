@@ -14,6 +14,7 @@ import json
 import os
 import subprocess
 import sys
+import time
 import tomllib
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
@@ -103,6 +104,34 @@ def config_block() -> None:
             print("    policy unreadable or invalid; no control values verified")
     else:
         print("  policy        : config.toml not found (consent gate not configured)")
+    maintenance_block()
+
+
+def maintenance_block() -> None:
+    """A sentinel with no expiry must at least say so out loud.
+
+    `.ztt-maintenance` makes every scheduled scan and supervisor pass refuse
+    (run_funnel returns 2, position_manager returns ok=None). It was left behind
+    after a remediation and the only visible symptom was `Last Result=2` on a
+    task that looked Ready — the operator had no way to learn why. Report it
+    with its age and the note whoever wrote it left.
+    """
+    marker = HERE / ".ztt-maintenance"
+    if not marker.exists():
+        print("  maintenance   : none")
+        return
+    try:
+        age_min = max(0.0, (time.time() - marker.stat().st_mtime) / 60.0)
+        note = marker.read_text(encoding="utf-8", errors="replace").strip().splitlines()
+    except OSError:
+        print("  maintenance   : ACTIVE (unreadable) — scheduled runs refuse")
+        return
+    when = f"{age_min / 60:.1f} h" if age_min >= 90 else f"{age_min:.0f} min"
+    print(f"  maintenance   : ACTIVE for {when} — every scheduled scan and "
+          f"supervisor pass refuses")
+    if note:
+        print(f"                  reason: {note[0][:120]}")
+    print("                  clear with: rm .ztt-maintenance")
 
 
 def tasks_block() -> None:
