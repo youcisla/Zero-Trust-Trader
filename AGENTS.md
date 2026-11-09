@@ -359,6 +359,7 @@ in any of those four places is the exact thing this repository exists to prevent
 | Floating-point equality at threshold boundaries | test fixtures sit clear of exact 1R rather than pinning the boundary |
 | Task Scheduler stores **local** time | Europe/Paris shifts at DST; enforce any critical UTC window in Python, not in the trigger |
 | `Last Result=267011` | `SCHED_S_TASK_HAS_NOT_RUN` — the task is registered but has never fired. Not an error; check the trigger start boundary |
+| Server leverage is **1:30**, not 1:500 | At 50 EUR only EURUSD/0.01 is affordable (33.40 EUR of margin, 186 pips to stop-out). XAUUSD needs 183 EUR of margin, US30 234, BTCUSD 333 — they cannot be opened on a small balance at all. Read it from the terminal (`mt5.account_info().leverage`), never assume it |
 | An empty `liquid_universe.json` | A weekend `--rebuild` measured a dead terminal and overwrote a good universe with `symbols: []`; every scan then reported STAND_DOWN with `total_tests=0` for two days. Both sides now refuse: `make_liquid` will not write an empty universe, `run_funnel` logs `FAILED ... 0 symbols` |
 
 ---
