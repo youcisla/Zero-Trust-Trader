@@ -1,6 +1,8 @@
 # Project audit — 9 November 2026
 
-Baseline: `8e08e21310b66ff67b88e115e19a047c68e5b5c8`. The working tree was clean at the start. This audit adds documentation and a synthetic diagnostic script; it does not implement the recommended production fixes.
+Baseline: `8e08e21310b66ff67b88e115e19a047c68e5b5c8`. The working tree was clean at the start. This audit adds documentation and a synthetic diagnostic script; **at that baseline** it implemented none of the recommended production fixes.
+
+> **Status: remediated.** The fixes landed in `ae308e9` (70 files, +5,572 lines). All 30 findings are closed; every one was re-checked, the audit's own probes no longer reproduce (0 of 9), and the evidence per finding is tabulated in **[closure.md](closure.md)**, together with what this still does not certify.
 
 ## Assessment
 
@@ -25,6 +27,7 @@ The register contains **30 distinct findings: 14 P1, 14 P2 and 2 P3**. One cumul
 | [Dashboard review](dashboard.md) | HTTP/WebSocket exposure, freshness, resource bounds, UI correctness and accessibility |
 | [Operations review](operations.md) | Privacy, dependencies, CI, packaging, setup, diagnostics, recovery and governance |
 | This report | Deduplicated priorities, advisory/export findings, improvement plan and decision rationale |
+| [Closure map](closure.md) | Finding-by-finding remediation status with evidence and remaining scope limits |
 | [Verification record](verification.md) | Commands, results, reproducible checks and unverified boundaries |
 | [Coverage inventory](scope.csv) | Every baseline tracked file, review area, method and limitations |
 | [Synthetic probes](audit_probes.py) | Network-disabled reproductions using stubs and temporary files |
