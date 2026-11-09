@@ -36,7 +36,9 @@ class _Server:
             def do_POST(self):
                 n = int(self.headers.get("Content-Length", 0))
                 outer.seen.append(json.loads(self.rfile.read(n)))
-                ans = json.dumps({"choices": [{"message": {"content": outer.answer}}]})
+                ans = json.dumps({"model": outer.served_model,
+                                  "usage": {"prompt_tokens": 11, "completion_tokens": 22},
+                                  "choices": [{"message": {"content": outer.answer}}]})
                 self.send_response(200)
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
@@ -53,6 +55,7 @@ class _Server:
                 pass
 
         self.answer = "{}"
+        self.served_model = desk.DEFAULT_MODEL
         self.feed = body
         self.httpd = HTTPServer(("127.0.0.1", 0), H)
         self.url = f"http://127.0.0.1:{self.httpd.server_port}/chat/completions"
@@ -208,6 +211,38 @@ class TestRulesAndJournal(unittest.TestCase):
         desk.append_journal(self.root, notes)
         rec = json.loads((self.root / desk.JOURNAL).read_text(encoding="utf-8").splitlines()[0])
         self.assertEqual(rec["rejected"], ["uncited numbers: 9.99"])
+
+
+class TestModelDrift(unittest.TestCase):
+    def setUp(self):
+        self.dir = TemporaryDirectory()
+        self.root = Path(self.dir.name)
+        (self.root / "funnel_history.log").write_text(
+            "2026-11-07T11:58:06Z | universe=50 tested=8 strategies=2 total_tests=16 "
+            "triggering=0 deduped=0 shortlist=0 passed_both=0 trials=16 cumulative=8616 | STAND_DOWN\n")
+        (self.root / "agent_notes.json").unlink(missing_ok=True)
+        self.addCleanup(self.dir.cleanup)
+
+    def test_a_silent_upgrade_is_recorded_not_ignored(self):
+        with _Server() as s, mock.patch.object(desk, "api_key", lambda *a, **k: "sk-test"):
+            os.environ["ZTT_AGENT_URL"] = s.url
+            s.served_model = "deepseek-chat-2026.12"     # alias moved under us
+            s.answer = '{"agent":"chief","summary":"nothing to report","contradictions":[],"watch":"x"}'
+            notes = desk.run(self.root)
+        os.environ.pop("ZTT_AGENT_URL", None)
+        self.assertEqual(notes["model"], "deepseek-chat")
+        self.assertEqual(notes["model_returned"], "deepseek-chat-2026.12")
+        self.assertEqual(notes["model_drift"]["served"], "deepseek-chat-2026.12")
+        self.assertEqual(notes["usage"]["prompt_tokens"], 11)
+
+    def test_no_drift_when_the_provider_echoes_the_pin(self):
+        with _Server() as s, mock.patch.object(desk, "api_key", lambda *a, **k: "sk-test"):
+            os.environ["ZTT_AGENT_URL"] = s.url
+            s.answer = '{"agent":"chief","summary":"nothing to report","contradictions":[],"watch":"x"}'
+            notes = desk.run(self.root)
+        os.environ.pop("ZTT_AGENT_URL", None)
+        self.assertNotIn("model_drift", notes)
+        self.assertEqual(notes["model_returned"], desk.DEFAULT_MODEL)
 
 
 if __name__ == "__main__":

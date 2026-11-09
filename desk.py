@@ -101,7 +101,7 @@ def _with_rules(messages: list[dict], root: Path | None) -> list[dict]:
 
 def chat(messages: list[dict], key: str, *, model: str | None = None,
          url: str | None = None, max_tokens: int = 1200, timeout: int = 90,
-         root: Path | None = None) -> dict:
+         root: Path | None = None, meta: dict | None = None) -> dict:
     """One JSON-mode completion. temperature 0: this is not a creative task."""
     url = url or os.environ.get("ZTT_AGENT_URL", DEFAULT_URL)
     payload = {
@@ -112,6 +112,11 @@ def chat(messages: list[dict], key: str, *, model: str | None = None,
         "response_format": {"type": "json_object"},
     }
     data = _post(payload, key, url, timeout)
+    if meta is not None:
+        # The provider names the model it actually served. Record it: a silent
+        # upgrade changes what every note means and nothing else would show it.
+        meta["model"] = data.get("model")
+        meta["usage"] = data.get("usage")
     try:
         text = data["choices"][0]["message"]["content"]
     except (KeyError, IndexError) as e:
@@ -230,28 +235,28 @@ CHIEF_SYS = (
 )
 
 
-def scout(headlines: list[dict], facts: str, key: str, root: Path | None = None, **kw) -> dict:
+def scout(headlines: list[dict], facts: str, key: str, root: Path | None = None, meta: dict | None = None, **kw) -> dict:
     payload = "SNAPSHOT:\n" + facts + "\n\nHEADLINES:\n" + json.dumps(headlines[:40], indent=1)
     note = chat([{"role": "system", "content": SCOUT_SYS},
-                 {"role": "user", "content": payload}], key, root=root, **kw)
+                 {"role": "user", "content": payload}], key, root=root, meta=meta, **kw)
     return _guard(note, facts + json.dumps(headlines))
 
 
-def skeptic(results: list[dict], facts: str, key: str, root: Path | None = None, **kw) -> dict:
+def skeptic(results: list[dict], facts: str, key: str, root: Path | None = None, meta: dict | None = None, **kw) -> dict:
     if not results:
         return {"agent": "skeptic", "status": "no candidate", "verdict": "no candidate",
                 "reason": "tier 3 has no results on disk"}
     top = results[0]
     note = chat([{"role": "system", "content": SKEPTIC_SYS},
                  {"role": "user", "content": "CANDIDATE:\n" + json.dumps(top, indent=1)[:6000]
-                  + "\n\nCONTEXT:\n" + facts}], key, root=root, **kw)
+                  + "\n\nCONTEXT:\n" + facts}], key, root=root, meta=meta, **kw)
     note.setdefault("symbol", top.get("symbol"))
     return _guard(note, facts + json.dumps(top))
 
 
-def chief(facts: str, key: str, root: Path | None = None, **kw) -> dict:
+def chief(facts: str, key: str, root: Path | None = None, meta: dict | None = None, **kw) -> dict:
     note = chat([{"role": "system", "content": CHIEF_SYS},
-                 {"role": "user", "content": facts}], key, root=root, **kw)
+                 {"role": "user", "content": facts}], key, root=root, meta=meta, **kw)
     return _guard(note, facts)
 
 
@@ -310,6 +315,7 @@ def run(root: Path, feeds: list[str] | None = None, model: str | None = None) ->
         return notes
 
     kw = {"model": model} if model else {}
+    meta: dict = {}
     t3 = {}
     try:
         t3 = json.loads((root / "tier3_results.json").read_text(encoding="utf-8"))
@@ -318,7 +324,7 @@ def run(root: Path, feeds: list[str] | None = None, model: str | None = None) ->
 
     if feeds:
         try:
-            notes["roles"]["scout"] = scout(headlines(feeds), facts, key, root, **kw)
+            notes["roles"]["scout"] = scout(headlines(feeds), facts, key, root, meta, **kw)
         except DeskError as e:
             notes["roles"]["scout"] = {"agent": "scout", "status": "error", "reason": str(e)}
     else:
@@ -328,9 +334,17 @@ def run(root: Path, feeds: list[str] | None = None, model: str | None = None) ->
     for role, fn, arg in (("skeptic", skeptic, (t3.get("results") or [], facts)),
                           ("chief", chief, (facts,))):
         try:
-            notes["roles"][role] = fn(*arg, key, root, **kw)
+            notes["roles"][role] = fn(*arg, key, root, meta, **kw)
         except DeskError as e:
             notes["roles"][role] = {"agent": role, "status": "error", "reason": str(e)}
+
+    served = meta.get("model")
+    notes["model_returned"] = served
+    notes["usage"] = meta.get("usage")
+    if served and served != notes["model"]:
+        # Pinning only works if a mismatch is visible. A silent alias upgrade
+        # makes every future note a different instrument than the one measured.
+        notes["model_drift"] = {"asked": notes["model"], "served": served}
 
     rejected = [r for r in notes["roles"].values() if r.get("status") == "rejected"]
     notes["status"] = "rejected" if rejected else "ok"
@@ -352,6 +366,8 @@ def append_journal(root: Path, notes: dict) -> Path:
         "ts": notes.get("generated_utc"),
         "status": notes.get("status"),
         "model": notes.get("model"),
+        "model_returned": notes.get("model_returned"),
+        "drift": bool(notes.get("model_drift")),
         "facts_sha": notes.get("facts_sha"),
         "roles": role_state,
         "chief": (chief.get("summary") or "")[:400],

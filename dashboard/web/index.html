@@ -717,6 +717,9 @@ function Desk({ agent }) {
       <span className=${"badge " + badge}>${agent.status}</span>
       <span>facts ${agent.facts_sha || "—"}</span>
       <span>${agent.hint || ""}</span>
+      ${agent.model_drift ? html`<span className="badge rej"
+        title="the provider served a different model than the one pinned">model drift: ${agent.model_drift.served}</span>` : null}
+      ${agent.usage ? html`<span className="badge">${agent.usage.prompt_tokens} in / ${agent.usage.completion_tokens} out</span>` : null}
     </div>
     ${r.chief && r.chief.summary ? html`<div className="rules">
       <div><b>Chief of staff</b> — ${r.chief.summary}</div>
