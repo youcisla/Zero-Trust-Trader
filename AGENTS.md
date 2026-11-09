@@ -342,7 +342,13 @@ python agent_brief.py               # needs DEEPSEEK_API_KEY (env or .env, never
 ```
 
 No key is a **failure**, not a quiet skip: the CLI exits 2 and the dashboard card
-says "no model key — nothing was called". Feeds live in `desk.toml` — **not** `config.toml`, whose schema is the MCP
+says "no model key — nothing was called".
+
+**Pin what the provider actually serves.** The account answers `deepseek-chat`
+with `deepseek-flash`; the first live run caught that through `model_drift`
+(asked vs served, logged in the notes and the journal), so the pin is now
+`deepseek-flash`. If a future run reports drift again, the model changed under
+the thresholds, and that is a finding rather than noise. Feeds live in `desk.toml` — **not** `config.toml`, whose schema is the MCP
 bridge's own policy and rejects unknown sections:
 
 ```toml

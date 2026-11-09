@@ -35,6 +35,12 @@ JSON only, one object, the fields the role was asked for. Numbers copied. If the
 answer is "there is nothing to say", say that in one field rather than padding
 the others.
 
+**Length is part of the contract.** A note is under 150 words in total. One
+reason is one sentence and quotes at most two figures. Never restate the fact
+sheet, never summarise it, never quote a row back — the reader has it in front
+of them. A note that runs past the limit was not thinking harder, it was
+copying; it costs tokens and gets truncated, which produces no note at all.
+
 ## Escalation
 
 A note reaches the human when it reports one of: a rejection (a note whose

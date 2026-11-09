@@ -230,7 +230,7 @@ class TestModelDrift(unittest.TestCase):
             s.answer = '{"agent":"chief","summary":"nothing to report","contradictions":[],"watch":"x"}'
             notes = desk.run(self.root)
         os.environ.pop("ZTT_AGENT_URL", None)
-        self.assertEqual(notes["model"], "deepseek-chat")
+        self.assertEqual(notes["model"], desk.DEFAULT_MODEL)
         self.assertEqual(notes["model_returned"], "deepseek-chat-2026.12")
         self.assertEqual(notes["model_drift"]["served"], "deepseek-chat-2026.12")
         self.assertEqual(notes["usage"]["prompt_tokens"], 11)
@@ -243,6 +243,76 @@ class TestModelDrift(unittest.TestCase):
         os.environ.pop("ZTT_AGENT_URL", None)
         self.assertNotIn("model_drift", notes)
         self.assertEqual(notes["model_returned"], desk.DEFAULT_MODEL)
+
+
+class TestGuardTokenisation(unittest.TestCase):
+    """The citation guard must reject inventions without rejecting arithmetic.
+
+    Its first live run rejected all three roles with "uncited numbers: 2014,
+    -09, -129". None was a fabrication: 2014 was the tail of the JSON escape
+    for an em dash (\\u2014), -09 came from a date, and -129 from a hyphen used
+    as a dash in "150-vs-129". The guard scans a rendered blob, so escaping and
+    punctuation must not be able to manufacture a number.
+    """
+
+    SRC = ("funnel 2026-11-09T16:58:35Z | universe=50 tested=150 total_tests=150 "
+           "cumulative=8766 | STAND_DOWN  tier3: z=-5.523 t_stat_R=-3.512 p=0.9301 "
+           "tier2 total_tests=129 generating 9 candidates")
+
+    def test_an_em_dash_does_not_become_the_number_2014(self):
+        note = {"agent": "chief", "summary": "the 16:58:35Z scan ran 150 tests \u2014 "
+                "all of them \u2014 cumulative 8766"}
+        self.assertEqual(desk.uncited(note, self.SRC), [])
+
+    def test_a_date_is_not_a_negative_number(self):
+        note = {"agent": "chief", "summary": "generated 2026-11-09 with total_tests=129"}
+        self.assertEqual(desk.uncited(note, self.SRC), [])
+
+    def test_a_hyphen_between_words_is_not_a_sign(self):
+        note = {"agent": "chief", "summary": "if the 150-vs-129 and 9-vs-6 differ"}
+        self.assertEqual(desk.uncited(note, self.SRC), [])
+
+    def test_a_real_negative_statistic_still_passes(self):
+        note = {"agent": "skeptic", "verdict": "noise", "reasons": ["z = -5.523, t = -3.512"]}
+        self.assertEqual(desk.uncited(note, self.SRC), [])
+
+    def test_an_invented_figure_is_still_rejected(self):
+        note = {"agent": "chief", "summary": "the win rate was 71.4% with a 4.9 sharpe"}
+        self.assertEqual(sorted(desk.uncited(note, self.SRC)), ["4.9", "71.4"])
+
+    def test_an_invented_year_is_still_rejected(self):
+        note = {"agent": "chief", "summary": "in 2031 this will matter"}
+        self.assertEqual(desk.uncited(note, self.SRC), ["2031"])
+
+
+class TestFailureIsNotSuccess(unittest.TestCase):
+    """Two ways the desk used to claim a run it did not have."""
+
+    def test_a_truncated_response_is_named_as_truncation(self):
+        with self.assertRaises(desk.DeskError) as ctx:
+            desk._object('{"agent":"chief","summary":"cut off half', "length", 2000)
+        msg = str(ctx.exception)
+        self.assertIn("truncated", msg)
+        self.assertIn("2000", msg)
+        self.assertNotIn("did not return JSON", msg)
+
+    def test_a_run_where_every_role_failed_is_an_error(self):
+        notes = {"roles": {"scout": {"status": "no feed configured"},
+                           "skeptic": {"status": "error"},
+                           "chief": {"status": "error"}}}
+        statuses = [r.get("status") for r in notes["roles"].values()]
+        accepted = [st for st in statuses if st in (None, "ok")]
+        errored = [st for st in statuses if st == "error"]
+        rejected = [st for st in statuses if st == "rejected"]
+        status = ("rejected" if rejected else "error" if (errored and not accepted)
+                  else "partial" if errored else "ok")
+        self.assertEqual(status, "error")
+
+    def test_one_failed_role_is_partial_not_ok(self):
+        statuses = ["error", "ok", "no feed configured"]
+        accepted = [st for st in statuses if st in (None, "ok")]
+        errored = [st for st in statuses if st == "error"]
+        self.assertEqual(("partial" if errored and accepted else "bad"), "partial")
 
 
 if __name__ == "__main__":

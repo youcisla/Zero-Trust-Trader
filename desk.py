@@ -34,7 +34,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from xml.etree import ElementTree
 
-DEFAULT_MODEL = "deepseek-chat"
+# This account serves deepseek-flash for the deepseek-chat alias - the drift
+# check proved it on the first live run (asked deepseek-chat, served
+# deepseek-flash). Pin what is actually served, so the drift flag keeps meaning
+# "something changed under us" instead of firing on every run.
+DEFAULT_MODEL = "deepseek-flash"
 RULES = "DESK.md"
 JOURNAL = "desk_journal.jsonl"
 DEFAULT_URL = "https://api.deepseek.com/chat/completions"
@@ -100,7 +104,7 @@ def _with_rules(messages: list[dict], root: Path | None) -> list[dict]:
 
 
 def chat(messages: list[dict], key: str, *, model: str | None = None,
-         url: str | None = None, max_tokens: int = 1200, timeout: int = 90,
+         url: str | None = None, max_tokens: int = 2000, timeout: int = 90,
          root: Path | None = None, meta: dict | None = None) -> dict:
     """One JSON-mode completion. temperature 0: this is not a creative task."""
     url = url or os.environ.get("ZTT_AGENT_URL", DEFAULT_URL)
@@ -118,13 +122,14 @@ def chat(messages: list[dict], key: str, *, model: str | None = None,
         meta["model"] = data.get("model")
         meta["usage"] = data.get("usage")
     try:
-        text = data["choices"][0]["message"]["content"]
+        choice = data["choices"][0]
+        text = choice["message"]["content"]
     except (KeyError, IndexError) as e:
         raise DeskError(f"unexpected response shape: {str(data)[:200]}") from e
-    return _object(text)
+    return _object(text, choice.get("finish_reason"), max_tokens)
 
 
-def _object(text: str) -> dict:
+def _object(text: str, finish: str | None = None, cap: int = 0) -> dict:
     t = text.strip()
     if t.startswith("```"):
         t = re.sub(r"^```[a-zA-Z]*\n?", "", t)
@@ -132,6 +137,10 @@ def _object(text: str) -> dict:
     try:
         out = json.loads(t)
     except json.JSONDecodeError as e:
+        if finish == "length":
+            raise DeskError(
+                f"response truncated at max_tokens={cap} (finish_reason=length); "
+                f"the note is incomplete, not malformed") from e
         raise DeskError(f"model did not return JSON: {t[:200]}") from e
     if not isinstance(out, dict):
         raise DeskError("model returned JSON that is not an object")
@@ -140,7 +149,16 @@ def _object(text: str) -> dict:
 
 # ---------------------------------------------------------------- citations
 
-_NUM = re.compile(r"-?\d+(?:\.\d+)?")
+# A number is only a claim if it is a standalone numeric token. Three things
+# that used to be counted as claims and should not be:
+#   \u2014    json.dumps escapes the em dash, and -?\d+ matched the "2014" inside
+#             it, so every note written with a dash was rejected for inventing 2014
+#   2026-11-09  a date's "-09" is not a negative number
+#   150-vs-129  a hyphen between words is punctuation, not a sign
+_NUM = re.compile(r"(?<![\w.])-?\d+(?:\.\d+)?(?![\w.])")
+_DATE_TIME = re.compile(
+    r"\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?)?"
+    r"|\b\d{2}:\d{2}(?::\d{2})?\b")
 
 
 def _renders(v: float) -> set[str]:
@@ -155,7 +173,9 @@ def uncited(note: dict, source: str) -> list[str]:
     a number that appears nowhere is a fabrication and fails the whole note.
     """
     bad = []
-    for m in _NUM.finditer(json.dumps(note, default=str)):
+    # ensure_ascii=False keeps em dashes as characters; dates are not figures.
+    blob = _DATE_TIME.sub(" ", json.dumps(note, ensure_ascii=False, default=str))
+    for m in _NUM.finditer(blob):
         raw = m.group(0)
         try:
             v = float(raw)
@@ -248,15 +268,18 @@ def skeptic(results: list[dict], facts: str, key: str, root: Path | None = None,
                 "reason": "tier 3 has no results on disk"}
     top = results[0]
     note = chat([{"role": "system", "content": SKEPTIC_SYS},
-                 {"role": "user", "content": "CANDIDATE:\n" + json.dumps(top, indent=1)[:6000]
-                  + "\n\nCONTEXT:\n" + facts}], key, root=root, meta=meta, **kw)
+                 {"role": "user", "content": "CANDIDATE:\n" + json.dumps(top, indent=1)[:4000]
+                  + "\n\nCONTEXT (do not restate any of it):\n" + facts[-4000:]
+                  + "\n\nAt most 3 reasons, one sentence each."}], key, root=root, meta=meta, **kw)
     note.setdefault("symbol", top.get("symbol"))
     return _guard(note, facts + json.dumps(top))
 
 
 def chief(facts: str, key: str, root: Path | None = None, meta: dict | None = None, **kw) -> dict:
     note = chat([{"role": "system", "content": CHIEF_SYS},
-                 {"role": "user", "content": facts}], key, root=root, meta=meta, **kw)
+                 {"role": "user", "content": facts
+                  + "\n\nWrite one paragraph, under 120 words. Do not restate the rows."}],
+                key, root=root, meta=meta, **kw)
     return _guard(note, facts)
 
 
@@ -329,7 +352,7 @@ def run(root: Path, feeds: list[str] | None = None, model: str | None = None) ->
             notes["roles"]["scout"] = {"agent": "scout", "status": "error", "reason": str(e)}
     else:
         notes["roles"]["scout"] = {"agent": "scout", "status": "no feed configured",
-                                   "reason": "add feeds to config.toml [agents] news_feeds"}
+                                   "reason": "add feeds to desk.toml: news_feeds = [\"https://...\"]"}
 
     for role, fn, arg in (("skeptic", skeptic, (t3.get("results") or [], facts)),
                           ("chief", chief, (facts,))):
@@ -346,8 +369,20 @@ def run(root: Path, feeds: list[str] | None = None, model: str | None = None) ->
         # makes every future note a different instrument than the one measured.
         notes["model_drift"] = {"asked": notes["model"], "served": served}
 
-    rejected = [r for r in notes["roles"].values() if r.get("status") == "rejected"]
-    notes["status"] = "rejected" if rejected else "ok"
+    statuses = [r.get("status") for r in notes["roles"].values()]
+    accepted = [st for st in statuses if st in (None, "ok")]
+    errored = [st for st in statuses if st == "error"]
+    rejected = [st for st in statuses if st == "rejected"]
+    # An exit code, or a role that returned nothing, is not a brief. Reporting
+    # "ok" because nothing was *rejected* is the failure this whole repo avoids.
+    if rejected:
+        notes["status"] = "rejected"
+    elif errored and not accepted:
+        notes["status"] = "error"
+    elif errored:
+        notes["status"] = "partial"
+    else:
+        notes["status"] = "ok"
     return notes
 
 
