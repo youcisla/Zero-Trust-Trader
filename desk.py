@@ -35,6 +35,8 @@ from pathlib import Path
 from xml.etree import ElementTree
 
 DEFAULT_MODEL = "deepseek-chat"
+RULES = "DESK.md"
+JOURNAL = "desk_journal.jsonl"
 DEFAULT_URL = "https://api.deepseek.com/chat/completions"
 NOTES = "agent_notes.json"
 
@@ -76,13 +78,35 @@ def _post(payload: dict, key: str, url: str = DEFAULT_URL, timeout: int = 90) ->
         raise DeskError(f"model endpoint unreachable: {e}") from e
 
 
+_RULES_CACHE: dict[str, str] = {}
+
+
+def rules(root: Path | None = None) -> str:
+    """DESK.md, read fresh per process. Missing file is not fatal — the guard is
+    the gate, not the prose — but it is reported so the reader knows."""
+    key = str(root or Path.cwd())
+    if key not in _RULES_CACHE:
+        try:
+            _RULES_CACHE[key] = (Path(key) / RULES).read_text(encoding="utf-8")[:4000]
+        except OSError:
+            _RULES_CACHE[key] = ("DESK RULES (built-in fallback): never invent a number; "
+                                 "quote only figures present in the artifact; state missing data as missing.")
+    return _RULES_CACHE[key]
+
+
+def _with_rules(messages: list[dict], root: Path | None) -> list[dict]:
+    return [{"role": "system", "content": "DESK RULES — read before answering:\n\n" + rules(root)},
+            *messages]
+
+
 def chat(messages: list[dict], key: str, *, model: str | None = None,
-         url: str | None = None, max_tokens: int = 1200, timeout: int = 90) -> dict:
+         url: str | None = None, max_tokens: int = 1200, timeout: int = 90,
+         root: Path | None = None) -> dict:
     """One JSON-mode completion. temperature 0: this is not a creative task."""
     url = url or os.environ.get("ZTT_AGENT_URL", DEFAULT_URL)
     payload = {
         "model": model or os.environ.get("ZTT_AGENT_MODEL", DEFAULT_MODEL),
-        "messages": messages,
+        "messages": _with_rules(messages, root),
         "temperature": 0,
         "max_tokens": max_tokens,
         "response_format": {"type": "json_object"},
@@ -206,28 +230,28 @@ CHIEF_SYS = (
 )
 
 
-def scout(headlines: list[dict], facts: str, key: str, **kw) -> dict:
+def scout(headlines: list[dict], facts: str, key: str, root: Path | None = None, **kw) -> dict:
     payload = "SNAPSHOT:\n" + facts + "\n\nHEADLINES:\n" + json.dumps(headlines[:40], indent=1)
     note = chat([{"role": "system", "content": SCOUT_SYS},
-                 {"role": "user", "content": payload}], key, **kw)
+                 {"role": "user", "content": payload}], key, root=root, **kw)
     return _guard(note, facts + json.dumps(headlines))
 
 
-def skeptic(results: list[dict], facts: str, key: str, **kw) -> dict:
+def skeptic(results: list[dict], facts: str, key: str, root: Path | None = None, **kw) -> dict:
     if not results:
         return {"agent": "skeptic", "status": "no candidate", "verdict": "no candidate",
                 "reason": "tier 3 has no results on disk"}
     top = results[0]
     note = chat([{"role": "system", "content": SKEPTIC_SYS},
                  {"role": "user", "content": "CANDIDATE:\n" + json.dumps(top, indent=1)[:6000]
-                  + "\n\nCONTEXT:\n" + facts}], key, **kw)
+                  + "\n\nCONTEXT:\n" + facts}], key, root=root, **kw)
     note.setdefault("symbol", top.get("symbol"))
     return _guard(note, facts + json.dumps(top))
 
 
-def chief(facts: str, key: str, **kw) -> dict:
+def chief(facts: str, key: str, root: Path | None = None, **kw) -> dict:
     note = chat([{"role": "system", "content": CHIEF_SYS},
-                 {"role": "user", "content": facts}], key, **kw)
+                 {"role": "user", "content": facts}], key, root=root, **kw)
     return _guard(note, facts)
 
 
@@ -294,7 +318,7 @@ def run(root: Path, feeds: list[str] | None = None, model: str | None = None) ->
 
     if feeds:
         try:
-            notes["roles"]["scout"] = scout(headlines(feeds), facts, key, **kw)
+            notes["roles"]["scout"] = scout(headlines(feeds), facts, key, root, **kw)
         except DeskError as e:
             notes["roles"]["scout"] = {"agent": "scout", "status": "error", "reason": str(e)}
     else:
@@ -304,7 +328,7 @@ def run(root: Path, feeds: list[str] | None = None, model: str | None = None) ->
     for role, fn, arg in (("skeptic", skeptic, (t3.get("results") or [], facts)),
                           ("chief", chief, (facts,))):
         try:
-            notes["roles"][role] = fn(*arg, key, **kw)
+            notes["roles"][role] = fn(*arg, key, root, **kw)
         except DeskError as e:
             notes["roles"][role] = {"agent": role, "status": "error", "reason": str(e)}
 
@@ -316,6 +340,28 @@ def run(root: Path, feeds: list[str] | None = None, model: str | None = None) ->
 def _sha(text: str) -> str:
     import hashlib
     return hashlib.sha256(text.encode()).hexdigest()[:16]
+
+
+def append_journal(root: Path, notes: dict) -> Path:
+    """One line per brief, forever. The notes file is overwritten every run; the
+    journal is what makes "compare this week to last" possible — and it is where
+    a rejected note's reasons survive."""
+    role_state = {k: v.get("status", "ok") for k, v in (notes.get("roles") or {}).items()}
+    chief = (notes.get("roles") or {}).get("chief") or {}
+    line = {
+        "ts": notes.get("generated_utc"),
+        "status": notes.get("status"),
+        "model": notes.get("model"),
+        "facts_sha": notes.get("facts_sha"),
+        "roles": role_state,
+        "chief": (chief.get("summary") or "")[:400],
+        "rejected": [v.get("reason") for v in (notes.get("roles") or {}).values()
+                     if v.get("status") == "rejected"],
+    }
+    path = root / JOURNAL
+    with path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(line, default=str) + "\n")
+    return path
 
 
 def write_notes(root: Path, notes: dict) -> Path:

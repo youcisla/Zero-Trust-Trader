@@ -170,5 +170,45 @@ class TestFeeds(unittest.TestCase):
         self.assertIn("ValueError", items[0]["headline"])
 
 
+class TestRulesAndJournal(unittest.TestCase):
+    def setUp(self):
+        self.dir = TemporaryDirectory()
+        self.root = Path(self.dir.name)
+        self.addCleanup(self.dir.cleanup)
+
+    def test_the_rulebook_is_sent_with_every_call(self):
+        (self.root / "DESK.md").write_text("# Desk rules\n\nMARKER-PARAGRAPH-ONE\n")
+        with _Server() as s:
+            s.answer = '{"agent":"chief","summary":"ok"}'
+            desk.chat([{"role": "user", "content": "hi"}], "sk-test", url=s.url, root=self.root)
+        system = s.seen[0]["messages"][0]
+        self.assertEqual(system["role"], "system")
+        self.assertIn("MARKER-PARAGRAPH-ONE", system["content"])
+
+    def test_a_missing_rulebook_falls_back_and_says_so(self):
+        out = desk.rules(self.root)
+        self.assertIn("built-in fallback", out)
+        self.assertIn("never invent a number", out)
+
+    def test_every_run_appends_one_journal_line(self):
+        notes = {"generated_utc": "2026-11-09T17:00:00Z", "status": "ok", "model": "deepseek-chat",
+                 "facts_sha": "abc123", "roles": {"chief": {"status": "ok", "summary": "nothing to report"}}}
+        desk.append_journal(self.root, notes)
+        desk.append_journal(self.root, notes)
+        lines = (self.root / desk.JOURNAL).read_text(encoding="utf-8").splitlines()
+        self.assertEqual(len(lines), 2)
+        rec = json.loads(lines[0])
+        self.assertEqual(rec["facts_sha"], "abc123")
+        self.assertEqual(rec["roles"]["chief"], "ok")
+        self.assertEqual(rec["chief"], "nothing to report")
+
+    def test_a_rejection_reason_survives_in_the_journal(self):
+        notes = {"generated_utc": "t", "status": "rejected", "model": "m", "facts_sha": "x",
+                 "roles": {"chief": {"status": "rejected", "reason": "uncited numbers: 9.99"}}}
+        desk.append_journal(self.root, notes)
+        rec = json.loads((self.root / desk.JOURNAL).read_text(encoding="utf-8").splitlines()[0])
+        self.assertEqual(rec["rejected"], ["uncited numbers: 9.99"])
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -50,11 +50,12 @@ def main(argv=None) -> int:
     feeds = [u.strip() for u in a.feeds.split(",") if u.strip()] or feeds_from_config(root)
     notes = desk.run(root, feeds, a.model)
     path = desk.write_notes(root, notes)
+    journal = desk.append_journal(root, notes)
 
     if a.json:
         print(json.dumps(notes, indent=1))
     else:
-        print(f"desk: {notes['status']} · {notes['model']} · {path.name}")
+        print(f"desk: {notes['status']} · {notes['model']} · {path.name} (+ {journal.name})")
         for role, note in notes["roles"].items():
             state = note.get("status", "ok")
             line = note.get("summary") or note.get("verdict") or note.get("reason") or ""

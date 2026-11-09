@@ -33,3 +33,4 @@ reports/
 # source of the diagram lives at docs/architecture.archify.json.
 .archify/
 agent_notes.json
+desk_journal.jsonl
