@@ -301,6 +301,52 @@ no second port, no CORS.
 
 ---
 
+---
+
+## 9b. The desk (agents)
+
+`desk.py` + `agent_brief.py`: three LLM roles that read this tree and write
+`agent_notes.json`. They are **advisory**. Nothing they produce can place, size,
+cancel or veto anything, and there is no code path from this module to the
+terminal — `AGENTS.md` §1 still owns execution.
+
+| Role | Reads | Produces | Why a model |
+| --- | --- | --- | --- |
+| `scout` | RSS headlines + the snapshot | symbol mapping, stance | text, not arithmetic |
+| `skeptic` | one candidate's own test output | reasons it is noise | adversarial prose |
+| `chief` | the ledger, tier2/tier3, engine state | one paragraph + contradictions | synthesis |
+
+**The citation rule.** Every number a note contains must already appear in the
+artifact the model was given. `desk._guard()` rejects the whole note otherwise
+(`status: "rejected"`, reason names the figures) and the run is marked rejected.
+This is what makes an LLM safe next to a quantitative pipeline: it cannot invent
+a z-score, a win rate or a trial count, and a rounded rendering of a real number
+(`4.53` for `4.531`) is still a citation.
+
+It never runs inside the scan. A scan must not depend on a network call or a
+model's mood; `agent_brief.py` runs after it, writes one derived file and one
+audit row.
+
+```bash
+python agent_brief.py --offline     # print the fact sheet, call nothing
+python agent_brief.py               # needs DEEPSEEK_API_KEY (env or .env, never committed)
+```
+
+No key is a **failure**, not a quiet skip: the CLI exits 2 and the dashboard card
+says "no model key — nothing was called". Feeds live in `config.toml`:
+
+```toml
+[agents]
+news_feeds = ["https://example.com/rss"]
+```
+
+Without feeds the scout reports `no feed configured` and does not call the model.
+
+**What has no agent, on purpose:** chart reading, strategy testing, sizing and
+execution. Tier 2 and Tier 3 already do the first two with a measured error rate
+and a cumulative bar; sizing is 0.01 lots; execution is the human gate. An agent
+in any of those four places is the exact thing this repository exists to prevent.
+
 ## 10. Known traps (each one has already happened here)
 
 | Trap | Symptom |
@@ -313,6 +359,7 @@ no second port, no CORS.
 | Floating-point equality at threshold boundaries | test fixtures sit clear of exact 1R rather than pinning the boundary |
 | Task Scheduler stores **local** time | Europe/Paris shifts at DST; enforce any critical UTC window in Python, not in the trigger |
 | `Last Result=267011` | `SCHED_S_TASK_HAS_NOT_RUN` — the task is registered but has never fired. Not an error; check the trigger start boundary |
+| An empty `liquid_universe.json` | A weekend `--rebuild` measured a dead terminal and overwrote a good universe with `symbols: []`; every scan then reported STAND_DOWN with `total_tests=0` for two days. Both sides now refuse: `make_liquid` will not write an empty universe, `run_funnel` logs `FAILED ... 0 symbols` |
 
 ---
 

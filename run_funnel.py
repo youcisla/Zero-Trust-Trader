@@ -286,6 +286,17 @@ def main() -> int:
         print("no liquid_universe.json — run with --rebuild first")
         log("FAILED intraday | liquid_universe.json missing")
         return 2
+    try:
+        universe = json.loads((HERE / "liquid_universe.json").read_text())["symbols"]
+    except (OSError, ValueError, KeyError):
+        universe = []
+    if not universe:
+        # Scanning nothing and printing STAND_DOWN is indistinguishable from a
+        # working funnel with no edge. It is not the same thing and must not log
+        # as if it were: nine runs went by before anyone noticed.
+        print("liquid_universe.json has 0 symbols — nothing to scan")
+        log("FAILED intraday | liquid_universe.json has 0 symbols — rebuild")
+        return 2
 
     t2 = run(["tier2_patterns.py", "--tier1", "liquid_universe.json",
               "--tf", a.tf, "--top", str(a.shortlist),

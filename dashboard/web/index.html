@@ -724,6 +724,45 @@ function Analytics({ x, data }) {
   </div>`;
 }
 
+function Desk({ agent }) {
+  // Absence is stated, never filled in: no notes file means the desk never ran,
+  // not that the desk had nothing to say.
+  if (!agent) return html`<div className="empty">
+    No desk notes yet — run <code>python agent_brief.py</code>. The agents write
+    <code>agent_notes.json</code> and cannot place, size or cancel anything.</div>`;
+  const r = agent.roles || {};
+  const badge = agent.status === "ok" ? "pass" : agent.status === "no key" ? "" : "rej";
+  return html`<div className="insp">
+    <div className="inshead">
+      <b>${agent.status === "ok" ? "notes accepted" : agent.status === "no key" ? "no model key" : "notes rejected"}</b>
+      <span className=${"badge " + badge}>${agent.status}</span>
+      <span>facts ${agent.facts_sha || "—"}</span>
+      <span>${agent.hint || ""}</span>
+    </div>
+    ${r.chief && r.chief.summary ? html`<div className="rules">
+      <div><b>Chief of staff</b> — ${r.chief.summary}</div>
+      ${(r.chief.contradictions || []).map((c, i) => html`<div key=${"c" + i}>
+        <b>Contradiction</b> — ${c}</div>`)}
+      ${r.chief.watch ? html`<div><b>Watch</b> — ${r.chief.watch}</div>` : null}
+    </div>` : null}
+    ${r.skeptic && r.skeptic.verdict ? html`<div className="rules">
+      <div><b>Risk officer · ${r.skeptic.symbol || "—"}</b> — ${r.skeptic.verdict}</div>
+      ${(r.skeptic.reasons || []).slice(0, 3).map((x, i) => html`<div key=${"s" + i}>· ${x}</div>`)}
+      ${r.skeptic.what_would_change_my_mind
+        ? html`<div><b>Would change on</b> — ${r.skeptic.what_would_change_my_mind}</div>` : null}
+    </div>` : null}
+    ${r.scout && (r.scout.items || []).length ? html`<div className="rules">
+      <div><b>Scout</b> — ${r.scout.items.length} headline${r.scout.items.length === 1 ? "" : "s"}</div>
+      ${r.scout.items.slice(0, 4).map((it, i) => html`<div key=${"n" + i}>
+        <b>${it.stance || "neutral"}</b> — ${it.headline}
+        ${(it.symbols || []).length ? html` <span className="badge">${it.symbols.join(" ")}</span>` : null}</div>`)}
+      ${r.scout.caveat ? html`<div className="l-dim">${r.scout.caveat}</div>` : null}
+    </div>` : html`<div className="rules"><div><b>Scout</b> — ${(r.scout && r.scout.status) || "not run"}</div></div>`}
+    ${Object.entries(r).filter(([, v]) => v && v.status === "rejected").map(([k, v]) => html`
+      <div className="rules" key=${"x" + k}><div><b>${k} rejected</b> — ${v.reason}</div></div>`)}
+  </div>`;
+}
+
 function App() {
   const [data, setData] = useState(null);
   const [up, setUp] = useState(false);
@@ -857,6 +896,11 @@ function App() {
       count=${data?.tier3?.generated_utc ? "tier3 · " + data.tier3.generated_utc
         : data?.tier2?.generated_utc ? "tier2 · " + data.tier2.generated_utc : null}>
       <${Pipe} data=${data} />
+    <//>
+
+    <${Card} title="Desk · agent notes" wide="tap12"
+      count=${data?.agent?.generated_utc ? data.agent.model + " · " + data.agent.generated_utc : null}>
+      <${Desk} agent=${data?.agent} />
     <//>
 
     <${Card} title="Positions" wide="tap12">

@@ -160,6 +160,7 @@ fn build(root: &Path) -> Value {
     // window, which is the normal state most of the day.
     let tier2 = read_json(&root.join("tier2_candidates.json"));
     let tier3 = read_json(&root.join("tier3_results.json"));
+    let agent = read_json(&root.join("agent_notes.json"));
 
     json!({
         "ts": SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),
@@ -167,6 +168,7 @@ fn build(root: &Path) -> Value {
         "engine_age_s": age_secs(&engine_path),
         "tier2": tier2,
         "tier3": tier3,
+        "agent": agent,
         "equity": equity,
         "balance": balance,
         "currency": currency,

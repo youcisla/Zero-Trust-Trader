@@ -145,6 +145,12 @@ def main() -> int:
     }
     for r in picked:
         payload["by_class"][r["class"]] = payload["by_class"].get(r["class"], 0) + 1
+    if not picked:
+        # A rebuild outside market hours measures a dead terminal and returns
+        # nothing. Writing that over a working universe is how the funnel spent
+        # two days scanning zero symbols and reporting STAND_DOWN.
+        print("no symbol survived the filter — keeping the existing universe")
+        return 1
     OUT.write_text(json.dumps(payload, indent=2) + "\n")
 
     print(f"measured {len(measured)} | dedupe dropped {dropped} | "

@@ -32,3 +32,4 @@ reports/
 # Archify working folders: receipts embed absolute machine paths, the committed
 # source of the diagram lives at docs/architecture.archify.json.
 .archify/
+agent_notes.json
