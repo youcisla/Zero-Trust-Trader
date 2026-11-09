@@ -1,3 +1,7 @@
-MetaTrader5>=5.0.45
-numpy>=1.26
-pandas>=2.0
+# Audited execution environment; Python 3.12+ (NumPy requirement).
+MetaTrader5==5.0.6231; sys_platform == "win32"
+numpy==2.5.0
+pandas==3.0.3
+python-dateutil==2.9.0.post0
+six==1.17.0
+tzdata==2026.2

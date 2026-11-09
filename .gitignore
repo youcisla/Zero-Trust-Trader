@@ -1,13 +1,19 @@
 # runtime artifacts — never commit
 *.log
 *.out
-*.lock
+funnel.lock
+position_manager.lock
+stops.json.lock
+.ztt-maintenance
 __pycache__/
 *.py[cod]
 .publish_marker
 
 # generated data (regenerate with the pipeline)
 engine_state.json
+engine_state.*.json
+engine_state*.tmp
+engine_state.*.json.*
 tier1_universe*.json
 tier2_candidates.json
 tier3_results.json
@@ -15,12 +21,20 @@ liquid_universe.json
 my_market_watch.json
 trades.csv
 stops.json
+stops.json.*.tmp
+.stops.*.tmp
 tm_run_*.json
 funnel.lock
 
 # secrets
-.env
+.env*
+!.env.example
 config.toml
+idempotency.db*
+run_funnel.local.cmd
+run_rebuild.local.cmd
+.venv/
+_publish/
 
 # rust
 dashboard/target/
@@ -28,9 +42,15 @@ audit.jsonl
 
 # generated per-scan HTML reports
 reports/
+exports/
 
 # Archify working folders: receipts embed absolute machine paths, the committed
 # source of the diagram lives at docs/architecture.archify.json.
 .archify/
 agent_notes.json
 desk_journal.jsonl
+
+# Tool caches and temporary release artifacts.
+.ruff_cache/
+.pytest_cache/
+!tools/build_public.py

@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import html
 import json
-import subprocess
+import math
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -24,27 +24,35 @@ OUT_DIR = HERE / "reports"
 SRC = HERE / "tier3_results.json"
 
 
-def code_sha() -> str:
-    """The commit that produced these numbers. Without it a report is a story."""
-    try:
-        return subprocess.run(
-            ["git", "-C", str(HERE), "rev-parse", "--short", "HEAD"],
-            capture_output=True, text=True, timeout=10,
-        ).stdout.strip() or "unknown"
-    except Exception:
-        return "unknown"
-
-
 def esc(v) -> str:
     return html.escape(str(v if v is not None else "—"))
 
 
-def verdict_block(doc: dict) -> tuple[str, str]:
+def verified_survivors(doc: dict) -> list[str]:
+    """A report may never upgrade missing or contradictory gate evidence."""
+    verified = []
+    for symbol in doc.get("survivors") or []:
+        for row in doc.get("results") or []:
+            if not isinstance(row, dict) or row.get("symbol") != symbol:
+                continue
+            significance, permutation = row.get("significance") or {}, row.get("permutation") or {}
+            mean = (row.get("history") or {}).get("avg_R")
+            if (significance.get("passes_corrected") is True and permutation.get("passes") is True
+                    and isinstance(mean, (int, float)) and not isinstance(mean, bool)
+                    and math.isfinite(mean) and mean > 0):
+                verified.append(symbol)
+                break
+    return verified
+
+
+def verdict_block(doc: dict) -> tuple[str, str, str]:
     if doc.get("stood_down"):
         return ("STAND DOWN", "down",
                 "No candidate cleared both gates. Standing down is the result, "
                 "not an error: the system declined to trade its own hypothesis.")
-    winners = doc.get("survivors") or []
+    winners = verified_survivors(doc)
+    if not winners or len(winners) != len(doc.get("survivors") or []):
+        return ("UNKNOWN", "down", "Complete, consistent positive-return evidence is unavailable.")
     return ("PROPOSAL", "up",
             "Candidate(s) cleared both gates: " + ", ".join(esc(w) for w in winners) +
             ". Execution still requires an approval a human types.")
@@ -66,7 +74,6 @@ def candidate_card(r: dict) -> str:
     gate = s.get("gate") or "z"
     z = s.get("t_stat_R") if gate == "t" else s.get("z")
     zc = s.get("z_crit_bonferroni")
-    zn = s.get("z_crit_naive")
     pval = p.get("p_value")
     g1 = bool(s.get("passes_corrected"))
     # Trust the kernel's verdict: p < 0.05 alone also passes a loser that only
@@ -177,7 +184,8 @@ def render(doc: dict, src_path: Path) -> str:
     <div><span>cumulative trials</span><b>{esc(doc.get("trials_cumulative"))}</b></div>
     <div><span>corrected bar</span><b>{esc(doc.get("z_crit_corrected"))}</b></div>
     <div><span>permutations</span><b>{esc(doc.get("permutations"))}</b></div>
-    <div><span>code</span><b>{esc(code_sha())}</b></div>
+    <div><span>source revision</span><b>{esc(doc.get("source_revision") or (doc.get("provenance") or {}).get("source_revision") or "not recorded")}</b></div>
+    <div><span>scan ID</span><b>{esc(doc.get("scan_id") or "historical / unknown")}</b></div>
     <div><span>source</span><b>{esc(src_path.name)}</b></div>
   </div>"""
 
@@ -196,9 +204,9 @@ def render(doc: dict, src_path: Path) -> str:
 
   <footer>
     Every number above comes from {esc(src_path.name)}, written by the engine at
-    the timestamp shown. The system placed no order in this scan: execution needs
-    <code>ZTT_ALLOW_APPLY=1</code> in the launching shell and a proposal that
-    survived both gates. Reproduce with the same code SHA, seed and data window.
+    the timestamp shown. Execution requires a human typing <code>APPROVED</code>
+    and independent single-use bridge consent. This report cannot execute orders.
+    Missing source provenance is unknown; current code does not identify older results.
   </footer>
 </div></body></html>
 """

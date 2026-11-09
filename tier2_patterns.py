@@ -31,11 +31,15 @@ from __future__ import annotations
 import argparse
 import math
 import json
+import re
+import uuid
 from pathlib import Path
 
 import pandas as pd
 
 import marketdata as md
+import process_lock
+from timemachine_mt5 import source_provenance
 
 HERE = Path(__file__).resolve().parent
 OUT = HERE / "tier2_candidates.json"
@@ -128,24 +132,31 @@ def dedupe(hits: list[dict], corr_max: float, tf: str, bars_n: int = 3000,
     bars = {s: md.fetch(s, tf, bars_n) for s in syms}
     kept, dropped = [], []
     for h in cand:
+        if bars[h["symbol"]] is None:
+            dropped.append({"symbol": h["symbol"], "strategy": h["strategy"],
+                            "kept_instead": None, "correlation": None,
+                            "reason": "correlation history unavailable", "score": h["score"]})
+            continue
         clash = None
         for k in kept:
             rho = 1.0 if k["symbol"] == h["symbol"] else md.corr_returns(bars[k["symbol"]], bars[h["symbol"]])
-            if rho is not None and abs(rho) > corr_max:
+            if rho is None or not math.isfinite(rho) or abs(rho) > corr_max:
                 clash = (k, rho)
                 break
         if clash:
             dropped.append({"symbol": h["symbol"], "strategy": h["strategy"],
                             "kept_instead": f"{clash[0]['symbol']}/{clash[0]['strategy']}",
-                            "correlation": round(clash[1], 3), "score": h["score"]})
+                            "correlation": round(clash[1], 3) if clash[1] is not None and math.isfinite(clash[1]) else None,
+                            "reason": "correlated or unverifiable", "score": h["score"]})
         else:
             kept.append(h)
     return kept, dropped
 
 
-def main() -> int:
+def _main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--tier1", default=None, help="default: newest tier1_universe_*.json")
+    ap.add_argument("--scan-id", default=None)
     ap.add_argument("--tf", default="H1")
     ap.add_argument("--donchian", type=int, default=20)
     ap.add_argument("--ema-fast", type=int, default=50)
@@ -160,6 +171,9 @@ def main() -> int:
                     help="skip a symbol whose last closed bar is older than this "
                          "(a 15-min cadence would otherwise fire on stale weekend bars)")
     a = ap.parse_args()
+    scan_id = a.scan_id or uuid.uuid4().hex
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", scan_id):
+        ap.error("invalid --scan-id")
 
     fams = tuple(x.strip() for x in a.strategies.split(",") if x.strip())
     unknown = [f for f in fams if f not in STRATEGIES]
@@ -206,10 +220,12 @@ def main() -> int:
 
     total_tests = tested * len(fams)
     payload = {
+        **source_provenance(),
         "generated_utc": md.now_utc(),
+        "scan_id": scan_id,
         "timeframe": a.tf,
         "strategies": list(fams),
-        "trigger": "Donchian-20+EMA trend | RSI-14 zone cross | MACD 12/26/9 cross",
+        "trigger": "Donchian-20+EMA trend | RSI-14 zone cross | Bollinger-20 band cross",
         "symbols_in": len(symbols),
         "symbols_tested": tested,
         "strategies_tested": len(fams),
@@ -244,6 +260,25 @@ def main() -> int:
           f"strategies) for the DSR/Bonferroni accounting.")
     print(f"market watch released: {md.release_auto_selected()} symbols")
     return 0
+
+
+def main() -> int:
+    if (HERE / ".ztt-maintenance").exists():
+        print("maintenance marker present; refusing research")
+        return 1
+    lock = HERE / "funnel.lock"
+    owned = not process_lock.parent_holds(lock)
+    if owned and not process_lock.acquire(lock, 120 * 60):
+        print("another research process holds funnel.lock")
+        return 1
+    try:
+        return _main()
+    finally:
+        try:
+            md.release_auto_selected()
+        finally:
+            if owned:
+                process_lock.release(lock)
 
 
 if __name__ == "__main__":

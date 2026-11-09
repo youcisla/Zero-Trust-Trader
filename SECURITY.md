@@ -41,10 +41,24 @@ Relevant files:
 
 ## Secrets
 
-No credentials are stored in this repository and CI fails the build if a
-machine path, broker account number, or key prefix appears in a commit. The
+CI scans every tracked file for private runtime paths, machine-home paths and
+recognized key material without printing matches. An installation-specific
+identifier can be supplied through the private `ZTT_PRIVATE_IDENTIFIER` CI
+secret; it must never be embedded in the detector's source. This is prevention,
+not a claim that earlier published history is clean. The
 consent-gate policy lives outside version control
 (`config.toml` at the repository root) because it is per-installation.
+
+Dependency versions are pinned in `requirements*.txt` and `dashboard/Cargo.lock`.
+The supported Python environment is 3.12–3.14; Rust validation uses 1.96.0.
+Review dependency advisories and vendor provenance with each dependency update
+and at least monthly. A clean advisory scan covers known reports, not unknown
+vulnerabilities, malicious dependencies or the separately installed bridge.
+
+Before sharing diagnostics, inspect logs/reports for private trading information.
+`status.py` redacts account/server identifiers and prints only typed numeric
+policy controls. It does not dump private config fields or their paths.
+See [incident and recovery procedure](docs/OPERATIONS.md) for evidence handling.
 
 ## Not in scope
 

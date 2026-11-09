@@ -12,6 +12,7 @@ apart on the two things that silently corrupt results:
 
 from __future__ import annotations
 
+import math
 import time
 from datetime import datetime, timezone
 
@@ -87,18 +88,52 @@ def fetch(symbol: str, tf: str = "H1", bars: int = 3000, offset: int | None = No
         offset = broker_offset()
     server_now = time.time() + offset
     secs = TF_SECONDS[tf]
-    keep = [r for r in rates if int(r["time"]) + secs <= server_now]
+    try:
+        keep = [r for r in rates if int(r["time"]) + secs <= server_now]
+    except (TypeError, ValueError, OverflowError):
+        return None
     # Validity is "at least one closed bar", NOT "as many as were asked for".
     # Re-applying the request size here made a 30-bar probe always fail (29 bars
     # survive the forming-bar drop) and silently starved every caller.
     if not keep:
         return None
-    arr = np.array([(int(r["time"]), float(r["open"]), float(r["high"]),
-                     float(r["low"]), float(r["close"])) for r in keep],
-                   dtype=np.float64)
+    try:
+        arr = np.array([(int(r["time"]), float(r["open"]), float(r["high"]),
+                         float(r["low"]), float(r["close"])) for r in keep],
+                       dtype=np.float64)
+    except (TypeError, ValueError, OverflowError):
+        return None
+    if (not np.isfinite(arr).all() or (arr[:, 1:] <= 0).any()
+            or (np.diff(arr[:, 0]) <= 0).any()
+            or (arr[:, 2] < np.maximum(arr[:, 1], arr[:, 4])).any()
+            or (arr[:, 3] > np.minimum(arr[:, 1], arr[:, 4])).any()):
+        return None
     return {"symbol": symbol, "tf": tf, "offset": offset,
+            "timestamp_basis": "broker bar open; subtract offset for UTC",
             "t": arr[:, 0], "o": arr[:, 1], "h": arr[:, 2],
             "l": arr[:, 3], "c": arr[:, 4]}
+
+
+def tick_spread(tick, offset: int = 0, max_age: float = 120.0) -> float | None:
+    """Validated bid/ask cost in price units; never substitutes free execution."""
+    if tick is None:
+        return None
+    try:
+        bid, ask, stamp = float(tick.bid), float(tick.ask), float(tick.time)
+    except (AttributeError, TypeError, ValueError):
+        return None
+    age = time.time() + offset - stamp
+    if (not all(math.isfinite(x) for x in (bid, ask, stamp, age))
+            or bid <= 0 or ask <= bid or stamp <= 0 or not -60 <= age <= max_age):
+        return None
+    return ask - bid
+
+
+def bar_close_utc(bars: dict, index: int) -> datetime:
+    """Convert this module's broker bar-open timestamp to its completed UTC time."""
+    stamp = float(bars["t"][index]) - bars.get("offset", 0)
+    stamp += TF_SECONDS.get(bars.get("tf"), 0)
+    return datetime.fromtimestamp(stamp, timezone.utc)
 
 
 def span_days(bars: dict) -> float:
@@ -216,10 +251,14 @@ def corr_returns(a: dict, b: dict) -> float | None:
         return None
     ca = a["c"][np.searchsorted(a["t"], common)]
     cb = b["c"][np.searchsorted(b["t"], common)]
-    if ca.std() == 0 or cb.std() == 0:
+    if (not np.isfinite(ca).all() or not np.isfinite(cb).all()
+            or (ca <= 0).any() or (cb <= 0).any()):
         return None
     ra, rb = np.diff(ca) / ca[:-1], np.diff(cb) / cb[:-1]
-    return float(np.corrcoef(ra, rb)[0, 1])
+    if ra.std() == 0 or rb.std() == 0:
+        return None
+    rho = float(np.corrcoef(ra, rb)[0, 1])
+    return rho if math.isfinite(rho) else None
 
 
 def correlation(sym_a: str, sym_b: str, bars_n: int = 3000, tf: str = "H1") -> float | None:
@@ -274,7 +313,7 @@ def release_auto_selected() -> int:
     for s in list(_AUTO_SELECTED):
         if mt5.symbol_select(s, False):
             released += 1
-        _AUTO_SELECTED.discard(s)
+            _AUTO_SELECTED.discard(s)
     return released
 
 

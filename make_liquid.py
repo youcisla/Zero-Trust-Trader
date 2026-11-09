@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 from pathlib import Path
 
 import numpy as np
@@ -60,7 +61,7 @@ def measure(rows: list[dict], tf: str, lookback: int, max_spread_pct: float) -> 
         if rates is None or len(rates) == 0:
             continue
         vol = float(np.mean([float(x["tick_volume"]) for x in rates]))
-        if vol <= 0:
+        if not math.isfinite(vol) or vol <= 0:
             continue
         out.append({**r, "mean_tick_volume": round(vol, 1)})
     return out
@@ -98,7 +99,7 @@ def dedupe(rows: list[dict], tf: str, corr_max: float, pool: int,
         clash = False
         for k in kept:
             rho = md.corr_returns(bars[r["symbol"]], bars[k["symbol"]])
-            if rho is not None and abs(rho) > corr_max:
+            if rho is None or not math.isfinite(rho) or abs(rho) > corr_max:
                 clash = True
                 break
         if not clash:
@@ -106,7 +107,7 @@ def dedupe(rows: list[dict], tf: str, corr_max: float, pool: int,
     return kept, len(cand) - len(kept)
 
 
-def main() -> int:
+def _main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--tier1", default=None)
     ap.add_argument("--top", type=int, default=50)
@@ -159,6 +160,13 @@ def main() -> int:
         print(f"  {n:>2} {r['symbol']:14} {r['class']:12} vol {r['mean_tick_volume']:>10.0f} "
               f"spread {r['spread_pct_atr']:>5.2f}%")
     return 0
+
+
+def main() -> int:
+    try:
+        return _main()
+    finally:
+        md.release_auto_selected()
 
 
 if __name__ == "__main__":

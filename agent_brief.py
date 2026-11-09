@@ -70,7 +70,7 @@ def main(argv=None) -> int:
 
     # A missing key is an operator error, not a quiet no-op: exit non-zero so a
     # scheduled task shows a failure instead of a green run that did nothing.
-    return 2 if notes["status"] == "no key" else 0
+    return 0 if notes["status"] == "ok" else 2
 
 
 if __name__ == "__main__":

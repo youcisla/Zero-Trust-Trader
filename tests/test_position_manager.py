@@ -240,6 +240,8 @@ class TestSupervisorLock(unittest.TestCase):
         self.dir = tempfile.TemporaryDirectory()
         self.path = pathlib.Path(self.dir.name) / "position_manager.lock"
         self.addCleanup(self.dir.cleanup)
+        import position_manager as pm
+        self.addCleanup(pm.release_lock, self.path)
 
     def test_a_second_supervisor_cannot_acquire_a_live_lock(self):
         import position_manager as pm

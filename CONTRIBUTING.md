@@ -9,8 +9,9 @@ strengthen that, and declined if they weaken it.
 Every pull request that touches strategy logic, thresholds, or the significance
 gates must answer:
 
-1. **Does it raise or lower the bar for a trade?** Lowering it needs evidence,
-   not preference. "It produces more signals" is not evidence.
+1. **Does it raise or lower the bar for a trade?** Do not lower a significance
+   threshold, change the frozen legacy count, reduce the fixed 1,000
+   permutations or relax the p-value gate. More signals are not a repair.
 2. **What did you measure it against?** A change to an indicator needs a
    before/after on the same instrument, same window, same cost model.
 3. **Did you add trials?** Any new strategy family, parameter sweep, or
@@ -20,16 +21,18 @@ gates must answer:
 ## Local checks (must pass)
 
 ```bash
-python -m compileall -q . -x '(^|/)(\.git|tests)/'
-python -m unittest discover -s tests -v
+python -m pip install -r requirements-dev.txt
+python tools/run_tests.py
+python -m ruff check .
+python tools/check_public.py
 ```
 
-133 tests, no trading terminal required — MetaTrader5 is stubbed in
+No trading terminal is required — MetaTrader5 is stubbed in
 `tests/_mt5stub.py`, so the indicator maths and the safety guards run anywhere.
-The dashboard has three Rust tests of its own: `cd dashboard && cargo test`.
-CI runs both suites on Python 3.11–3.13, plus `cargo build`, `cargo test` and
-`clippy -D warnings`, and additionally fails the build if a machine path,
-account number, or key prefix appears in the tree.
+The dashboard has fixture tests: `cd dashboard && cargo test --locked`.
+CI runs Python 3.12–3.14 on Linux and a stubbed Windows job, plus locked Rust
+build/test/Clippy. It scans every tracked source, including the workflow itself,
+and reports privacy rule/file names without printing matched values.
 
 ## Regressions worth keeping in mind
 

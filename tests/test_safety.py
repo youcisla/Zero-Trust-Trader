@@ -30,8 +30,9 @@ class T:  # terminal_info stand-in
 
 
 class A:  # account_info stand-in
-    def __init__(self, login=12345, server="PepperstoneUK-Demo"):
+    def __init__(self, login=12345, server="PepperstoneUK-Demo", trade_mode=0):
         self.login, self.server = login, server
+        self.trade_mode = trade_mode
 
 
 class TestPreflight(unittest.TestCase):
@@ -67,6 +68,9 @@ class TestPreflight(unittest.TestCase):
         finally:
             rf.EXPECTED_LOGIN = old
         self.assertTrue(any("MT5_EXPECTED_LOGIN" in p for p in problems), problems)
+
+    def test_live_trade_mode_is_blocked_even_with_demo_name(self):
+        self.assertTrue(rf.preflight_check(T(), A(trade_mode=2)))
 
 
 class TestWindow(unittest.TestCase):
@@ -104,7 +108,7 @@ class TestLock(unittest.TestCase):
     def test_release_frees_it(self):
         self.assertTrue(rf.acquire_lock(120))
         rf.release_lock()
-        self.assertFalse(rf.LOCK.exists())
+        self.assertTrue(rf.LOCK.exists(), "stable lock inode must not be unlinked")
         self.assertTrue(rf.acquire_lock(120), "must be usable after release")
 
     def test_stale_lock_is_taken_over(self):
@@ -116,6 +120,7 @@ class TestLock(unittest.TestCase):
 
     def test_lock_contains_pid(self):
         rf.acquire_lock(120)
+        rf.release_lock()
         self.assertIn(str(os.getpid()), rf.LOCK.read_text())
 
 

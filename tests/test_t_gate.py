@@ -78,15 +78,15 @@ class TestTGateReplacesThePhantomBenchmark(unittest.TestCase):
             doc = tm.significance(0.35, len(rs), 1.5, rs, 50, use_t=use_t)
             json.dumps(doc)  # raises if a numpy scalar escaped
 
-    def test_scratch_heavy_negative_expectancy_passes_z_but_not_t(self):
+    def test_scratch_heavy_negative_expectancy_is_refused_by_both_gates(self):
         """55% at +0.01R / 45% at -1.0R: win rate 55% (z ~ +4.8) but avg -0.44R."""
         rs = mixture(0.55, 0.01, -1.0)
         self.assertLess(statistics.mean(rs), -0.4)
         z_gate = tm.significance(0.55, len(rs), 1.5, rs, 50, use_t=False)
         t_gate = tm.significance(0.55, len(rs), 1.5, rs, 50, use_t=True)
         self.assertGreater(z_gate["z"], ZC_50)
-        self.assertTrue(z_gate["passes_corrected"],
-                        "fixture must reproduce the z gate admitting a loser")
+        self.assertFalse(z_gate["passes_corrected"],
+                         "a positive win-rate z must never override negative mean R")
         self.assertLess(t_gate["t_stat_R"], 0.0)
         self.assertFalse(t_gate["passes_corrected"],
                          "the t gate must reject negative expectancy regardless of win rate")

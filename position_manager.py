@@ -27,11 +27,14 @@ from __future__ import annotations
 import argparse
 import atexit
 import json
+import math
 import os
 import time
 
 import audit
-from dataclasses import asdict, dataclass
+import process_lock
+from dataclasses import dataclass
+from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -54,10 +57,8 @@ class Cfg:
 def apply_allowed(requested: bool, environ=None) -> tuple[bool, str]:
     """--apply is a request, not a permission.
 
-    A flag can be typed by anything that can build a command string: an agent, a
-    scheduled task, a copy-paste from a README. The actual switch is an
-    environment variable a human sets in their own session, so a process that
-    inherits its parent's environment cannot arm itself by argument alone.
+    The environment variable is an operational interlock, not independent
+    consent: a process able to set its environment can set this variable.
     """
     env = os.environ if environ is None else environ
     if requested and env.get("ZTT_ALLOW_APPLY") != "1":
@@ -77,6 +78,12 @@ def next_stop(side: int, entry: float, sl: float, price: float, atr: float,
     from price, a candidate on the wrong side of the current price, and any
     adjustment too small to be worth a modify request.
     """
+    if (side not in (-1, 1) or not all(math.isfinite(x) for x in
+            (entry, sl, price, atr, spread, cfg.be_r, cfg.trail_k,
+             cfg.initial_k, cfg.min_step_atr)) or
+            entry <= 0 or price <= 0 or sl < 0 or spread < 0 or
+            cfg.be_r < 0 or cfg.trail_k <= 0 or cfg.initial_k <= 0 or cfg.min_step_atr < 0):
+        return None, "invalid risk inputs"
     if atr <= 0:
         return None, "no atr"
 
@@ -131,40 +138,88 @@ def _atr(symbol: str) -> tuple[float, float] | None:
     import marketdata as md
     import MetaTrader5 as mt5
 
-    inf = mt5.symbol_info(symbol)
-    bars = md.fetch(symbol, tf="M15", bars=200)
-    md.release_auto_selected()          # never leak scan symbols into Market Watch
+    try:
+        bars = md.fetch(symbol, tf="M15", bars=200)
+        inf = mt5.symbol_info(symbol)
+        tick = mt5.symbol_info_tick(symbol)
+    finally:
+        md.release_auto_selected()
     if inf is None or bars is None or len(bars["c"]) < 20:
         return None
     a = md.atr(bars["h"], bars["l"], bars["c"], 14)[-1]
-    if a != a:                           # NaN guard
+    if not math.isfinite(a) or tick is None:
         return None
-    return float(a), float(inf.spread) * float(inf.point)
+    spread = md.tick_spread(tick, bars.get("offset", 0))
+    if spread is None:
+        return None
+    return float(a), spread
 
 
 def _close(mt5, pos, inf) -> tuple[bool, str]:
-    """Flatten one position. Opposite deal, no new exposure."""
-    tick = mt5.symbol_info_tick(pos.symbol)
-    if tick is None:
-        return False, "no tick"
-    is_long = pos.type == 0
-    price = tick.bid if is_long else tick.ask
-    base = {
-        "action": mt5.TRADE_ACTION_DEAL,
-        "symbol": pos.symbol,
-        "volume": pos.volume,
-        "type": mt5.ORDER_TYPE_SELL if is_long else mt5.ORDER_TYPE_BUY,
-        "position": pos.ticket,
-        "price": price,
-        "deviation": 20,
-        "magic": MAGIC,
-        "comment": "session-close",
-    }
+    """Close observed exposure; never blindly retry an uncertain/partial fill."""
+    import run_funnel as rf
+    import marketdata as md
+
+    if pos.type not in (0, 1) or not math.isfinite(pos.volume) or pos.volume <= 0:
+        return False, "invalid position snapshot"
+
     for filling in (mt5.ORDER_FILLING_IOC, mt5.ORDER_FILLING_FOK):
-        r = mt5.order_send({**base, "type_filling": filling})
-        if r is not None and r.retcode == mt5.TRADE_RETCODE_DONE:
-            return True, f"closed {pos.ticket} @ {price}"
-    return False, f"close failed rc={getattr(r, 'retcode', '?')} {getattr(r, 'comment', '')}"
+        problems = rf.preflight_check(mt5.terminal_info(), mt5.account_info())
+        if problems:
+            return False, "close refused: " + "; ".join(problems)
+        current = mt5.positions_get(ticket=pos.ticket)
+        if current is None:
+            return False, "close observation failed"
+        if not current:
+            return True, f"flat confirmed {pos.ticket}"
+        fresh = current[0]
+        if (fresh.type != pos.type or fresh.symbol != pos.symbol or
+                not math.isfinite(fresh.volume) or fresh.volume <= 0):
+            return False, "position changed; close refused"
+        if filling == mt5.ORDER_FILLING_FOK and fresh.volume != pos.volume:
+            return False, "position volume changed; reconcile on the next pass"
+        tick = mt5.symbol_info_tick(pos.symbol)
+        if md.tick_spread(tick, md.broker_offset()) is None:
+            return False, "unusable close quote"
+        price = tick.bid if fresh.type == 0 else tick.ask
+        if not math.isfinite(price) or price <= 0:
+            return False, "invalid close quote"
+        r = mt5.order_send({
+            "action": mt5.TRADE_ACTION_DEAL, "symbol": fresh.symbol,
+            "volume": min(pos.volume, fresh.volume),
+            "type": mt5.ORDER_TYPE_SELL if fresh.type == 0 else mt5.ORDER_TYPE_BUY,
+            "position": fresh.ticket, "price": price, "deviation": 20,
+            "magic": MAGIC, "comment": "session-close", "type_filling": filling,
+        })
+        rc = getattr(r, "retcode", None)
+        if rc == getattr(mt5, "TRADE_RETCODE_INVALID_FILL", 10030) and filling == mt5.ORDER_FILLING_IOC:
+            continue
+        remaining = mt5.positions_get(ticket=pos.ticket)
+        if remaining is None:
+            return False, f"close rc={rc}; remaining exposure unknown"
+        if not remaining:
+            return True, f"flat confirmed {pos.ticket}"
+        return False, f"close rc={rc}; residual exposure remains, no blind retry"
+    return False, "close filling mode unsupported"
+
+
+def wire_stop(side: int, old: float, candidate: float, price: float, inf) -> float | None:
+    """Quantize protectively, then check the exact stop sent to the broker."""
+    step = getattr(inf, "trade_tick_size", 0) or getattr(inf, "point", 0)
+    point = getattr(inf, "point", 0)
+    levels = (getattr(inf, "trade_stops_level", 0), getattr(inf, "trade_freeze_level", 0))
+    if (side not in (-1, 1) or not all(math.isfinite(x) for x in
+            (old, candidate, price, step, point, *levels)) or
+            step <= 0 or point <= 0 or old < 0 or candidate <= 0 or price <= 0):
+        return None
+    rounding = ROUND_CEILING if side > 0 else ROUND_FLOOR
+    tick = Decimal(str(step))
+    new = float((Decimal(str(candidate)) / tick).to_integral_value(rounding=rounding) * tick)
+    distance = max(*levels, 0) * point
+    if ((side > 0 and (new >= price or (old and new <= old) or price - new < distance)) or
+            (side < 0 and (new <= price or (old and new >= old) or new - price < distance))):
+        return None
+    return new
 
 
 _MT5_READY = False
@@ -189,6 +244,8 @@ def ensure_mt5(mt5) -> None:
 
 def run_once(cfg: Cfg, apply: bool, close_at: str | None) -> dict:
     """One supervision pass. Returns the state document the dashboard reads."""
+    if (HERE / ".ztt-maintenance").exists():
+        return {"ok": False, "error": "maintenance in progress"}
     import MetaTrader5 as mt5
 
     import run_funnel as rf
@@ -203,13 +260,21 @@ def run_once(cfg: Cfg, apply: bool, close_at: str | None) -> dict:
             return {"ok": False, "error": "; ".join(problems)}
 
         acct = mt5.account_info()
-        positions = mt5.positions_get() or []
+        if acct is None:
+            return {"ok": False, "error": "account observation failed"}
+        positions = mt5.positions_get()
+        if positions is None:
+            return {"ok": False, "error": f"positions_get failed: {mt5.last_error()}"}
         now = datetime.now(timezone.utc)
         due = bool(close_at) and close_due(now, close_at, now.weekday())
         actions: list[str] = []
+        errors: list[str] = []
         open_docs = []
 
         for p in positions:
+            if p.type not in (0, 1) or not math.isfinite(p.volume) or p.volume <= 0:
+                errors.append("unusable position type or volume")
+                continue
             side = 1 if p.type == 0 else -1
             open_docs.append({
                 "ticket": p.ticket, "symbol": p.symbol, "side": side,
@@ -221,12 +286,15 @@ def run_once(cfg: Cfg, apply: bool, close_at: str | None) -> dict:
                 if apply:
                     ok, msg = _close(mt5, p, mt5.symbol_info(p.symbol))
                     actions.append(("CLOSE " if ok else "CLOSE-FAIL ") + msg)
+                    if not ok:
+                        errors.append(msg)
                 else:
                     actions.append(f"would close {p.ticket} ({p.symbol}) session-close")
                 continue
 
             env = _atr(p.symbol)
             if env is None:
+                errors.append(f"{p.symbol}: risk inputs unavailable")
                 continue
             atr, spread = env
             new, reason = next_stop(side, p.price_open, p.sl, p.price_current,
@@ -234,17 +302,44 @@ def run_once(cfg: Cfg, apply: bool, close_at: str | None) -> dict:
             if new is None:
                 continue
             if apply:
+                problems = rf.preflight_check(mt5.terminal_info(), mt5.account_info())
+                fresh = mt5.positions_get(ticket=p.ticket)
+                tick = mt5.symbol_info_tick(p.symbol)
+                inf = mt5.symbol_info(p.symbol)
+                if problems or fresh is None or not fresh or tick is None or inf is None:
+                    errors.append(f"{p.symbol}: fresh observation refused stop update")
+                    continue
+                import marketdata as md
+                if md.tick_spread(tick, md.broker_offset()) is None:
+                    errors.append(f"{p.symbol}: unusable quote before stop update")
+                    continue
+                current = fresh[0]
+                if current.type != p.type or current.symbol != p.symbol:
+                    errors.append(f"{p.symbol}: position changed before stop update")
+                    continue
+                if not math.isfinite(current.tp) or current.tp < 0:
+                    errors.append(f"{p.symbol}: unusable take-profit observation")
+                    continue
+                price = tick.bid if side > 0 else tick.ask
+                new, reason = next_stop(side, current.price_open, current.sl, price,
+                                        atr, tick.ask - tick.bid, cfg)
+                new = wire_stop(side, current.sl, new, price, inf) if new is not None else None
+                if new is None:
+                    continue
                 r = mt5.order_send({"action": mt5.TRADE_ACTION_SLTP,
                                     "symbol": p.symbol, "position": p.ticket,
-                                    "sl": round(new, 5), "tp": p.tp})
+                                    "sl": new, "tp": current.tp})
                 ok = r is not None and r.retcode == mt5.TRADE_RETCODE_DONE
                 actions.append(f"{'SL ' if ok else 'SL-FAIL '}{p.symbol} {p.sl} -> "
-                               f"{round(new, 5)} ({reason})")
+                               f"{new} ({reason})")
+                if not ok:
+                    errors.append(f"{p.symbol}: stop update failed")
             else:
                 actions.append(f"would set {p.symbol} sl {p.sl} -> {round(new, 5)} ({reason})")
 
         return {
-            "ok": True,
+            "ok": not errors,
+            "error": "; ".join(errors) if errors else None,
             "generated_utc": now.isoformat(timespec="seconds"),
             "account": {"login": acct.login, "server": acct.server,
                         "balance": round(acct.balance, 2),
@@ -302,30 +397,12 @@ def write_state(doc: dict, keep: int = 2) -> bool:
 
 
 def acquire_lock(max_age_s: float, path: Path | None = None) -> bool:
-    """Exclusive-create the supervisor lock. False when a live one holds it.
+    """Hold process-lifetime OS ownership, including during slow broker calls."""
+    return process_lock.acquire(path or LOCK, max_age_s)
 
-    check-then-write left a window: two supervisors starting in the same
-    millisecond both saw LOCK.exists() == False and both went on to move stops.
-    O_EXCL makes the create the decision, and a stale lock is still taken over
-    rather than obeyed — a crashed supervisor must not stop the system forever.
-    """
-    lock = path or LOCK
-    for attempt in (0, 1):
-        try:
-            fd = os.open(lock, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-        except FileExistsError:
-            try:
-                fresh = time.time() - lock.stat().st_mtime < max_age_s
-            except FileNotFoundError:
-                continue  # released between the two calls: retry once
-            if fresh or attempt:
-                return False
-            lock.unlink(missing_ok=True)
-            continue
-        os.write(fd, str(time.time()).encode())
-        os.close(fd)
-        return True
-    return False
+
+def release_lock(path: Path | None = None) -> None:
+    process_lock.release(path or LOCK)
 
 
 def log_line(text: str) -> None:
@@ -344,6 +421,19 @@ def main() -> int:
     ap.add_argument("--be-r", type=float, default=1.0)
     ap.add_argument("--trail-k", type=float, default=2.0)
     a = ap.parse_args()
+
+    if (a.interval <= 0 or not math.isfinite(a.be_r) or a.be_r < 0 or
+            not math.isfinite(a.trail_k) or a.trail_k <= 0):
+        ap.error("interval/trail-k must be positive and be-r nonnegative")
+    if a.session_close:
+        try:
+            datetime.strptime(a.session_close, "%H:%M")
+        except ValueError:
+            ap.error("--session-close must be HH:MM in UTC")
+
+    if (HERE / ".ztt-maintenance").exists():
+        print("REFUSED: maintenance in progress; no terminal connection or actions")
+        return 2
     cfg = Cfg(be_r=a.be_r, trail_k=a.trail_k)
 
     a.apply, why = apply_allowed(a.apply)
@@ -370,10 +460,9 @@ def main() -> int:
         pass
     try:
         while True:
-            # Refresh the lock every tick. It used to be written once and then
-            # judged stale after interval*4, so at --interval 5 a second
-            # supervisor could start 20s into the run and both could move stops.
-            LOCK.write_text(str(time.time()))
+            # OS ownership survives slow passes without an expiring heartbeat.
+            if (HERE / ".ztt-maintenance").exists():
+                return 2
             doc = run_once(cfg, a.apply, a.session_close)
             try:
                 published = write_state(doc)
@@ -418,7 +507,7 @@ def main() -> int:
     except KeyboardInterrupt:
         return 0
     finally:
-        LOCK.unlink(missing_ok=True)
+        release_lock()
 
 
 if __name__ == "__main__":

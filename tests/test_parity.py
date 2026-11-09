@@ -235,18 +235,17 @@ class TestEveryScannerTradesTheExitPolicyItIsGradedOn(unittest.TestCase):
             self.assertAlmostEqual(d, 0.0020, places=6,
                                    msg="long entry did not pay the spread")
 
-    def test_matched_null_is_not_handicapped(self):
-        """Scoring the null with costs the observation did not pay must make
-        the null look worse. Matched, that gap disappears."""
-        trades = tm.scan_rsi(self.bars, 14, 35.0, 65.0, 1.5, 1.5, 32, "both",
-                             spread=0.0005, live_exits=False)
-        self.assertGreaterEqual(len(trades), 20, "need >=20 trades for the null")
-        kw = dict(permutations=200, seed=19, spread=0.0005, close_utc=None)
-        matched = tm.permutation_test(self.bars, trades, 1.5, 1.5, 32,
-                                      live_exits=False, **kw)
-        handicapped = tm.permutation_test(self.bars, trades, 1.5, 1.5, 32,
-                                          live_exits=True, **kw)
-        self.assertIsNotNone(matched)
-        self.assertIsNotNone(handicapped)
-        self.assertGreater(matched["null_z_mean"], handicapped["null_z_mean"],
-                           "the live-exit null is not harsher than the frictionless one")
+    def test_null_uses_the_same_fills_and_rounding_as_the_observation(self):
+        from unittest import mock
+
+        atr = tm.md.atr(self.bars["h"], self.bars["l"], self.bars["c"], 14)
+        i = 40
+        row, _ = tm._trade_row(self.bars, i, "long", self.bars["c"][i],
+                               1.5 * atr[i], 1.5, 32, atr, 0.0005, False, None)
+        with mock.patch.object(tm.random.Random, "randint", return_value=i), \
+             mock.patch.object(tm, "_trade_row", wraps=tm._trade_row) as resolve:
+            result = tm.permutation_test(self.bars, [row] * 20, 1.5, 1.5, 32,
+                                          permutations=1000, spread=0.0005,
+                                          live_exits=False)
+        self.assertEqual(resolve.call_count, 20000)
+        self.assertEqual(result["null_z_mean"], result["actual_z"])

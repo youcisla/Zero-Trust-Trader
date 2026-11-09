@@ -20,6 +20,7 @@ from unittest import mock
 class TestEmptyShortlist(unittest.TestCase):
     def _run(self, payload: dict, extra_argv: list[str]):
         import tier3_deep as t3
+        import trials_total
 
         with tempfile.TemporaryDirectory() as d:
             src = pathlib.Path(d) / "candidates.json"
@@ -30,6 +31,9 @@ class TestEmptyShortlist(unittest.TestCase):
             # terminal is needed and no ledger row is written.
             with mock.patch.object(t3, "log_run",
                                    lambda s, p: captured.update(p)), \
+                 mock.patch.object(t3, "OUT", pathlib.Path(d) / "tier3.json"), \
+                 mock.patch.object(t3, "HERE", pathlib.Path(d)), \
+                 mock.patch.object(trials_total, "required_trials", lambda count: 6500 + count), \
                  mock.patch.object(sys, "argv", argv):
                 rc = t3.main()
         return rc, captured

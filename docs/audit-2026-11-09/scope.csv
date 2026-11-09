@@ -1,0 +1,70 @@
+path,area,method,limitations
+.env.example,operations/security/documentation,tracked-source/configuration/documentation review,"deployed machine, repository settings and legal sufficiency unverified"
+.gitattributes,operations/security/documentation,tracked-source/configuration/documentation review,"deployed machine, repository settings and legal sufficiency unverified"
+.github/CODEOWNERS,operations/security/documentation,tracked-source/configuration/documentation review,"deployed machine, repository settings and legal sufficiency unverified"
+.github/workflows/ci.yml,operations/security/documentation,tracked-source/configuration/documentation review,"deployed machine, repository settings and legal sufficiency unverified"
+.gitignore,operations/security/documentation,tracked-source/configuration/documentation review,"deployed machine, repository settings and legal sufficiency unverified"
+AGENTS.md,operations/security/documentation,tracked-source/configuration/documentation review,"deployed machine, repository settings and legal sufficiency unverified"
+CHANGELOG.md,operations/security/documentation,tracked-source/configuration/documentation review,"deployed machine, repository settings and legal sufficiency unverified"
+CONTRIBUTING.md,operations/security/documentation,tracked-source/configuration/documentation review,"deployed machine, repository settings and legal sufficiency unverified"
+DESK.md,operations/security/documentation,tracked-source/configuration/documentation review,"deployed machine, repository settings and legal sufficiency unverified"
+DISCLAIMER.md,operations/security/documentation,tracked-source/configuration/documentation review,"deployed machine, repository settings and legal sufficiency unverified"
+LICENSE,operations/security/documentation,tracked-source/configuration/documentation review,"deployed machine, repository settings and legal sufficiency unverified"
+README.md,operations/security/documentation,tracked-source/configuration/documentation review,"deployed machine, repository settings and legal sufficiency unverified"
+SECURITY.md,operations/security/documentation,tracked-source/configuration/documentation review,"deployed machine, repository settings and legal sufficiency unverified"
+agent_brief.py,advisory/reporting/export,source/test review; targeted synthetic probes,no provider call or production export
+audit.py,safety/execution,source/test review; targeted synthetic checks,no live broker/bridge/config verification
+backup_market_watch.py,safety/execution,source/test review; targeted synthetic checks,no live broker/bridge/config verification
+dashboard/Cargo.toml,dashboard/API/UI,source review; Rust build/clippy/3 unit tests,"no browser, performance profiling or Rust advisory scan"
+dashboard/src/main.rs,dashboard/API/UI,source review; Rust build/clippy/3 unit tests,"no browser, performance profiling or Rust advisory scan"
+dashboard/start_dashboard.bat,dashboard/API/UI,source review; Rust build/clippy/3 unit tests,"no browser, performance profiling or Rust advisory scan"
+dashboard/web/architecture.html,generated architecture,source relation and embedded/offline delivery review,full generated viewer internals not audited
+dashboard/web/index.html,dashboard/API/UI,source review; Rust build/clippy/3 unit tests,"no browser, performance profiling or Rust advisory scan"
+dashboard/web/vendor/htm.umd.js,dashboard dependency provenance,asset/version/offline inventory,minified source internals and dependency advisories not fully audited
+dashboard/web/vendor/react-dom.production.min.js,dashboard dependency provenance,asset/version/offline inventory,minified source internals and dependency advisories not fully audited
+dashboard/web/vendor/react.production.min.js,dashboard dependency provenance,asset/version/offline inventory,minified source internals and dependency advisories not fully audited
+desk.py,advisory/reporting/export,source/test review; targeted synthetic probes,no provider call or production export
+desk.toml,operations/security/documentation,tracked-source/configuration/documentation review,"deployed machine, repository settings and legal sufficiency unverified"
+docs/BOTLAB_COMMAND.txt,operations/security/documentation,tracked-source/configuration/documentation review,"deployed machine, repository settings and legal sufficiency unverified"
+docs/LINEAGE.md,operations/security/documentation,tracked-source/configuration/documentation review,"deployed machine, repository settings and legal sufficiency unverified"
+docs/SIZE-AND-RUIN.md,operations/security/documentation,tracked-source/configuration/documentation review,"deployed machine, repository settings and legal sufficiency unverified"
+docs/TRIALS.md,operations/security/documentation,tracked-source/configuration/documentation review,"deployed machine, repository settings and legal sufficiency unverified"
+docs/architecture.archify.json,operations/security/documentation,tracked-source/configuration/documentation review,"deployed machine, repository settings and legal sufficiency unverified"
+docs/dashboard.png,documentation asset,tracked asset inventory,image content not separately inspected
+export_ledger.py,advisory/reporting/export,source/test review; targeted synthetic probes,no provider call or production export
+keep_awake.py,safety/execution,source/test review; targeted synthetic checks,no live broker/bridge/config verification
+make_liquid.py,statistics/data/research,source/test review; synthetic arithmetic checks,no real-market experiment or new measured hypothesis
+manual_e2e_test.py,safety/execution,source/test review; targeted synthetic checks,no live broker/bridge/config verification
+marketdata.py,safety/execution,source/test review; targeted synthetic checks,no live broker/bridge/config verification
+policy_check.py,safety/execution,source/test review; targeted synthetic checks,no live broker/bridge/config verification
+position_manager.py,safety/execution,source/test review; targeted synthetic checks,no live broker/bridge/config verification
+purge_market_watch.py,safety/execution,source/test review; targeted synthetic checks,no live broker/bridge/config verification
+report.py,advisory/reporting/export,source/test review; targeted synthetic probes,no provider call or production export
+report_funnel.py,advisory/reporting/export,source/test review; targeted synthetic probes,no provider call or production export
+requirements.txt,operations/security/documentation,tracked-source/configuration/documentation review,"deployed machine, repository settings and legal sufficiency unverified"
+run_funnel.cmd,operations/security/documentation,tracked-source/configuration/documentation review,"deployed machine, repository settings and legal sufficiency unverified"
+run_funnel.py,safety/execution,source/test review; targeted synthetic checks,no live broker/bridge/config verification
+run_rebuild.cmd,operations/security/documentation,tracked-source/configuration/documentation review,"deployed machine, repository settings and legal sufficiency unverified"
+start_supervisor.bat,operations/security/documentation,tracked-source/configuration/documentation review,"deployed machine, repository settings and legal sufficiency unverified"
+status.py,operations/security/documentation,tracked-source/configuration/documentation review,"deployed machine, repository settings and legal sufficiency unverified"
+stops.py,safety/execution,source/test review; targeted synthetic checks,no live broker/bridge/config verification
+tests/_mt5stub.py,tests,source review; stubbed unittest suite,no real terminal/provider integration
+tests/test_broker_offset.py,tests,source review; stubbed unittest suite,no real terminal/provider integration
+tests/test_desk.py,tests,source review; stubbed unittest suite,no real terminal/provider integration
+tests/test_funnel_wiring.py,tests,source review; stubbed unittest suite,no real terminal/provider integration
+tests/test_ledger.py,tests,source review; stubbed unittest suite,no real terminal/provider integration
+tests/test_math.py,tests,source review; stubbed unittest suite,no real terminal/provider integration
+tests/test_parity.py,tests,source review; stubbed unittest suite,no real terminal/provider integration
+tests/test_position_manager.py,tests,source review; stubbed unittest suite,no real terminal/provider integration
+tests/test_safety.py,tests,source review; stubbed unittest suite,no real terminal/provider integration
+tests/test_t_gate.py,tests,source review; stubbed unittest suite,no real terminal/provider integration
+tests/test_tier3_empty.py,tests,source review; stubbed unittest suite,no real terminal/provider integration
+tier1_universe.py,statistics/data/research,source/test review; synthetic arithmetic checks,no real-market experiment or new measured hypothesis
+tier2_patterns.py,statistics/data/research,source/test review; synthetic arithmetic checks,no real-market experiment or new measured hypothesis
+tier3_deep.py,statistics/data/research,source/test review; synthetic arithmetic checks,no real-market experiment or new measured hypothesis
+timemachine_mt5.py,statistics/data/research,source/test review; synthetic arithmetic checks,no real-market experiment or new measured hypothesis
+tools/broker_math.py,statistics/data/research,source/test review; synthetic arithmetic checks,no real-market experiment or new measured hypothesis
+tools/exit_policy_ab.py,statistics/data/research,source/test review; synthetic arithmetic checks,no real-market experiment or new measured hypothesis
+tools/ruin_20x.py,statistics/data/research,source/test review; synthetic arithmetic checks,no real-market experiment or new measured hypothesis
+tools/vol_dispersion.py,statistics/data/research,source/test review; synthetic arithmetic checks,no real-market experiment or new measured hypothesis
+trials_total.py,statistics/data/research,source/test review; synthetic arithmetic checks,no real-market experiment or new measured hypothesis

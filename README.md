@@ -2,14 +2,14 @@
 
 [![CI](https://github.com/youcisla/Zero-Trust-Trader/actions/workflows/ci.yml/badge.svg)](https://github.com/youcisla/Zero-Trust-Trader/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue.svg)](https://www.python.org/)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/)
 
 > **My AI agent has no authority to lose my money.**
 
 An autonomous trading-research pipeline for MetaTrader 5 where the agent may look at
 everything and do almost nothing.
 
-The system's own current verdict:
+A typical stand-down message (example, not live status):
 
 ```
 Market is choppy, no statistically significant edge found today. Standing down.
@@ -27,8 +27,9 @@ first) → this repository (refuses to trade).
 
 ## The one rule
 
-**AutoTrading is off.** Always. It is enabled only inside an approved trade
-window, and the agent cannot enable it at all.
+**AutoTrading stays off for research.** Nothing in this repository enables it.
+Any exceptional human-approved execution is governed by the external bridge;
+research, tests, the dashboard and scheduled scans cannot grant that approval.
 
 Every **entry** needs two independent approvals:
 
@@ -212,7 +213,7 @@ as a green "no data", and both were fixed here after being caught on screen.
 | --- | --- |
 | `GET /` | the UI — one embedded HTML file, React vendored, no build step |
 | `GET /api/snapshot` | one-shot state, last 12 lines of each log |
-| `GET /api/logs/{audit,funnel,actions}` | **whole log**, for the Copy buttons and for pasting into an issue |
+| `GET /api/logs/{audit,funnel,actions}` | bounded newest log excerpt with explicit truncation metadata; see [API contract](dashboard/API.md) |
 | `GET /ws` | updates on change, plus a 1 Hz heartbeat so `engine_age_s` keeps ticking — a frozen age is indistinguishable from a dead supervisor |
 | `GET /architecture` | the generated stage map (Archify, embedded at build time) |
 | `GET /api/report/latest` | the newest per-scan HTML report (`reports/run-*.html`) |
@@ -243,10 +244,10 @@ documented exactly like a scheduled one.
 
 ### Debugging from the UI
 
-Every log pane has a **copy** button that pulls the entire file from
-`/api/logs/…`, not the 12-line tail the snapshot carries — so a failure can be
-pasted somewhere without shelling in. The header has **copy all logs**, which
-concatenates audit + funnel + supervisor with a timestamp.
+Every log pane has a **copy** button that fetches a bounded newest excerpt from
+`/api/logs/…`, with a visible truncation label when older content is omitted.
+The header can collect the available log excerpts; failed requests are reported
+rather than copied as if they succeeded. Review private logs before sharing them.
 
 Panes are **newest first**. Oldest-first made a failure that was fixed hours ago
 look current for as long as the 12-line window stayed full.
@@ -272,10 +273,11 @@ scan.
 | 525 (the aborted wide run) | 3.90 |
 | 1,791 (one full-universe run) | 4.19 |
 | 5,388 | 4.43 |
-| **9,081 (today)** | **4.54** |
+| 9,081 (historical example) | 4.54 |
 | 40,388 (a week at 5,000/day) | 4.85 |
 | 155,388 (a month at 5,000/day) | 5.11 |
 
+This table is an illustrative historical snapshot, not a live trial count.
 Every value is computed by `bonferroni_z()`, not estimated — `python status.py`
 prints the current one. The window is 05:00–17:00 UTC (48 scans/day), but the
 session matrix below narrows the families early, so a day adds 5,000 hypotheses
@@ -299,10 +301,10 @@ Operational guarantees, each enforced in code rather than in documentation:
 | Guarantee | Enforced by |
 | --- | --- |
 | Demo only | pre-flight aborts on any server without `demo` — verified in tests |
-| No overlapping runs | `funnel.lock` and the supervisor's lock, both `O_CREAT\|O_EXCL` with stale takeover; double-fire exits in 0.3 s |
+| No overlapping runs | process-lifetime OS locks; a stalled live owner cannot lose its lock by age alone |
 | No stale signals | Tier 2 skips any instrument whose last bar is > 45 min old |
 | No silent failure | a crashed funnel logs `FAILED`; the report prints `[STALE]` rather than a quiet market |
-| No terminal pollution | every symbol the scanner selects into Market Watch is released afterwards |
+| Market Watch cleanup | selections made by the scanner are released; failed releases remain pending for retry |
 | Nothing placed unattended | no scheduled job calls `place_order` at all |
 
 The failure mode that shaped this design: **a system that reports success while
@@ -313,26 +315,39 @@ because something silently lied at least once during development.
 
 ## Quick start
 
-Needs Python 3.11+, the MetaTrader 5 terminal (Windows) logged into a **demo**
-account, and Rust if you want the dashboard.
+Needs Python **3.12–3.14** (the pinned NumPy version requires 3.12+), the
+MetaTrader 5 terminal on Windows logged into a **demo** account, and Rust 1.96.0
+if you want the dashboard. Use a dedicated environment; the tracked launchers
+refuse to fall back to an arbitrary Python on PATH.
 
-```bash
+```powershell
 git clone https://github.com/youcisla/Zero-Trust-Trader.git
 cd Zero-Trust-Trader
-pip install -r requirements.txt          # MetaTrader5, numpy, pandas
+py -3.14 -m venv .venv
+.\.venv\Scripts\python.exe -m pip install -r requirements.txt
+$env:MT5_EXPECTED_LOGIN = Read-Host "Numeric demo account login"
 
-python status.py                         # does the terminal answer? is it demo?
-python run_funnel.py --rebuild           # Tier 1 → liquid universe (~35 min)
-python run_funnel.py --window-utc 05:00-17:00   # one intraday scan
-python run_funnel.py --t-gate                   # gate on mean R instead of win rate
-python report_funnel.py --full           # today's verdict
+# This command does not connect to a terminal.
+.\.venv\Scripts\python.exe run_funnel.py --at-utc 08:00 --plan-only
+
+# Human-operated research commands; they never place entries.
+.\.venv\Scripts\python.exe status.py
+.\.venv\Scripts\python.exe run_funnel.py --rebuild
+.\.venv\Scripts\python.exe run_funnel.py --window-utc 05:00-17:00
 ```
+
+`MT5_EXPECTED_LOGIN` must be exported in the process/launcher environment; the
+scanner does **not** load it from `.env`. `ZTT_LEDGER_KEY` and `DEEPSEEK_API_KEY`
+are consumed by their own components and may use the private `.env` file.
+`MT5_SERVER` and `ZTT_WINDOW_UTC` are not scanner settings; the window is a CLI
+argument and the actual account server is inspected by preflight. `.env.example`
+documents this distinction. Missing account pin remains a refusal.
 
 Supervisor (dry run by default — it prints what it would do):
 
 ```bash
 python position_manager.py                    # watches, changes nothing
-python position_manager.py --apply --session-close 20:45   # actually acts
+
 ```
 
 Dashboard:
@@ -349,36 +364,33 @@ see `docs/BOTLAB_COMMAND.txt` for the ledger/backtest workflow).
 
 ## Tests
 
-133 tests, **no trading terminal required** — `MetaTrader5` is Windows-only, so
+The regression suite needs **no trading terminal** — `MetaTrader5` is Windows-only, so
 `tests/_mt5stub.py` stubs it and the indicator maths and safety guards run
 anywhere, including Linux CI:
 
 ```bash
-python -m unittest discover -s tests -v
+python tools/run_tests.py
 ```
 
-CI also runs `ruff --select F821` over every module. `compileall` only proves a
+CI runs the checked-in Ruff correctness rules over the source, a pinned Python
+dependency audit, and stubbed tests on Linux and Windows. `compileall` only proves a
 file parses; an undefined name parses fine and crashes at runtime, which is how
 a `NameError` once reached production twelve runs in a row while CI stayed green.
 
-## Prove the order path once, by hand
+## Verify safety without placing an order
 
-`manual_e2e_test.py` is the only thing here that sends a real order, and it is
-manual by design — it is not part of the cadence and never runs in CI.
+`manual_e2e_test.py` now runs offline safety checks only. It has no direct
+terminal execution or enable-AutoTrading prompt. Those checks cannot prove the
+installed bridge's transport, consent-token lifetime or broker fill behavior.
+Run the stubbed regression suite instead of opening a test position:
 
-```bash
-python manual_e2e_test.py
+```text
+python tools/run_tests.py
 ```
 
-It refuses unless the account is **demo** and AutoTrading is **on**, shows the
-exact 0.01-lot order, and sends nothing until you type `EXECUTE`. It then closes
-the position immediately, verifies the account is flat, and asks you to switch
-AutoTrading back off — verifying that too.
-
-Two things it cannot do for you: AutoTrading is a terminal **GUI toggle** (the
-API can read `trade_allowed`, not flip it), and it exercises the bridge's
-*policy* code in-process rather than over the MCP transport. Start the bridge
-separately if you also want the transport covered.
+There is no repository entry-order flow. A human who separately validates the
+external bridge must retain its independent approval/idempotency controls and
+initial protective stop; the agent cannot authorize that live validation.
 
 ## Two switches only a human holds
 
@@ -406,7 +418,7 @@ a ledger that is only as trustworthy as the disk, and it tells you.
 | `test_broker_offset` | a frozen weekend tick must not be mistaken for the broker clock |
 | `test_funnel_wiring` | `--t-gate` reaches tier 3 without appending a row to the production ledger |
 
-The dashboard has three Rust tests of its own (`cd dashboard && cargo test`).
+The dashboard has its own Rust fixture tests (`cd dashboard && cargo test --locked`).
 
 The suite exists because two bugs in this codebase were **silent**: RSI returned
 100 on a flat series (a dead instrument reading as overbought, firing a false
@@ -435,3 +447,22 @@ MIT. See `LICENSE`.
 
 Built as a demonstration that **"the AI declined to trade" can be a measurable
 result rather than a slogan.**
+
+
+## Reproducible release and recovery
+
+`tools/build_public.py` is the tracked publication builder. It copies only
+privacy-checked tracked source into a new artifact, rejects missing required
+files/local imports, records file hashes, and never mirrors runtime state.
+`python tools/build_public.py --check` validates a temporary build and runs its
+stubbed regression suite. Newly added code must be tracked before it can be part
+of a release. Existing output directories are never deleted or overwritten.
+
+`export_ledger.py` creates immutable, uniquely named range exports under ignored
+`exports/`; it never rewrites the canonical `trades.csv` and refuses an existing
+output target. The canonical ledger remains private and must retain all losses.
+
+See [operations and recovery](docs/OPERATIONS.md),
+[vendor provenance](docs/VENDOR-PROVENANCE.md), and the
+[audit/fix record](docs/audit-2026-11-09/README.md). Current run state belongs in
+the dashboard/diagnostics, not in static README examples.

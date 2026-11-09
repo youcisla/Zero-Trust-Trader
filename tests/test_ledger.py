@@ -58,6 +58,51 @@ class TestTrialsTotal(unittest.TestCase):
         reset the ledger and every significance bar downstream is wrong."""
         self.assertEqual(tt.LEGACY_TRIALS, 2205)
 
+    def test_required_trials_includes_current_scan(self):
+        self._write("total_tests=150 | STAND_DOWN")
+        self.assertEqual(tt.required_trials(100), tt.LEGACY_TRIALS + 250)
+
+    def test_invalid_scan_count_is_refused(self):
+        for count in (-1, 1.5, "5", True, None):
+            with self.subTest(count=count), self.assertRaises(ValueError):
+                tt.required_trials(count)
+
+    def test_malformed_history_is_not_zero(self):
+        for count in ("UNKNOWN", "-1", "1.5"):
+            self._write(f"total_tests={count} | FAILED")
+            with self.subTest(count=count), self.assertRaises(ValueError):
+                tt.required_trials(5)
+
+    def test_failed_deep_tests_count_and_same_scan_is_not_counted_twice(self):
+        self._write("total_tests=150 scan_id=one | STAND_DOWN",
+                    "FAILED artifact total_tests=150 scan_id=one",
+                    "FAILED tier3 total_tests=100 scan_id=two")
+        self.assertEqual(tt.total()[1], 250)
+
+    def test_reconciliation_is_append_only_and_never_uses_early_zero(self):
+        from unittest import mock
+        self._write("total_tests=0 scan_id=one | STARTED",
+                    "total_tests=UNKNOWN scan_id=one | FAILED")
+        with self.assertRaises(ValueError):
+            tt.total()
+        with tt.LOG.open("a", encoding="utf-8") as fh:
+            fh.write("TRIALS_RECONCILED total_tests=150 scan_id=one\n")
+        with mock.patch.object(tt, "ledger_key", return_value=None):
+            self.assertEqual(tt.total()[1], 150)
+        self.assertIn("UNKNOWN", tt.LOG.read_text(encoding="utf-8"))
+
+    def test_reconciliation_requires_signature_when_signing_is_configured(self):
+        from unittest import mock
+        self._write("FAILED total_tests=UNKNOWN scan_id=one",
+                    "TRIALS_RECONCILED total_tests=150 scan_id=one")
+        with mock.patch.object(tt, "ledger_key", return_value=b"synthetic-key"), self.assertRaises(ValueError):
+            tt.total()
+        body = "TRIALS_RECONCILED total_tests=150 scan_id=one"
+        self._write("FAILED total_tests=UNKNOWN scan_id=one",
+                    tt.sign_line(body, tt.LOG, b"synthetic-key"))
+        with mock.patch.object(tt, "ledger_key", return_value=b"synthetic-key"):
+            self.assertEqual(tt.total()[1], 150)
+
 
 class TestFailureRow(unittest.TestCase):
     def test_tail_never_splits_a_ledger_row(self):
@@ -96,7 +141,9 @@ class TestNoCompounding(unittest.TestCase):
                 payload = {"stood_down": True, "survivors": [], "results": [1, 2, 3],
                            "passed_both_gates": [], "permutations": 1000,
                            "trials_declared": 132, "trials_cumulative": 5388}
+                payload["scan_id"] = "first"
                 t3.log_run(src, payload)
+                payload["scan_id"] = "second"
                 t3.log_run(src, payload)
                 _legacy, logged = tt.total()
             finally:

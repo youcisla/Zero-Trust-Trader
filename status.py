@@ -14,6 +14,8 @@ import json
 import os
 import subprocess
 import sys
+import tomllib
+from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
@@ -26,48 +28,79 @@ def section(title: str) -> None:
 
 def terminal_block() -> None:
     section("MT5 terminal")
+    initialized = False
     try:
         import MetaTrader5 as mt5
         if not mt5.initialize():
-            print(f"  terminal not reachable: {mt5.last_error()}")
+            print("  terminal not reachable")
             return
+        initialized = True
         t, a = mt5.terminal_info(), mt5.account_info()
-        pos = mt5.positions_get() or []
+        if t is None or a is None:
+            print("  terminal/account observation unavailable")
+            return
+        pos = mt5.positions_get()
+        orders = mt5.orders_get()
         print(f"  AutoTrading : {'ON  <-- UNSAFE' if t.trade_allowed else 'off'}")
         demo = "DEMO" if "demo" in (a.server or "").lower() else "LIVE??"
-        print(f"  account     : {a.login} {a.server} ({demo})")
+        print(f"  account     : identifier/server redacted ({demo})")
         print(f"  balance     : {a.balance:.2f} {a.currency}   equity {a.equity:.2f}")
-        print(f"  positions   : {len(pos)}   orders {len(mt5.orders_get() or [])}")
-        for p in pos:
+        print(f"  positions   : {len(pos) if pos is not None else 'UNKNOWN (retrieval failed)'}"
+              f"   orders {len(orders) if orders is not None else 'UNKNOWN (retrieval failed)'}")
+        for p in pos or ():
             side = "LONG" if p.type == 0 else "SHORT"
-            print(f"    #{p.ticket} {p.symbol} {side} {p.volume} "
+            print(f"    {p.symbol} {side} {p.volume} "
                   f"entry {p.price_open} now {p.price_current} "
                   f"sl {p.sl or 'none'} pnl {p.profit:+.2f}")
-        print(f"  market watch: {sum(1 for s in mt5.symbols_get() if s.visible)} symbols")
-        mt5.shutdown()
+        symbols = mt5.symbols_get()
+        print(f"  market watch: {sum(1 for s in symbols if s.visible) if symbols is not None else 'UNKNOWN'} symbols")
     except Exception as e:
-        print(f"  unavailable: {e}")
+        print(f"  unavailable ({type(e).__name__})")
+    finally:
+        if initialized:
+            mt5.shutdown()
+
+
+def policy_summary(path: Path) -> list[str]:
+    """Only typed operational controls are safe to share in diagnostics."""
+    data = tomllib.loads(path.read_text(encoding="utf-8"))
+    policy = data.get("policy", {})
+    if not isinstance(policy, dict):
+        return ["policy section invalid"]
+    lines = []
+    for name in ("auto_approve_notional", "max_notional_per_trade", "max_orders_per_minute"):
+        value = policy.get(name)
+        try:
+            number = Decimal(str(value))
+        except InvalidOperation:
+            number = Decimal("NaN")
+        if isinstance(value, bool) or not number.is_finite():
+            lines.append(f"{name}=unavailable (not a finite numeric control)")
+        else:
+            lines.append(f"{name}={number}")
+    return lines
 
 
 def config_block() -> None:
     section("configuration in force")
     print("  run window    : 05:00-17:00 UTC, session matrix narrows families early")
     pin = os.environ.get("MT5_EXPECTED_LOGIN")
-    hint = pin or ("not set in THIS shell (the launchers pin it; "
+    hint = "set (redacted)" if pin else ("not set in THIS shell (the launchers pin it; "
                    "a scan run without it refuses by design)")
     print(f"  expected login: {hint}")
     # This tree is the installation: its config.toml is the policy in force.
     # The per-user %APPDATA% copy is the pre-migration location, read only as a
     # fallback so a stale one cannot mask the policy the scan actually uses.
-    cfg = Path(__file__).resolve().parent / "config.toml"
+    cfg = HERE / "config.toml"
     if not cfg.exists():
         cfg = Path(os.environ.get("APPDATA", "")) / "mt5-mcp" / "config.toml"
     if cfg.exists():
-        print(f"  policy        : {cfg}")
-        for ln in cfg.read_text(encoding="utf-8").splitlines():
-            s = ln.strip()
-            if s and not s.startswith(("#", "[")):
-                print(f"    {s}")
+        print("  policy        : present (location and private fields redacted)")
+        try:
+            for line in policy_summary(cfg):
+                print(f"    {line}")
+        except (OSError, ValueError):
+            print("    policy unreadable or invalid; no control values verified")
     else:
         print("  policy        : config.toml not found (consent gate not configured)")
 
@@ -81,10 +114,10 @@ def tasks_block() -> None:
         try:
             out = subprocess.run(
                 ["schtasks", "/query", "/tn", name, "/fo", "LIST", "/v"],
-                capture_output=True, text=True, timeout=20,
+                capture_output=True, text=True, timeout=20, check=True,
             ).stdout
         except Exception as e:
-            print(f"  {name}: query failed ({e})")
+            print(f"  {name}: query failed ({type(e).__name__})")
             continue
         if "cannot find" in out.lower() or not out.strip():
             print(f"  {name}: NOT REGISTERED")

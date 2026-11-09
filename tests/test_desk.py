@@ -101,13 +101,34 @@ class TestCitationGuard(unittest.TestCase):
         out = desk._guard(note, FACTS)
         self.assertEqual(out["status"], "ok")
 
-    def test_small_ordinals_in_prose_are_not_treated_as_figures(self):
+    def test_small_uncited_counters_are_rejected_too(self):
         out = desk._guard({"agent": "chief", "summary": "two gates, 3 families, 0 passed"}, FACTS)
-        self.assertEqual(out["status"], "ok")
+        self.assertEqual(out["status"], "rejected")
+        self.assertIn("3", out["reason"])
 
     def test_a_rounded_rendering_of_a_source_number_is_accepted(self):
         out = desk._guard({"agent": "chief", "summary": "bar 4.53"}, FACTS)
         self.assertEqual(out["status"], "ok")
+
+    def test_substrings_and_changed_signs_are_not_citations(self):
+        for claim, source in [("4.531", "z=14.531"), ("5.523", "t=-5.523"),
+                              ("3%", "no figures"), ("1e3", "count=1"),
+                              ("9.99R", "mean=1.0"), (".5", "mean=5")]:
+            with self.subTest(claim=claim):
+                out = desk._guard({"agent": "chief", "summary": "value " + claim}, source)
+                self.assertEqual(out["status"], "rejected")
+
+    def test_empty_wrong_role_and_provider_status_are_rejected(self):
+        for note in [{}, {"agent": "chief"}, {"agent": "chief", "summary": ""},
+                     {"agent": "chief", "summary": "ok", "status": "ok"},
+                     {"agent": "chief", "summary": [], "contradictions": []}]:
+            with self.subTest(note=note):
+                self.assertEqual(desk._guard(note, FACTS)["status"], "rejected")
+
+    def test_scout_cannot_name_a_symbol_absent_from_its_snapshot(self):
+        note = {"agent": "scout", "items": [{"headline": "news", "source": "feed",
+                "symbols": ["INVENTED"], "stance": "neutral", "why": "news"}], "caveat": "ok"}
+        self.assertEqual(desk._guard(note, FACTS, "scout")["status"], "rejected")
 
 
 class TestRun(unittest.TestCase):
@@ -269,7 +290,7 @@ class TestGuardTokenisation(unittest.TestCase):
         self.assertEqual(desk.uncited(note, self.SRC), [])
 
     def test_a_hyphen_between_words_is_not_a_sign(self):
-        note = {"agent": "chief", "summary": "if the 150-vs-129 and 9-vs-6 differ"}
+        note = {"agent": "chief", "summary": "if the 150-vs-129 and 9-vs-9 differ"}
         self.assertEqual(desk.uncited(note, self.SRC), [])
 
     def test_a_real_negative_statistic_still_passes(self):
@@ -313,6 +334,28 @@ class TestFailureIsNotSuccess(unittest.TestCase):
         accepted = [st for st in statuses if st in (None, "ok")]
         errored = [st for st in statuses if st == "error"]
         self.assertEqual(("partial" if errored and accepted else "bad"), "partial")
+
+    def test_cli_failure_states_have_nonzero_exit_codes(self):
+        import agent_brief
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            for status in ("no key", "rejected", "error", "partial"):
+                with self.subTest(status=status), \
+                     mock.patch.object(desk, "run", return_value={"status": status, "roles": {},
+                         "model": "fixture", "facts_sha": "fixture"}), \
+                     mock.patch.object(agent_brief.audit, "write"):
+                    self.assertNotEqual(agent_brief.main(["--root", str(root)]), 0)
+
+    def test_nonlocal_plain_http_and_credential_urls_are_refused(self):
+        for url in ("http://example.com/chat", "https://user:password@example.com/chat"):
+            with self.subTest(url=url), self.assertRaises(desk.DeskError):
+                desk.chat([], "fixture", url=url)
+
+    def test_malformed_envelopes_are_named_as_endpoint_failures(self):
+        for envelope in ([], {"choices": None}, {"choices": [{"message": {"content": 3}}]}):
+            with self.subTest(envelope=envelope), mock.patch.object(desk, "_post", return_value=envelope):
+                with self.assertRaises(desk.DeskError):
+                    desk.chat([], "fixture")
 
 
 class TestDigestSaysWhenItClips(unittest.TestCase):

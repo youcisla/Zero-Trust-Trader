@@ -1,0 +1,87 @@
+{
+  "kind": "synthetic audit reproductions",
+  "checks": [
+    {
+      "case": "citation_substring",
+      "expected_safe_behavior": "reject the uncited metric",
+      "observed": {
+        "summary": "z = 4.531",
+        "status": "ok"
+      },
+      "defect_reproduced": true
+    },
+    {
+      "case": "citation_sign",
+      "expected_safe_behavior": "reject the uncited metric",
+      "observed": {
+        "summary": "t = 5.523",
+        "status": "ok"
+      },
+      "defect_reproduced": true
+    },
+    {
+      "case": "citation_small_metric",
+      "expected_safe_behavior": "reject the uncited metric",
+      "observed": {
+        "summary": "win rate = 3%",
+        "status": "ok"
+      },
+      "defect_reproduced": true
+    },
+    {
+      "case": "empty_note",
+      "expected_safe_behavior": "reject a note missing its role and content",
+      "observed": {
+        "status": "ok"
+      },
+      "defect_reproduced": true
+    },
+    {
+      "case": "desk_exit_rejected",
+      "expected_safe_behavior": "nonzero exit for an unsuccessful brief",
+      "observed": {
+        "exit_code": 0,
+        "status": "rejected"
+      },
+      "defect_reproduced": true
+    },
+    {
+      "case": "desk_exit_error",
+      "expected_safe_behavior": "nonzero exit for an unsuccessful brief",
+      "observed": {
+        "exit_code": 0,
+        "status": "error"
+      },
+      "defect_reproduced": true
+    },
+    {
+      "case": "desk_exit_partial",
+      "expected_safe_behavior": "nonzero exit for an unsuccessful brief",
+      "observed": {
+        "exit_code": 0,
+        "status": "partial"
+      },
+      "defect_reproduced": true
+    },
+    {
+      "case": "export_api_error_preserves_ledger",
+      "expected_safe_behavior": "refuse the API error and preserve the existing ledger",
+      "observed": {
+        "exit_code": 1,
+        "existing_history_preserved": false
+      },
+      "defect_reproduced": true
+    },
+    {
+      "case": "export_partial_position",
+      "expected_safe_behavior": "do not claim the remaining open volume is a closed position",
+      "observed": {
+        "exit_code": 0,
+        "closed_rows": 1,
+        "opened_volume": 0.02,
+        "closed_volume": 0.01
+      },
+      "defect_reproduced": true
+    }
+  ]
+}

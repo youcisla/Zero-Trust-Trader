@@ -28,12 +28,14 @@ import os
 import subprocess
 import sys
 import time
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
 from keep_awake import keep_awake
 
 import audit
+import process_lock
 
 HERE = Path(__file__).resolve().parent
 LOG = HERE / "funnel_history.log"
@@ -45,6 +47,7 @@ PY = sys.executable
 # quiet market. Abort instead.
 EXPECTED_LOGIN = int(os.environ.get("MT5_EXPECTED_LOGIN", "0"))
 EXPECTED_SERVER_SUBSTR = "demo"
+_SCAN_ID = ""
 
 
 def preflight_check(term, acct) -> list[str]:
@@ -67,10 +70,14 @@ def preflight_check(term, acct) -> list[str]:
         if EXPECTED_SERVER_SUBSTR not in (acct.server or "").lower():
             problems.append(
                 f"server {acct.server!r} is not a DEMO server — refusing to scan a live account")
+        if getattr(acct, "trade_mode", None) != 0:
+            problems.append("account trade mode is not DEMO — refusing unverifiable account mode")
     return problems
 
 
 def preflight() -> tuple[bool, list[str]]:
+    if (HERE / ".ztt-maintenance").exists():
+        return False, ["maintenance in progress"]
     import marketdata as md
     if not md.mt5.initialize():
         return False, [f"mt5.initialize() failed: {md.mt5.last_error()}"]
@@ -81,14 +88,16 @@ def preflight() -> tuple[bool, list[str]]:
 def log(line: str) -> None:
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     with LOG.open("a", encoding="utf-8") as fh:
-        fh.write(f"{stamp} | {line}\n")
+        fh.write(f"{stamp} | {line}" + (f" scan_id={_SCAN_ID}" if _SCAN_ID else "") + "\n")
     print(line)
 
 
 def run(args: list[str], timeout: int = 5400) -> subprocess.CompletedProcess:
+    if (HERE / ".ztt-maintenance").exists():
+        raise RuntimeError("maintenance in progress; subprocess refused")
     print(f"\n$ {' '.join(args)}", flush=True)
     return subprocess.run([PY] + args, cwd=HERE, capture_output=True, text=True,
-                          timeout=timeout)
+                          timeout=timeout, env={**os.environ, "ZTT_FUNNEL_PARENT": str(os.getpid())})
 
 
 def tail(text: str, n: int = 12) -> str:
@@ -116,35 +125,12 @@ def in_window(spec: str, now: datetime) -> bool:
 
 
 def acquire_lock(max_age_min: float) -> bool:
-    """Exclusive-create the lock. Returns False when another run is active.
-
-    A crashed run must not block the system forever, so an old lock is taken
-    over rather than obeyed — the alternative is a permanent silent stop, which
-    is the failure mode this whole system exists to avoid.
-    """
-    if LOCK.exists():
-        age_min = (time.time() - LOCK.stat().st_mtime) / 60.0
-        if age_min <= max_age_min:
-            print(f"funnel.lock held ({age_min:.1f}m old) — another run is active, aborting")
-            return False
-        print(f"funnel.lock stale ({age_min:.0f}m > {max_age_min:.0f}m) — taking over")
-        LOCK.unlink(missing_ok=True)
-    try:
-        fd = os.open(LOCK, os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-    except FileExistsError:
-        print("funnel.lock appeared mid-acquire — aborting")
-        return False
-    os.write(fd, f"{os.getpid()} {datetime.now(timezone.utc).isoformat()}\n".encode())
-    os.close(fd)
-    atexit.register(release_lock)
-    return True
+    """Hold OS ownership; age alone can never evict a live process."""
+    return process_lock.acquire(LOCK, max_age_min * 60)
 
 
 def release_lock() -> None:
-    try:
-        LOCK.unlink()
-    except FileNotFoundError:
-        pass
+    process_lock.release(LOCK)
 
 
 SESSION_MATRIX = (
@@ -172,6 +158,15 @@ def session_strategies(now: datetime) -> tuple[str, ...]:
 
 
 def main() -> int:
+    try:
+        return _main()
+    finally:
+        release_lock()
+
+
+def _main() -> int:
+    global _SCAN_ID
+    _SCAN_ID = uuid.uuid4().hex
     t0 = time.monotonic()
     ap = argparse.ArgumentParser()
     ap.add_argument("--rebuild", action="store_true",
@@ -203,6 +198,13 @@ def main() -> int:
                          "unreachable and the binomial only measures who lost more slowly.")
     ap.add_argument("--lock-max-age-min", type=float, default=120.0)
     a = ap.parse_args()
+
+    if a.at_utc and not a.plan_only:
+        ap.error("--at-utc is available only with --plan-only")
+
+    if (HERE / ".ztt-maintenance").exists() and not a.plan_only:
+        print("REFUSED: maintenance in progress; no terminal connection or scan")
+        return 2
 
     # Lock first: an overlapping run must cost nothing, not a preflight + MT5 init.
     if not acquire_lock(a.lock_max_age_min):
@@ -298,11 +300,35 @@ def main() -> int:
         log("FAILED intraday | liquid_universe.json has 0 symbols — rebuild")
         return 2
 
-    t2 = run(["tier2_patterns.py", "--tier1", "liquid_universe.json",
-              "--tf", a.tf, "--top", str(a.shortlist),
-              "--strategies", ",".join(fams)])
+    try:
+        import trials_total
+        prior = trials_total.required_trials(0, LOG)
+    except (OSError, ValueError, TypeError, ImportError) as exc:
+        log(f"FAILED trial accounting before scan | {type(exc).__name__}: {exc}")
+        return 1
+
+    try:
+        t2 = run(["tier2_patterns.py", "--tier1", "liquid_universe.json",
+                  "--tf", a.tf, "--top", str(a.shortlist),
+                  "--strategies", ",".join(fams), "--scan-id", _SCAN_ID])
+    except RuntimeError as exc:
+        log(f"FAILED before tier2 | {exc}")
+        return 1
+    except (OSError, subprocess.SubprocessError) as exc:
+        log(f"FAILED tier2 total_tests=UNKNOWN | {type(exc).__name__}")
+        return 1
     if t2.returncode != 0:
-        log(f"FAILED tier2 rc={t2.returncode} | {tail(t2.stderr, 3)}")
+        count = "UNKNOWN"
+        try:
+            failed_stage = json.loads((HERE / "tier2_candidates.json").read_text(encoding="utf-8"))
+            if not isinstance(failed_stage, dict):
+                raise ValueError("Tier 2 artifact must be an object")
+            if failed_stage.get("scan_id") == _SCAN_ID:
+                trials_total.required_trials(failed_stage["total_tests"], LOG)
+                count = str(failed_stage["total_tests"])
+        except (OSError, ValueError, TypeError, KeyError):
+            pass
+        log(f"FAILED tier2 rc={t2.returncode} total_tests={count} | {tail(t2.stderr, 3)}")
         return 1
     print(tail(t2.stdout, 10))
 
@@ -310,21 +336,21 @@ def main() -> int:
     # Reading only the per-scan count let a 132-test scan apply a 3.55 bar
     # after 5,388 trials - the exact data-snooping the project exists to stop.
     try:
-        import trials_total
-        prior = sum(trials_total.total())
-    except Exception:
-        prior = 0
-    try:
-        scan_tests = int(json.loads((HERE / "tier2_candidates.json").read_text())
-                         .get("total_tests") or 0)
-    except Exception:
-        scan_tests = 0
-    cumulative = prior + scan_tests
+        stage2 = json.loads((HERE / "tier2_candidates.json").read_text(encoding="utf-8"))
+        if not isinstance(stage2, dict):
+            raise ValueError("Tier 2 artifact must be an object")
+        if stage2.get("scan_id") != _SCAN_ID:
+            raise ValueError("Tier 2 artifact belongs to another scan")
+        scan_tests = stage2["total_tests"]
+        cumulative = trials_total.required_trials(scan_tests, LOG)
+    except (OSError, ValueError, TypeError, KeyError) as exc:
+        log(f"FAILED trial accounting total_tests=UNKNOWN | {type(exc).__name__}: {exc}")
+        return 1
     print(f"trials: {prior} prior + {scan_tests} this scan = {cumulative}")
 
     t3_args = ["tier3_deep.py", "--tf", a.tf, "--bars", str(a.bars),
                "--horizon", str(a.horizon), "--permutations", str(a.permutations),
-               "--trials", str(cumulative)]
+               "--trials", str(cumulative), "--scan-id", _SCAN_ID]
     if a.t_gate:
         t3_args.append("--t-gate")
     if a.window_utc:
@@ -332,10 +358,14 @@ def main() -> int:
         # deriving it from --window-utc stops the two from drifting apart.
         t3_args += ["--session-close", a.window_utc.partition("-")[2].strip()]
     t3_started = time.time()
-    t3 = run(t3_args)
+    try:
+        t3 = run(t3_args)
+    except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
+        log(f"FAILED tier3 total_tests={scan_tests} | {type(exc).__name__}")
+        return 1
     # tier3 exits 2 on a clean stand-down: that is success, not failure
     if t3.returncode not in (0, 2):
-        log(f"FAILED tier3 rc={t3.returncode} | {tail(t3.stderr, 3)}")
+        log(f"FAILED tier3 rc={t3.returncode} total_tests={scan_tests} | {tail(t3.stderr, 3)}")
         return 1
     print(tail(t3.stdout, 14))
 
@@ -346,15 +376,17 @@ def main() -> int:
     art = HERE / "tier3_results.json"
     try:
         if art.stat().st_mtime < t3_started - 1:
-            log("FAILED tier3 wrote no artifact this run — refusing to report a "
+            log(f"FAILED tier3 wrote no artifact this run total_tests={scan_tests} — refusing to report a "
                 "previous scan's verdict")
             return 1
         doc = json.loads(art.read_text())
+        if doc.get("scan_id") != _SCAN_ID:
+            raise ValueError("Tier 3 artifact belongs to another scan")
     except FileNotFoundError:
-        log("FAILED tier3 wrote no artifact this run")
+        log(f"FAILED tier3 wrote no artifact this run total_tests={scan_tests}")
         return 1
     except Exception as e:
-        log(f"FAILED reading tier3_results.json: {e}")
+        log(f"FAILED reading tier3_results.json total_tests={scan_tests}: {e}")
         return 1
     try:
         universe = json.loads((HERE / "tier2_candidates.json").read_text())
@@ -366,6 +398,7 @@ def main() -> int:
     print(f"\ntier3 verdict: {'STAND_DOWN' if doc.get('stood_down') else 'WINNER ' + ','.join(doc.get('survivors', []))}")
     audit.write(
         "verdict",
+        scan_id=_SCAN_ID,
         verdict="STAND_DOWN" if doc.get("stood_down") else "PROPOSAL",
         survivors=doc.get("survivors", []),
         # How long the scan took. Without it, a missed schedule slot and a slow

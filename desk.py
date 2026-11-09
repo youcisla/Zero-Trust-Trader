@@ -26,11 +26,14 @@ Stdlib only — urllib for HTTP, xml.etree for RSS. No SDK, no new dependency.
 from __future__ import annotations
 
 import json
+import math
 import os
 import re
 import urllib.error
 import urllib.request
+from urllib.parse import urlsplit
 from datetime import datetime, timezone
+from decimal import Decimal
 from pathlib import Path
 from xml.etree import ElementTree
 
@@ -44,6 +47,8 @@ JOURNAL = "desk_journal.jsonl"
 DIGEST_LIMIT = 6000   # characters of each artifact the model is shown
 DEFAULT_URL = "https://api.deepseek.com/chat/completions"
 NOTES = "agent_notes.json"
+MAX_RESPONSE = 256 * 1024
+MAX_ARTIFACT = 2 * 1024 * 1024
 
 
 class DeskError(RuntimeError):
@@ -55,7 +60,7 @@ def api_key(root: Path | None = None) -> str | None:
     k = os.environ.get("DEEPSEEK_API_KEY", "").strip()
     if k:
         return k
-    for candidate in ((root or Path.cwd()) / ".env", Path(".env")):
+    for candidate in ((root or Path.cwd()) / ".env",):
         try:
             for line in candidate.read_text(encoding="utf-8").splitlines():
                 if line.strip().startswith("DEEPSEEK_API_KEY="):
@@ -66,6 +71,12 @@ def api_key(root: Path | None = None) -> str | None:
 
 
 def _post(payload: dict, key: str, url: str = DEFAULT_URL, timeout: int = 90) -> dict:
+    parsed = urlsplit(url)
+    if parsed.username or parsed.password or not parsed.hostname:
+        raise DeskError("model endpoint must not contain credentials and must have a host")
+    if parsed.scheme != "https" and not (
+            parsed.scheme == "http" and parsed.hostname in {"127.0.0.1", "localhost", "::1"}):
+        raise DeskError("model endpoint requires HTTPS; HTTP is reserved for loopback test fixtures")
     body = json.dumps(payload).encode()
     req = urllib.request.Request(
         url,
@@ -73,14 +84,22 @@ def _post(payload: dict, key: str, url: str = DEFAULT_URL, timeout: int = 90) ->
         headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"},
         method="POST",
     )
+    class NoRedirect(urllib.request.HTTPRedirectHandler):
+        def redirect_request(self, *args, **kwargs):
+            raise DeskError("model endpoint redirect refused")
+
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as r:
-            return json.loads(r.read().decode())
+        with urllib.request.build_opener(NoRedirect()).open(req, timeout=min(timeout, 30)) as r:
+            raw = r.read(MAX_RESPONSE + 1)
+            if len(raw) > MAX_RESPONSE:
+                raise DeskError("model endpoint response exceeds the size limit")
+            return json.loads(raw.decode())
     except urllib.error.HTTPError as e:
-        detail = e.read().decode(errors="replace")[:300]
-        raise DeskError(f"HTTP {e.code} from the model endpoint: {detail}") from e
+        raise DeskError(f"HTTP {e.code} from the model endpoint") from e
     except (urllib.error.URLError, TimeoutError, OSError) as e:
         raise DeskError(f"model endpoint unreachable: {e}") from e
+    except (ValueError, UnicodeError) as e:
+        raise DeskError("model endpoint returned invalid JSON") from e
 
 
 _RULES_CACHE: dict[str, str] = {}
@@ -117,16 +136,28 @@ def chat(messages: list[dict], key: str, *, model: str | None = None,
         "response_format": {"type": "json_object"},
     }
     data = _post(payload, key, url, timeout)
+    if not isinstance(data, dict):
+        raise DeskError("unexpected response envelope from model endpoint")
     if meta is not None:
         # The provider names the model it actually served. Record it: a silent
         # upgrade changes what every note means and nothing else would show it.
-        meta["model"] = data.get("model")
-        meta["usage"] = data.get("usage")
+        served = data.get("model")
+        usage = data.get("usage")
+        if not isinstance(served, str) or not served.strip():
+            raise DeskError("model endpoint did not identify the served model")
+        if usage is not None and (not isinstance(usage, dict) or any(
+                not isinstance(value, int) or isinstance(value, bool) or value < 0
+                for value in usage.values())):
+            raise DeskError("model endpoint returned invalid usage metadata")
+        meta["model"] = served
+        meta["usage"] = usage
     try:
         choice = data["choices"][0]
         text = choice["message"]["content"]
-    except (KeyError, IndexError) as e:
-        raise DeskError(f"unexpected response shape: {str(data)[:200]}") from e
+        if not isinstance(text, str):
+            raise TypeError("content must be text")
+    except (KeyError, IndexError, TypeError) as e:
+        raise DeskError("unexpected response shape from model endpoint") from e
     return _object(text, choice.get("finish_reason"), max_tokens)
 
 
@@ -156,10 +187,10 @@ def _object(text: str, finish: str | None = None, cap: int = 0) -> dict:
 #             it, so every note written with a dash was rejected for inventing 2014
 #   2026-11-09  a date's "-09" is not a negative number
 #   150-vs-129  a hyphen between words is punctuation, not a sign
-_NUM = re.compile(r"(?<![\w.])-?\d+(?:\.\d+)?(?![\w.])")
+_NUM = re.compile(r"(?<![\w.])[+-]?(?:\d+(?:\.\d+)?|\.\d+)(?:[eE][+-]?\d+)?(?![\d.])")
 _DATE_TIME = re.compile(
-    r"\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?)?"
-    r"|\b\d{2}:\d{2}(?::\d{2})?\b")
+    r"\d{4}-\d{2}-\d{2}(?:[T ]\d{2}:\d{2}(?::\d{2})?(?:Z|[+-]\d{2}:\d{2})?)?"
+    r"|(?<!\d)\d{2}:\d{2}(?::\d{2})?Z?(?!\d)")
 
 
 def _renders(v: float) -> set[str]:
@@ -176,26 +207,78 @@ def uncited(note: dict, source: str) -> list[str]:
     bad = []
     # ensure_ascii=False keeps em dashes as characters; dates are not figures.
     blob = _DATE_TIME.sub(" ", json.dumps(note, ensure_ascii=False, default=str))
+    source_tokens = [m.group(0) for m in _NUM.finditer(_DATE_TIME.sub(" ", source))]
+    allowed = set()
+    for token in source_tokens:
+        value = float(token)
+        if math.isfinite(value):
+            allowed.update(Decimal(v) for v in _renders(value) if Decimal(v) != 0 or value == 0)
     for m in _NUM.finditer(blob):
         raw = m.group(0)
         try:
             v = float(raw)
         except ValueError:
             continue
-        if v in (0.0, 1.0, 2.0, 3.0, 4.0, 5.0) and len(raw) == 1:
-            continue  # counters and ordinals in prose ("two gates")
-        if not any(r in source for r in _renders(v)):
+        if not math.isfinite(v) or Decimal(raw) not in allowed:
             bad.append(raw)
     return sorted(set(bad))
 
 
-def _guard(note: dict, source: str) -> dict:
+def _validate_note(note: dict, source: str, expected_role: str | None) -> str | None:
+    role = note.get("agent")
+    schemas = {
+        "chief": ({"agent", "summary", "contradictions", "watch"}, {"summary"}),
+        "skeptic": ({"agent", "symbol", "verdict", "reasons", "what_would_change_my_mind"},
+                    {"symbol", "verdict", "reasons"}),
+        "scout": ({"agent", "items", "caveat"}, {"items"}),
+    }
+    if role not in schemas or (expected_role and role != expected_role):
+        return "missing or incorrect advisory role"
+    allowed, required = schemas[role]
+    if set(note) - allowed or not required <= note.keys():
+        return "invalid advisory fields"
+    if len(json.dumps(note, ensure_ascii=False)) > 16000:
+        return "advisory exceeds the size limit"
+    for name in ("summary", "watch", "symbol", "verdict", "caveat", "what_would_change_my_mind"):
+        if name in note and (not isinstance(note[name], str) or len(note[name]) > 4000):
+            return f"invalid {name}"
+        if name in required and isinstance(note.get(name), str) and not note[name].strip():
+            return f"empty {name}"
+    for name in ("contradictions", "reasons"):
+        if name in note and (not isinstance(note[name], list) or len(note[name]) > 3 or
+                any(not isinstance(v, str) or not v.strip() or len(v) > 4000 for v in note[name])):
+            return f"invalid {name}"
+    if role == "skeptic" and (note["verdict"] not in {"noise", "not_proven"} or not note["reasons"]):
+        return "invalid skeptic verdict or reasons"
+    if role == "chief" and len(note["summary"].split()) > 120:
+        return "chief summary exceeds the word limit"
+    if role == "scout":
+        symbols = set(re.findall(r'"symbol"\s*:\s*"([^"\\]+)"', source))
+        if not isinstance(note["items"], list) or len(note["items"]) > 20:
+            return "invalid scout items"
+        for item in note["items"]:
+            if not isinstance(item, dict) or set(item) != {"headline", "source", "symbols", "stance", "why"}:
+                return "invalid scout item fields"
+            if any(not isinstance(item[k], str) or not item[k].strip() or len(item[k]) > 4000
+                   for k in ("headline", "source", "stance", "why")):
+                return "invalid scout item text"
+            if item["stance"] not in {"risk_on", "risk_off", "neutral"}:
+                return "invalid scout stance"
+            if not isinstance(item["symbols"], list) or len(item["symbols"]) > 3 or any(
+                    not isinstance(v, str) or v not in symbols for v in item["symbols"]):
+                return "scout named an unknown symbol"
+    return None
+
+
+def _guard(note: dict, source: str, expected_role: str | None = None) -> dict:
+    invalid = _validate_note(note, source, expected_role)
+    if invalid:
+        return {"status": "rejected", "reason": invalid, "agent": note.get("agent")}
     bad = uncited(note, source)
     if bad:
         return {"status": "rejected", "reason": "uncited numbers: " + ", ".join(bad[:6]),
                 "agent": note.get("agent"), "raw": note}
-    note["status"] = note.get("status", "ok")
-    return note
+    return {**note, "status": "ok"}
 
 
 # ---------------------------------------------------------------- the facts
@@ -205,13 +288,26 @@ def digest(root: Path) -> str:
     parts = []
     ledger = root / "funnel_history.log"
     if ledger.exists():
-        rows = [l for l in ledger.read_text(encoding="utf-8").splitlines() if l.strip()]
-        parts.append("LAST LEDGER ROWS:\n" + "\n".join(rows[-5:]))
+        try:
+            with ledger.open("rb") as stream:
+                size = stream.seek(0, 2)
+                stream.seek(max(0, size - 16384))
+                if size > 16384:
+                    stream.readline()
+                rows = [line for line in stream.read(16384).decode("utf-8", errors="replace").splitlines()
+                        if line.strip()]
+            parts.append("LAST LEDGER ROWS:\n" + "\n".join(rows[-5:]))
+        except OSError:
+            parts.append("LEDGER: present but unreadable")
     for name in ("tier3_results.json", "tier2_candidates.json"):
         p = root / name
         if p.exists():
             try:
+                if p.stat().st_size > MAX_ARTIFACT:
+                    raise ValueError("artifact exceeds read limit")
                 blob = json.dumps(json.loads(p.read_text(encoding="utf-8")), indent=1)
+                age = max(0, int(datetime.now(timezone.utc).timestamp() - p.stat().st_mtime))
+                parts.append(f"{name} observation age_s={age}; historical context, not an execution instruction")
                 if len(blob) > DIGEST_LIMIT:
                     # Say it out loud. A silent clip made the model report "the
                     # file is truncated mid-GBPCAD" about a file that was whole:
@@ -221,14 +317,20 @@ def digest(root: Path) -> str:
                                  + blob[:DIGEST_LIMIT])
                 else:
                     parts.append(f"{name}:\n" + blob)
-            except (OSError, json.JSONDecodeError):
+            except (OSError, ValueError):
                 parts.append(f"{name}: present but unreadable")
-    eng = root / "engine_state.json"
+    generations = list(root.glob("engine_state.*.json"))
+    eng = max(generations, key=lambda p: p.name) if generations else root / "engine_state.json"
     if eng.exists():
         try:
+            if eng.stat().st_size > MAX_ARTIFACT:
+                raise ValueError("engine state exceeds read limit")
             e = json.loads(eng.read_text(encoding="utf-8"))
-            parts.append("ENGINE: " + json.dumps({k: e.get(k) for k in ("ok", "applied", "positions")}, default=str)[:800])
-        except (OSError, json.JSONDecodeError):
+            # Avoid sending broker identifiers, tickets or whole positions externally.
+            parts.append("ENGINE: " + json.dumps({"ok": e.get("ok"), "applied": e.get("applied"),
+                "positions_count": len(e["positions"]) if isinstance(e.get("positions"), list) else None,
+                "generated_utc": e.get("generated_utc")}, default=str)[:800])
+        except (OSError, ValueError, AttributeError, TypeError):
             parts.append("ENGINE: present but unreadable")
     if not parts:
         parts.append("NO ARTIFACTS: no ledger row, no tier2/tier3 file, no engine state.")
@@ -269,7 +371,7 @@ def scout(headlines: list[dict], facts: str, key: str, root: Path | None = None,
     payload = "SNAPSHOT:\n" + facts + "\n\nHEADLINES:\n" + json.dumps(headlines[:40], indent=1)
     note = chat([{"role": "system", "content": SCOUT_SYS},
                  {"role": "user", "content": payload}], key, root=root, meta=meta, **kw)
-    return _guard(note, facts + json.dumps(headlines))
+    return _guard(note, facts + json.dumps(headlines), "scout")
 
 
 def skeptic(results: list[dict], facts: str, key: str, root: Path | None = None, meta: dict | None = None, **kw) -> dict:
@@ -282,7 +384,7 @@ def skeptic(results: list[dict], facts: str, key: str, root: Path | None = None,
                   + "\n\nCONTEXT (do not restate any of it):\n" + facts[-4000:]
                   + "\n\nAt most 3 reasons, one sentence each."}], key, root=root, meta=meta, **kw)
     note.setdefault("symbol", top.get("symbol"))
-    return _guard(note, facts + json.dumps(top))
+    return _guard(note, facts + json.dumps(top), "skeptic")
 
 
 def chief(facts: str, key: str, root: Path | None = None, meta: dict | None = None, **kw) -> dict:
@@ -290,7 +392,7 @@ def chief(facts: str, key: str, root: Path | None = None, meta: dict | None = No
                  {"role": "user", "content": facts
                   + "\n\nWrite one paragraph, under 120 words. Do not restate the rows."}],
                 key, root=root, meta=meta, **kw)
-    return _guard(note, facts)
+    return _guard(note, facts, "chief")
 
 
 # ---------------------------------------------------------------- inputs
@@ -307,14 +409,19 @@ def headlines(feeds: list[str], limit: int = 20) -> list[dict]:
     That kills billion-laughs and any XXE payload outright.
     """
     out, errors = [], []
-    for url in feeds:
+    for url in feeds[:5]:
+        if len(out) >= limit:
+            break
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "zero-trust-trader/1.0"})
             with urllib.request.urlopen(req, timeout=20) as r:
-                raw = r.read(MAX_FEED)
-            if b"<!DOCTYPE" in raw[:2048] or b"<!ENTITY" in raw:
+                raw = r.read(MAX_FEED + 1)
+            if len(raw) > MAX_FEED:
+                raise ValueError("feed exceeds size limit")
+            text = raw.decode("utf-8-sig")
+            if "<!DOCTYPE" in text.upper() or "<!ENTITY" in text.upper():
                 raise ValueError("feed declares a DTD — refused")
-            tree = ElementTree.fromstring(raw)
+            tree = ElementTree.fromstring(text)
         except Exception as e:  # noqa: BLE001 - a feed failing must not kill the brief
             errors.append(f"{url}: {type(e).__name__}")
             continue
@@ -349,17 +456,21 @@ def run(root: Path, feeds: list[str] | None = None, model: str | None = None) ->
 
     kw = {"model": model} if model else {}
     meta: dict = {}
+    role_meta: dict = {}
     t3 = {}
     try:
         t3 = json.loads((root / "tier3_results.json").read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        pass
+        if not isinstance(t3, dict):
+            t3 = {}
+    except (OSError, ValueError):
+        t3 = {}
 
     if feeds:
         try:
             notes["roles"]["scout"] = scout(headlines(feeds), facts, key, root, meta, **kw)
         except DeskError as e:
             notes["roles"]["scout"] = {"agent": "scout", "status": "error", "reason": str(e)}
+        role_meta["scout"] = dict(meta)
     else:
         notes["roles"]["scout"] = {"agent": "scout", "status": "no feed configured",
                                    "reason": "add feeds to desk.toml: news_feeds = [\"https://...\"]"}
@@ -367,13 +478,24 @@ def run(root: Path, feeds: list[str] | None = None, model: str | None = None) ->
     for role, fn, arg in (("skeptic", skeptic, (t3.get("results") or [], facts)),
                           ("chief", chief, (facts,))):
         try:
+            meta = {}
             notes["roles"][role] = fn(*arg, key, root, meta, **kw)
         except DeskError as e:
             notes["roles"][role] = {"agent": role, "status": "error", "reason": str(e)}
+        role_meta[role] = dict(meta)
 
     served = meta.get("model")
     notes["model_returned"] = served
     notes["usage"] = meta.get("usage")
+    notes["role_metadata"] = role_meta
+    notes["usage_total"] = {
+        field: sum(value for item in role_meta.values()
+                   for value in [(item.get("usage") or {}).get(field, 0)]
+                   if isinstance(value, int) and not isinstance(value, bool) and value >= 0)
+        for field in ("prompt_tokens", "completion_tokens")
+    }
+    notes["model_drift_roles"] = {role: item.get("model") for role, item in role_meta.items()
+                                  if item.get("model") and item["model"] != notes["model"]}
     if served and served != notes["model"]:
         # Pinning only works if a mismatch is visible. A silent alias upgrade
         # makes every future note a different instrument than the one measured.

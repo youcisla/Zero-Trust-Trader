@@ -55,7 +55,7 @@ def newest_universe(directory: Path = HERE) -> Path | None:
     return legacy if legacy.exists() else None
 
 
-def main() -> int:
+def _main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--min-days", type=int, default=100)
     ap.add_argument("--max-spread-pct", type=float, default=15.0,
@@ -86,7 +86,6 @@ def main() -> int:
 
     excl = {c: Counter() for c in GROUPS}
     kept: list[dict] = []
-    toggled: list[str] = []
 
     for cls in GROUPS:
         names = sorted(by_class.get(cls, []))
@@ -101,10 +100,6 @@ def main() -> int:
             if info.trade_mode != TRADE_MODE_FULL:
                 excl[cls]["not_tradable"] += 1
                 continue
-            if not info.visible:
-                mt5.symbol_select(name, True)
-                toggled.append(name)
-
             # cheap liveness probe: 30 bars (fetch() refuses fewer), not 3,000
             probe = md.fetch(name, "H1", 30, offset)
             if probe is None:
@@ -135,8 +130,8 @@ def main() -> int:
                 continue
 
             tick = mt5.symbol_info_tick(name)
-            spread = float(tick.ask - tick.bid) if tick else 0.0
-            if spread <= 0:
+            spread = md.tick_spread(tick, offset)
+            if spread is None:
                 excl[cls]["no_spread"] += 1
                 continue
             pct = 100.0 * spread / atr_now
@@ -158,8 +153,7 @@ def main() -> int:
             })
         print(f"  kept {sum(1 for k in kept if k['class'] == cls)} | {dict(excl[cls])}")
 
-    for name in toggled:
-        mt5.symbol_select(name, False)
+    released = md.release_auto_selected()
 
     kept.sort(key=lambda r: (r["class"], r["spread_pct_atr"]))
     total = sum(len(v) for v in by_class.values())
@@ -173,7 +167,7 @@ def main() -> int:
         "by_class": {c: sum(1 for k in kept if k["class"] == c) for c in GROUPS},
         "exclusions": {c: dict(excl[c]) for c in GROUPS if excl[c]},
         "symbols": kept,
-        "market_watch_added_then_removed": len(toggled),
+        "market_watch_released": released,
     }
     out_path.write_text(json.dumps(payload, indent=2) + "\n")
 
@@ -181,8 +175,15 @@ def main() -> int:
     print("by class:", payload["by_class"])
     for c, v in payload["exclusions"].items():
         print(f"  {c} exclusions: {v}")
-    print(f"wrote {out_path.name}; Market Watch restored ({len(toggled)} toggled)")
+    print(f"wrote {out_path.name}; Market Watch released ({released} symbols)")
     return 0
+
+
+def main() -> int:
+    try:
+        return _main()
+    finally:
+        md.release_auto_selected()
 
 
 if __name__ == "__main__":

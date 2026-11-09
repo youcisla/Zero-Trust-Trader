@@ -14,4 +14,13 @@
 /trials_total.py             @youcisla
 /position_manager.py         @youcisla
 /policy_check.py             @youcisla
+/marketdata.py               @youcisla
+/tier1_universe.py           @youcisla
+/tier2_patterns.py           @youcisla
+/stops.py                    @youcisla
+/process_lock.py             @youcisla
+/tools/check_public.py       @youcisla
+/tools/build_public.py       @youcisla
+/requirements*.txt           @youcisla
+/dashboard/Cargo.lock        @youcisla
 /tests/                      @youcisla

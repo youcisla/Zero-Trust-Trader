@@ -37,21 +37,47 @@ LOG = HERE / "funnel_history.log"
 
 LEGACY_TRIALS = 2205
 
-TOTAL_RE = re.compile(r"total_tests=(\d+)")
-TRIALS_RE = re.compile(r"trials=(\d+)")
+TOTAL_RE = re.compile(r"\btotal_tests=(\d+)(?=\s|\||$)")
+TRIALS_RE = re.compile(r"\btrials=(\d+)(?=\s|\||$)")
+SCAN_RE = re.compile(r"\bscan_id=([A-Za-z0-9_-]+)(?=\s|\||$)")
 
 
-def total() -> tuple[int, int]:
+def total(path: Path | None = None) -> tuple[int, int]:
     """(legacy, logged) — logged prefers total_tests, falls back to trials."""
     logged = 0
-    if LOG.exists():
-        for line in LOG.read_text(encoding="utf-8").splitlines():
-            if "FAILED" in line:
+    scans: dict[str, int] = {}
+    unresolved: set[str] = set()
+    log = path or LOG
+    if log.exists():
+        for line in log.read_text(encoding="utf-8").splitlines():
+            scan = SCAN_RE.search(line)
+            if "total_tests=UNKNOWN" in line and scan:
+                unresolved.add(scan.group(1))
                 continue
-            m = TOTAL_RE.search(line) or TRIALS_RE.search(line)
+            m = TOTAL_RE.search(line) if "total_tests=" in line else TRIALS_RE.search(line)
             if m:
-                logged += int(m.group(1))
-    return LEGACY_TRIALS, logged
+                count = int(m.group(1))
+                if scan:
+                    scans[scan.group(1)] = max(scans.get(scan.group(1), 0), count)
+                    if re.search(r"(?:^|\|\s*)TRIALS_RECONCILED\b", line):
+                        key = ledger_key()
+                        if key is not None and (SIG_PREFIX not in line or verify(log, key)[0] != "ok"):
+                            raise ValueError("trial reconciliation must have a verified ledger signature")
+                        unresolved.discard(scan.group(1))
+                else:
+                    logged += count
+            elif "total_tests=" in line or re.search(r"\btrials=", line):
+                raise ValueError("ledger contains an unverifiable trial count")
+    if unresolved:
+        raise ValueError("unresolved scan trial count; append verified TRIALS_RECONCILED record")
+    return LEGACY_TRIALS, logged + sum(scans.values())
+
+
+def required_trials(scan_tests: int, path: Path | None = None) -> int:
+    """Cumulative correction input; an unverifiable count must stop the scan."""
+    if type(scan_tests) is not int or scan_tests < 0:
+        raise ValueError("total_tests must be a nonnegative integer")
+    return sum(total(path)) + scan_tests
 
 
 def ledger_key(environ=None) -> bytes | None:

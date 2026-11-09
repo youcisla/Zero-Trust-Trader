@@ -6,80 +6,58 @@ on:
   pull_request:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   test:
-    runs-on: ubuntu-latest
+    runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.12", "3.13"]
-
+        include:
+          - {os: ubuntu-latest, python-version: "3.12"}
+          - {os: ubuntu-latest, python-version: "3.13"}
+          - {os: ubuntu-latest, python-version: "3.14"}
+          - {os: windows-latest, python-version: "3.14"}
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ matrix.python-version }}
-
-      # MetaTrader5 is Windows-only and is not installed here. The test suite
-      # stubs it, so the indicators and the safety guards still run.
-      - name: Install test dependencies
-        run: python -m pip install --upgrade pip numpy pandas
-
-      - name: Syntax-check every module
-        run: python -m compileall -q . -x '(^|/)(\.git|tests)/'
-
-      - name: Unit tests
-        run: python -m unittest discover -s tests -v
-
-      # The repository is public: machine paths, the broker account number and
-      # key material must never reach it. This makes the sanitiser permanent
-      # rather than a one-time step somebody has to remember.
-      #
-      # Scans TRACKED files only (git ls-files), not the working tree: local
-      # runtime artifacts like engine_state.json legitimately contain the
-      # account number and are gitignored. What matters is what ships.
-      # ci.yml excludes itself because it necessarily contains the patterns.
-      - name: Guard against leaked paths or credentials
-        run: |
-          # Build artifacts must never be tracked: cargo embeds absolute source
-          # paths (C:\Users\<name>\.cargo\...) into target/.
-          if git ls-files | grep -q '^dashboard/target/'; then
-            echo "::error::build artifacts are tracked (dashboard/target/)"
-            exit 1
-          fi
-          # -F: fixed strings. Without it, BRE reads '\U' as a literal 'U' and
-          # the Windows-path pattern silently never matches.
-          if git ls-files | grep -v '^\.github/workflows/ci\.yml$' | xargs grep -In -F \
-               -e 'C:\Users' \
-               -e '62155913' \
-               -e 'ghp_' \
-               -e 'gho_' \
-               -e 'AppData\Roaming\mt5-mcp' ; then
-            echo "::error::personal data or key material found in the repository"
-            exit 1
-          fi
-          echo "clean"
-
-      # compileall only proves it parses. An undefined name parses fine and
-      # crashes at runtime - that is exactly how a NameError reached production
-      # twelve times in a row while CI stayed green. F821 is precisely that bug.
-      - name: Lint for undefined names
-        run: |
-          python -m pip install --quiet ruff
-          ruff check --select F821 --no-cache .
+      - name: Install pinned dependencies
+        run: python -m pip install -r requirements-dev.txt
+      - name: Guard all tracked files without printing matched values
+        env:
+          ZTT_PRIVATE_IDENTIFIER: ${{ secrets.ZTT_PRIVATE_IDENTIFIER }}
+        run: python tools/check_public.py
+      - name: Unit tests with terminal stubbed and external sockets blocked
+        run: python tools/run_tests.py
+      - name: Correctness lint
+        run: python -m ruff check --no-cache .
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.14'
+        with:
+          node-version: "26.12.1"
+      - name: Dashboard state and transport fixtures
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.14'
+        run: node --test dashboard/tests/ui.test.cjs
+      - name: Audit installed Python dependencies
+        run: python -m pip_audit --progress-spinner off
+      - name: Validate release build from tracked source
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.14'
+        run: python tools/build_public.py --check
 
   rust:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
         with:
-          components: clippy
-
-      - name: Build and lint the dashboard
+          toolchain: "1.96.0"
+          components: clippy,rustfmt
+      - name: Build, test and lint locked dashboard dependencies
         run: |
-          cargo build --release --manifest-path dashboard/Cargo.toml
-          cargo test --release --manifest-path dashboard/Cargo.toml
-          cargo clippy --manifest-path dashboard/Cargo.toml -- -D warnings
+          cargo build --release --locked --manifest-path dashboard/Cargo.toml
+          cargo test --locked --manifest-path dashboard/Cargo.toml
+          cargo clippy --locked --manifest-path dashboard/Cargo.toml -- -D warnings

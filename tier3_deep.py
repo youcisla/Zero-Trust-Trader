@@ -1,12 +1,12 @@
-"""TIER 3 — deep Time Machine on the Tier 2 shortlist, two independent gates.
+"""TIER 3 — deep Time Machine on the Tier 2 shortlist, two required gates.
 
 A candidate is only a survivor if it clears BOTH:
 
-  1. the Bonferroni-corrected z for the size of the scan that produced it
-     (analytic; assumes independence across tests, which is generous), and
-  2. the random-entry permutation test (resampling; keeps the instrument's own
-     volatility clustering and barrier geometry, so it absorbs the correlation
-     between candidates that the analytic z cannot see).
+   1. the corrected statistic for cumulative historical and current trials, and
+   2. the random-entry permutation test on the same instrument, costs and exits.
+
+Bonferroni does not require independent comparisons; it relies on calibrated
+individual tests. Shared data do not make these two gates independent.
 
 Survivors are then de-duplicated by correlation: two instruments above --corr-max
 are essentially one trade, and holding both doubles risk without doubling signal.
@@ -27,12 +27,13 @@ PERMUTATIONS = 1000
 import argparse
 import json
 import math
+import re
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-import numpy as np
-
 import marketdata as md
+import process_lock
 import timemachine_mt5 as tm
 
 HERE = Path(__file__).resolve().parent
@@ -63,6 +64,7 @@ def log_run(src: dict, payload: dict) -> None:
             f"passed_both={len(payload['passed_both_gates'])} "
             f"trials={payload['trials_declared']} "
             f"cumulative={payload.get('trials_cumulative', payload['trials_declared'])} "
+            f"scan_id={payload['scan_id']} "
             f"permutations={payload['permutations']} | {verdict}")
     # Sign the row into the hash chain: an edited or deleted line breaks
     # verification, which status.py reports loudly. No key = unsigned, stated
@@ -90,12 +92,13 @@ def dedupe(survivors: list[dict], corr_max: float,
         clash = None
         for k in kept:
             rho = correlation(cand["symbol"], k["symbol"])
-            if rho is not None and abs(rho) > corr_max:
+            if rho is None or not math.isfinite(rho) or abs(rho) > corr_max:
                 clash = (k["symbol"], rho)
                 break
         if clash:
             dropped.append({"symbol": cand["symbol"], "kept_instead": clash[0],
-                            "correlation": round(clash[1], 3),
+                            "correlation": round(clash[1], 3) if clash[1] is not None and math.isfinite(clash[1]) else None,
+                            "reason": "correlated or unverifiable",
                             "gate": cand["significance"].get("gate", "z"),
                             stat_key: cand["significance"][stat_key]})
         else:
@@ -103,9 +106,10 @@ def dedupe(survivors: list[dict], corr_max: float,
     return kept, dropped
 
 
-def main() -> int:
+def _main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--tier2", default=str(TIER2))
+    ap.add_argument("--scan-id", default=None)
     ap.add_argument("--tf", default="M15")
     ap.add_argument("--horizon", type=int, default=32,
                     help="bars allowed before a trade exits at market; 32 M15 bars = 8h, "
@@ -118,7 +122,7 @@ def main() -> int:
                     help="UTC time at which an open test trade is closed (default 17:00)")
     ap.add_argument("--trials", type=int, default=None)
     ap.add_argument("--bars", type=int, default=15000,
-                    help="H1 bars of history for the deep test (G1 needs n>=300 trades)")
+                    help="closed bars of the selected timeframe for the deep test")
     ap.add_argument("--replays", type=int, default=10000)
     ap.add_argument("--permutations", type=int, default=PERMUTATIONS,
                     choices=[PERMUTATIONS],
@@ -141,22 +145,33 @@ def main() -> int:
 
     src = json.loads(Path(a.tier2).read_text())
     top = src.get("top", [])
+    scan_id = a.scan_id or uuid.uuid4().hex
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", scan_id):
+        print("invalid --scan-id")
+        return 1
+    if a.scan_id is not None and src.get("scan_id") != a.scan_id:
+        print("Tier 2 scan identity does not match --scan-id; refusing stale evidence")
+        return 1
     # Two numbers that must never be conflated:
     #   scan_tests - hypotheses THIS scan tested; this is what the ledger adds
     #   trials     - cumulative hypotheses ever tested; this sets the gate
     # Logging the cumulative made trials_total sum it again on the next run, so
     # the bar doubled every scan until nothing could clear it.
-    scan_tests = max(
-        int(src.get("total_tests") or (src.get("symbols_tested", 1)
-                                       * len(src.get("strategies", ["donchian"])))),
-        len(top))
-    trials = a.trials or scan_tests
-    if a.trials is None:
-        # Hand-run tier3 must not silently gate on this scan alone.
+    scan_tests = src.get("total_tests")
+    if type(scan_tests) is not int or scan_tests < len(top):
+        print("Tier 2 total_tests must be a nonnegative integer covering the shortlist")
+        return 1
+    try:
         import trials_total
-        _legacy, _logged = trials_total.total()
-        trials = max(scan_tests, _legacy + _logged)
-        print(f"--trials not given; using the ledger total ({trials})")
+        minimum = trials_total.required_trials(scan_tests)
+    except (OSError, ValueError, RuntimeError) as exc:
+        print(f"cannot establish cumulative trials: {exc}")
+        return 1
+    if a.trials is not None and a.trials < minimum:
+        print(f"--trials understates authoritative cumulative count ({minimum}); refusing")
+        return 1
+    trials = minimum if a.trials is None else a.trials
+    zc = tm.bonferroni_z(trials)
     if not top:
         # No candidates is a normal outcome, not a failure. It must still be
         # recorded: the scan tested scan_tests hypotheses even though none
@@ -165,13 +180,17 @@ def main() -> int:
         # the bar weaker than it claims to be. Exit 0 and log the row.
         print("Tier 2 produced no candidates.")
         print(STAND_DOWN)
-        log_run(src, {"results": [], "passed_both_gates": [], "survivors": [],
-                      "stood_down": True, "trials_declared": scan_tests,
-                      "trials_cumulative": trials,
-                      "permutations": a.permutations})
+        payload = {"generated_utc": md.now_utc(), "scan_id": scan_id,
+                   **tm.source_provenance(),
+                   "results": [], "passed_both_gates": [], "survivors": [],
+                   "correlation_filtered": [], "corr_max": a.corr_max,
+                   "stood_down": True, "trials_declared": scan_tests,
+                   "trials_cumulative": trials, "z_crit_corrected": zc,
+                   "permutations": a.permutations}
+        OUT.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+        log_run(src, payload)
         return 0
 
-    zc = tm.bonferroni_z(trials)
     # These were two different numbers printed as one sentence: the cumulative
     # count went out as "declaring 8952 tests (62 symbols x 3 strategies)", and
     # 62 x 3 is 186. Anyone reading the log would think the accounting was
@@ -221,7 +240,9 @@ def main() -> int:
     kept, dropped = (dedupe(survivors, a.corr_max, stat_key)
                      if len(survivors) > 1 else (survivors, []))
 
-    payload = {"generated_utc": md.now_utc(), "trials_declared": scan_tests,
+    payload = {"generated_utc": md.now_utc(), "scan_id": scan_id,
+               **tm.source_provenance(),
+               "trials_declared": scan_tests,
                "trials_cumulative": trials,
                "z_crit_corrected": zc, "permutations": a.permutations,
                "corr_max": a.corr_max, "results": results,
@@ -258,7 +279,7 @@ def main() -> int:
     if dropped:
         print("=== correlation filter (abs(corr) > %.2f) ===" % a.corr_max)
         for d in dropped:
-            print(f"  dropped {d['symbol']}: corr {d['correlation']:+.2f} with "
+            print(f"  dropped {d['symbol']}: corr {d['correlation']} with "
                   f"{d['kept_instead']} (higher z)")
     print("=== SURVIVORS (cleared z AND permutation, de-correlated) ===")
     for n, d in enumerate(kept, 1):
@@ -267,6 +288,25 @@ def main() -> int:
               f"avgR {h['avg_R']:+.3f}  maxDD {h['max_drawdown_R']:+.2f}R  n={h['n_decided']}")
     print(f"wrote {OUT.name}")
     return 0
+
+
+def main() -> int:
+    if (HERE / ".ztt-maintenance").exists():
+        print("maintenance marker present; refusing research")
+        return 1
+    lock = HERE / "funnel.lock"
+    owned = not process_lock.parent_holds(lock)
+    if owned and not process_lock.acquire(lock, 120 * 60):
+        print("another research process holds funnel.lock")
+        return 1
+    try:
+        return _main()
+    finally:
+        try:
+            md.release_auto_selected()
+        finally:
+            if owned:
+                process_lock.release(lock)
 
 
 if __name__ == "__main__":

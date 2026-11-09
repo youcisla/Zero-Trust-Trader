@@ -1,0 +1,30 @@
+{
+  "verified_utc_date": "2026-11-09",
+  "method": "Byte comparison with the named published npm package archive; scripts unchanged",
+  "assets": [
+    {
+      "file": "react.production.min.js",
+      "package": "react",
+      "version": "18.3.1",
+      "source": "https://registry.npmjs.org/react/-/react-18.3.1.tgz",
+      "sha256": "d949f1c3687aedadcedac85261865f29b17cd273997e7f6b2bfc53b2f9d4c4dd",
+      "license": "LICENSE.react.txt"
+    },
+    {
+      "file": "react-dom.production.min.js",
+      "package": "react-dom",
+      "version": "18.3.1",
+      "source": "https://registry.npmjs.org/react-dom/-/react-dom-18.3.1.tgz",
+      "sha256": "35f4f974f4b2bcd44da73963347f8952e341f83909e4498227d4e26b98f66f0d",
+      "license": "LICENSE.react-dom.txt"
+    },
+    {
+      "file": "htm.umd.js",
+      "package": "htm",
+      "version": "3.1.1",
+      "source": "https://registry.npmjs.org/htm/-/htm-3.1.1.tgz",
+      "sha256": "7a31776e04bd4afde0d4308177d26f377716fcf7e4bd70be590746d6aa594f08",
+      "license": "LICENSE.htm.txt"
+    }
+  ]
+}
