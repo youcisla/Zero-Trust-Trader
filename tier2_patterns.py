@@ -219,6 +219,10 @@ def main() -> int:
         "corr_max": a.corr_max,
         "dedupe_applied": not a.no_dedupe,
         "top": top,
+        # Without this, a reader cannot tell a capped shortlist from a lost one:
+        # nine triggering less one dedupe left eight, the file listed six, and
+        # the desk reported that as a contradiction. It is --top.
+        "top_n": a.top,
         "deduped": dropped,
         "all_hits": hits[:50],
     }

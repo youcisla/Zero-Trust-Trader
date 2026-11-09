@@ -41,6 +41,7 @@ from xml.etree import ElementTree
 DEFAULT_MODEL = "deepseek-flash"
 RULES = "DESK.md"
 JOURNAL = "desk_journal.jsonl"
+DIGEST_LIMIT = 6000   # characters of each artifact the model is shown
 DEFAULT_URL = "https://api.deepseek.com/chat/completions"
 NOTES = "agent_notes.json"
 
@@ -210,7 +211,16 @@ def digest(root: Path) -> str:
         p = root / name
         if p.exists():
             try:
-                parts.append(f"{name}:\n" + json.dumps(json.loads(p.read_text(encoding="utf-8")), indent=1)[:6000])
+                blob = json.dumps(json.loads(p.read_text(encoding="utf-8")), indent=1)
+                if len(blob) > DIGEST_LIMIT:
+                    # Say it out loud. A silent clip made the model report "the
+                    # file is truncated mid-GBPCAD" about a file that was whole:
+                    # it invented a contradiction out of our own read limit.
+                    parts.append(f"{name} (the desk shows the first {DIGEST_LIMIT} of "
+                                 f"{len(blob)} characters - the file itself is complete):\n"
+                                 + blob[:DIGEST_LIMIT])
+                else:
+                    parts.append(f"{name}:\n" + blob)
             except (OSError, json.JSONDecodeError):
                 parts.append(f"{name}: present but unreadable")
     eng = root / "engine_state.json"

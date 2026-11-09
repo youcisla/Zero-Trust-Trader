@@ -315,5 +315,35 @@ class TestFailureIsNotSuccess(unittest.TestCase):
         self.assertEqual(("partial" if errored and accepted else "bad"), "partial")
 
 
+class TestDigestSaysWhenItClips(unittest.TestCase):
+    """A read limit must never read as a broken file.
+
+    tier3_results.json is 12 KB; digest() shows the first 6000 characters. The
+    model read that clip, saw it end mid-record, and reported "tier3_results.json
+    is truncated mid-GBPCAD" - a contradiction that existed only in our own
+    output window. The digest now says which it is.
+    """
+
+    def setUp(self):
+        self.dir = TemporaryDirectory()
+        self.root = Path(self.dir.name)
+        self.addCleanup(self.dir.cleanup)
+
+    def test_a_clipped_artifact_is_labelled_with_its_real_size(self):
+        big = {"results": [{"symbol": f"S{i}", "pad": "x" * 60} for i in range(400)]}
+        (self.root / "tier3_results.json").write_text(json.dumps(big), encoding="utf-8")
+        text = desk.digest(self.root)
+        self.assertIn("the desk shows the first", text)
+        self.assertIn("the file itself is complete", text)
+        self.assertIn(str(len(json.dumps(big, indent=1))), text)
+
+    def test_a_small_artifact_is_passed_whole_without_a_warning(self):
+        small = {"results": [{"symbol": "BTCUSD"}]}
+        (self.root / "tier3_results.json").write_text(json.dumps(small), encoding="utf-8")
+        text = desk.digest(self.root)
+        self.assertIn("tier3_results.json:", text)
+        self.assertNotIn("the desk shows the first", text)
+
+
 if __name__ == "__main__":
     unittest.main()

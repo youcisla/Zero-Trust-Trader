@@ -10,7 +10,7 @@ Kept from the original:
     for H4, weekday for D1, half-hour slot for M30/M15).
   * stop is checked before target inside every bar; a bar touching both counts
     as the stop (conservative).
-  * outcomes target / stop / neither, R = +rr / -1 / mark-to-market.
+  * outcomes target / stop / session / horizon / neither, R = +rr / -1 / mark-to-market.
   * the history leg: the same rule on every past occurrence, real bars.
   * the verdict: target share of decided trades vs break-even 1/(1+R).
 
@@ -591,6 +591,23 @@ def permutation_test(bars, trades, k_atr, rr, horizon, permutations=1000, seed=1
     }
 
 
+def _outcome_counts(trades: list[dict]) -> dict:
+    """Every trade lands in exactly one bucket, so the buckets sum to occurrences.
+
+    _resolve_live can end a trade four ways - stop, target, session close, or
+    the horizon running out - and the history block used to publish only three.
+    A reader (or the desk's chief) then found 271 occurrences and 248 accounted
+    for, and correctly called it a contradiction. Naming the buckets fixes the
+    arithmetic instead of explaining it.
+    """
+    keys = ("target", "stop", "session", "horizon", "neither")
+    c = {k: 0 for k in keys}
+    for t in trades:
+        o = t.get("outcome")
+        c[o if o in c else "neither"] += 1
+    return c
+
+
 def analyse(symbol, tf="H1", strategy="donchian", don_n=20, ema_fast=50, ema_slow=200,
             atr_k=1.5, rr=1.5, horizon=None, sides="both", bars_n=5000,
             replays=10000, seed=19, window=2, pool_bars=1500, n_tests=1,
@@ -684,9 +701,7 @@ def analyse(symbol, tf="H1", strategy="donchian", don_n=20, ema_fast=50, ema_slo
         "bars": int(len(bars["c"])), "span_days": round(md.span_days(bars), 1),
         "history": {
             "occurrences": len(trades),
-            "target": sum(1 for t in trades if t["outcome"] == "target"),
-            "stop": sum(1 for t in trades if t["outcome"] == "stop"),
-            "neither": sum(1 for t in trades if t["outcome"] == "neither"),
+            **_outcome_counts(trades),
             "n_decided": len(rs),
             "win_rate": round(win, 4),
             "avg_R": round(statistics.mean(rs), 3),

@@ -24,7 +24,7 @@ python -m compileall -q . -x '(^|/)(\.git|tests)/'
 python -m unittest discover -s tests -v
 ```
 
-105 tests, no trading terminal required — MetaTrader5 is stubbed in
+133 tests, no trading terminal required — MetaTrader5 is stubbed in
 `tests/_mt5stub.py`, so the indicator maths and the safety guards run anywhere.
 The dashboard has three Rust tests of its own: `cd dashboard && cargo test`.
 CI runs both suites on Python 3.11–3.13, plus `cargo build`, `cargo test` and

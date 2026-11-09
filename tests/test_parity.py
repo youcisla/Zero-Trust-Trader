@@ -137,6 +137,31 @@ class TestLiveExitRules(unittest.TestCase):
         self.assertLess(tm._z_from([{"R": -1.0, "outcome": "stop"}] * 20, 1.5, 0.4), 0.0)
 
 
+
+class TestOutcomeBucketsAddUp(unittest.TestCase):
+    """Every trade must land in exactly one bucket.
+
+    The history block published target / stop / neither only, so a real scan
+    showed occurrences 271 against 248 accounted for and the desk's chief
+    reported, correctly, that the components did not sum. session and horizon
+    exits were silently missing.
+    """
+
+    def test_every_outcome_is_counted_once(self):
+        from timemachine_mt5 import _outcome_counts
+        trades = ([{"outcome": "target"}] * 2 + [{"outcome": "stop"}] * 3
+                  + [{"outcome": "session"}] * 4 + [{"outcome": "horizon"}] * 5
+                  + [{"outcome": "neither"}] * 1)
+        c = _outcome_counts(trades)
+        self.assertEqual(sum(c.values()), len(trades))
+        self.assertEqual(c, {"target": 2, "stop": 3, "session": 4, "horizon": 5, "neither": 1})
+
+    def test_an_unknown_or_absent_outcome_is_not_silently_dropped(self):
+        from timemachine_mt5 import _outcome_counts
+        c = _outcome_counts([{"outcome": "weird"}, {}])
+        self.assertEqual(sum(c.values()), 2)
+        self.assertEqual(c["neither"], 2)
+
 if __name__ == "__main__":
     unittest.main()
 

@@ -98,7 +98,7 @@ size was not "too small to tell"; it was hiding nothing.
 | --- | --- | --- | --- |
 | 1 | **Universe filter** — live market, spread ≤ 15% of ATR, ≥ 160 days of history | this repo | trading an instrument that is shut, illiquid, or newly listed |
 | 2 | **Correlation dedupe** — collapse candidates above \|ρ\| 0.7 | this repo | `AMD.US-24` vs `AMD.US-PERP` measure **+0.997**: the same bet billed twice |
-| 3 | **Corrected significance** — Bonferroni z, or the *t* of mean R under `--t-gate` | this repo | the scan itself — 8,616 hypotheses tried means the bar is 4.53, not 1.96 |
+| 3 | **Corrected significance** — Bonferroni z, or the *t* of mean R under `--t-gate` | this repo | the scan itself — 9,081 hypotheses tried means the bar is 4.54, not 1.96 |
 | 4 | **Permutation null** — random entries, same fills, costs and exits | this repo | autocorrelation and barrier geometry that the analytic z assumes away |
 | 5 | **Human `APPROVED`** | a human | the agent's own judgement |
 | 6 | **Bridge consent gate** | a separate process | a compromised or confused agent |
@@ -272,7 +272,7 @@ scan.
 | 525 (the aborted wide run) | 3.90 |
 | 1,791 (one full-universe run) | 4.19 |
 | 5,388 | 4.43 |
-| **8,616 (today)** | **4.53** |
+| **9,081 (today)** | **4.54** |
 | 40,388 (a week at 5,000/day) | 4.85 |
 | 155,388 (a month at 5,000/day) | 5.11 |
 
@@ -283,10 +283,10 @@ rather than the 7,200 a naive 12-hour expansion would.
 
 ```bash
 $ python trials_total.py
-8616
+9081
 ```
 
-That number is what feeds `honest_backtest check trades.csv --trials 8616`.
+That number is what feeds `honest_backtest check trades.csv --trials 9081`.
 Under-counting trials is the classic way a backtest lies; this repository refuses
 to count only the runs that looked good.
 
@@ -349,7 +349,7 @@ see `docs/BOTLAB_COMMAND.txt` for the ledger/backtest workflow).
 
 ## Tests
 
-105 tests, **no trading terminal required** — `MetaTrader5` is Windows-only, so
+133 tests, **no trading terminal required** — `MetaTrader5` is Windows-only, so
 `tests/_mt5stub.py` stubs it and the indicator maths and safety guards run
 anywhere, including Linux CI:
 
