@@ -217,7 +217,12 @@ as a green "no data", and both were fixed here after being caught on screen.
 | `GET /architecture` | the generated stage map (Archify, embedded at build time) |
 | `GET /api/report/latest` | the newest per-scan HTML report (`reports/run-*.html`) |
 
-### Read the argument, not just the verdict
+#> **Can a 50 EUR account become 1,000 EUR in a month?** `docs/SIZE-AND-RUIN.md`
+> works it out with the broker's own numbers, the ruin distribution of the best
+> measured edge, and the published statistics on day traders. Answer: no, and the
+> reason is arithmetic rather than a missing strategy.
+
+## Read the argument, not just the verdict
 
 Every scan writes one page to `reports/run-<utc>.html` — the same page the
 dashboard's **last report ↗** link opens. It lists each candidate with both

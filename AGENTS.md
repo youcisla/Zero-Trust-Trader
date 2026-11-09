@@ -55,6 +55,7 @@ dashboard/                   read-only viewer (Rust), tails files, never writes
 | `trials_total.py` | cumulative trial count (feeds the significance bar) |
 | `status.py` | read-only diagnostic: terminal, policy, tasks, universe |
 | `dashboard/` | Rust read-only viewer; tails files, never mutates state |
+| `tools/` | read-only diagnostics: broker arithmetic, sizing dispersion, ruin simulation. They answer feasibility questions and never place an order |
 
 ### One tree
 
@@ -129,6 +130,14 @@ setups" — that raises the bar for every future scan too.
 broken and the gate is judging each scan as if it were the first.
 
 ---
+
+### Feasibility, in one file
+
+`docs/SIZE-AND-RUIN.md` answers "can this account be multiplied by trading?" with
+arithmetic: the 19x invariant, the broker's real limits at 1:30, the ruin
+distribution of the best measured edge, and the population statistics. Read it
+before proposing a return target. The three `tools/` scripts reproduce every
+number in it.
 
 ## 4. Hard rules for agents
 
