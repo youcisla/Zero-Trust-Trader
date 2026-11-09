@@ -1,0 +1,127 @@
+{
+  "generated_utc": "2026-11-09T19:10:00Z",
+  "timeframe": "M15",
+  "strategies": [
+    "donchian",
+    "rsi",
+    "bollinger"
+  ],
+  "note": "crypto research probe: every family on every crypto symbol, side=both, regardless of whether a setup fired tonight. Counted as 12 trials.",
+  "symbols_in": 4,
+  "symbols_tested": 4,
+  "strategies_tested": 3,
+  "total_tests": 12,
+  "triggering": null,
+  "top_n": 12,
+  "deduped": 0,
+  "top": [
+    {
+      "symbol": "BTCUSD",
+      "class": "Crypto",
+      "strategy": "donchian",
+      "side": "both",
+      "strength": 0.0,
+      "score": 0.0,
+      "spread_pct_atr": 0.664
+    },
+    {
+      "symbol": "BTCUSD",
+      "class": "Crypto",
+      "strategy": "rsi",
+      "side": "both",
+      "strength": 0.0,
+      "score": 0.0,
+      "spread_pct_atr": 0.664
+    },
+    {
+      "symbol": "BTCUSD",
+      "class": "Crypto",
+      "strategy": "bollinger",
+      "side": "both",
+      "strength": 0.0,
+      "score": 0.0,
+      "spread_pct_atr": 0.664
+    },
+    {
+      "symbol": "BCHUSD",
+      "class": "Crypto",
+      "strategy": "donchian",
+      "side": "both",
+      "strength": 0.0,
+      "score": 0.0,
+      "spread_pct_atr": 4.264
+    },
+    {
+      "symbol": "BCHUSD",
+      "class": "Crypto",
+      "strategy": "rsi",
+      "side": "both",
+      "strength": 0.0,
+      "score": 0.0,
+      "spread_pct_atr": 4.264
+    },
+    {
+      "symbol": "BCHUSD",
+      "class": "Crypto",
+      "strategy": "bollinger",
+      "side": "both",
+      "strength": 0.0,
+      "score": 0.0,
+      "spread_pct_atr": 4.264
+    },
+    {
+      "symbol": "NERUSD",
+      "class": "Crypto",
+      "strategy": "donchian",
+      "side": "both",
+      "strength": 0.0,
+      "score": 0.0,
+      "spread_pct_atr": 2.514
+    },
+    {
+      "symbol": "NERUSD",
+      "class": "Crypto",
+      "strategy": "rsi",
+      "side": "both",
+      "strength": 0.0,
+      "score": 0.0,
+      "spread_pct_atr": 2.514
+    },
+    {
+      "symbol": "NERUSD",
+      "class": "Crypto",
+      "strategy": "bollinger",
+      "side": "both",
+      "strength": 0.0,
+      "score": 0.0,
+      "spread_pct_atr": 2.514
+    },
+    {
+      "symbol": "HYPEUSD",
+      "class": "Crypto",
+      "strategy": "donchian",
+      "side": "both",
+      "strength": 0.0,
+      "score": 0.0,
+      "spread_pct_atr": 1.761
+    },
+    {
+      "symbol": "HYPEUSD",
+      "class": "Crypto",
+      "strategy": "rsi",
+      "side": "both",
+      "strength": 0.0,
+      "score": 0.0,
+      "spread_pct_atr": 1.761
+    },
+    {
+      "symbol": "HYPEUSD",
+      "class": "Crypto",
+      "strategy": "bollinger",
+      "side": "both",
+      "strength": 0.0,
+      "score": 0.0,
+      "spread_pct_atr": 1.761
+    }
+  ]
+}
