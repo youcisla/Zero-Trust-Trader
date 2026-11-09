@@ -157,3 +157,55 @@ Only four things, and three of them are not trading:
 No gate was lowered, no size was raised, `AutoTrading` stayed off and
 `auto_approve_notional` stayed at its value. The funnel continues to stand down
 when it finds no edge, which is the correct outcome under this arithmetic.
+
+---
+
+## "Can we guarantee an 80% win rate?"
+
+No — but we can *have* one, and the cost is the whole point.
+
+Win rate is not a skill score. It is a dial you set with the distance to the
+target, and it moves against the payoff:
+
+    breakeven win rate = 1 / (1 + rr)
+
+At rr = 0.25 (target a quarter of the stop distance) a losing strategy wins 80%
+of its trades. Measured on 15,000 M15 bars, 1.5xATR stops, spread charged, the
+target actually modelled (`live_exits=False`):
+
+| symbol | rr | trades | win rate | breakeven | avg R |
+|---|---|---|---|---|---|
+| EURUSD | 0.25 | 819 | 69.5% | 80.0% | −0.131 |
+| EURUSD | 0.50 | 723 | 57.1% | 66.7% | −0.140 |
+| EURUSD | 1.00 | 568 | 44.4% | 50.0% | −0.111 |
+| EURUSD | 1.50 | 498 | 34.9% | 40.0% | −0.143 |
+| EURUSD | 3.00 | 382 | 29.3% | 25.0% | −0.001 |
+| BTCUSD | 0.25 | 604 | **78.6%** | 80.0% | −0.015 |
+| BTCUSD | 0.50 | 572 | 65.6% | 66.7% | −0.008 |
+| BTCUSD | 1.00 | 487 | 49.3% | 50.0% | −0.009 |
+| BTCUSD | 1.50 | 419 | 38.4% | 40.0% | −0.053 |
+| BCHUSD | 0.25 | 735 | 75.1% | 80.0% | −0.060 |
+| BCHUSD | 1.50 | 483 | 39.8% | 40.0% | −0.022 |
+
+Read the two columns that matter. The win rate follows the dial obediently —
+78.6% is right there, one parameter away. And at **every** setting the result
+sits 1–10 points *below* its own breakeven line. The strategy is not
+mis-tuned; it is tracking a fair coin and paying the spread to flip it.
+
+That is the shape of the problem. There is no rr that makes 80% profitable,
+because 80% and profit are not the same axis. Moving the target closer raises
+the hit rate and shrinks the payoff by the same step; the product is what the
+spread eats.
+
+**Where "80% guaranteed" actually comes from.** Systems that advertise 90%+ are
+usually grids or martingales: keep adding to a loser until the position comes
+back, and count that as a win. The win rate is real. So is the day the sequence
+does not come back, which erases a year of them. The 19x invariant at the top of
+this file is the same arithmetic from the other side: the deeper you let a loser
+run, the shorter the distance from the account to zero.
+
+**What can actually be controlled:** expectancy per trade (measured, with a bar
+that survives 9,000 comparisons), cost per trade (spread — EURUSD's is 16% of
+its M15 ATR), and the fraction of the account risked per trade. A guarantee of
+win rate is not among them, and any system that offers one has moved the risk
+somewhere you cannot see it.
