@@ -16,8 +16,6 @@ measures the difference on the same bars, so the choice is made with numbers.
 
 Read-only: fetches bars, computes, prints. Places nothing.
 """
-import json
-import math
 import os
 import statistics
 import sys
@@ -81,7 +79,6 @@ def main(symbols):
             print(f"{sym}: no usable bars")
             continue
         spread_px = float(info.spread) * float(info.point)
-        atr = md.atr(bars["h"], bars["l"], bars["c"], 14)
         for label, live in (("trail only", True), ("trail + rr TP", False)):
             trades = tm.scan_donchian(bars, 20, ATR_K, RR, HORIZON, "both",
                                       spread=spread_px, live_exits=live,
@@ -102,7 +99,6 @@ def main(symbols):
             print(f"  {a['symbol']:<9} avgR {a['avgR']:+.3f} -> {b['avgR']:+.3f} "
                   f"({b['avgR']-a['avgR']:+.3f})   win {a['win']*100:.1f}% -> "
                   f"{b['win']*100:.1f}%   target hits {a['target']} -> {b['target']}")
-    print(json.dumps(out, indent=1)[:0] or "")
 
 
 if __name__ == "__main__":

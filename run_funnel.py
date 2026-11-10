@@ -83,6 +83,8 @@ def _int_env(name: str) -> int:
         return 0
 
 
+# Import-time mirror, kept because `build_public.py` rewrites this exact line when
+# it sanitises a copy of the tree. Pre-flight does NOT read it (see below).
 EXPECTED_LOGIN = _int_env("MT5_EXPECTED_LOGIN")
 EXPECTED_SERVER_SUBSTR = "demo"
 _SCAN_ID = ""
@@ -100,6 +102,9 @@ def preflight_check(term, acct) -> list[str]:
         problems.append("account_info() is None — not logged in")
     else:
         raw_pin = os.environ.get("MT5_EXPECTED_LOGIN", "")
+        # Read at call time, never from the import-time constant: the launcher, a
+        # shell export and a `.env` all have to apply without a restart, and an
+        # unset pin must refuse rather than inherit whatever import saw.
         expected = _int_env("MT5_EXPECTED_LOGIN")
         if raw_pin and not raw_pin.isdecimal():
             problems.append("MT5_EXPECTED_LOGIN is not a numeric account id — refusing")

@@ -65,3 +65,18 @@ See [incident and recovery procedure](docs/OPERATIONS.md) for evidence handling.
 - The third-party MCP bridge itself — report upstream
 - Losses resulting from trading decisions; see `DISCLAIMER.md`
 - Broker-side behaviour, execution quality or slippage
+
+## Supported versions
+
+| Version | Supported |
+| --- | --- |
+| latest commit on `main` | yes — actively maintained |
+| tagged releases | none exist yet |
+
+Acknowledgement target: 7 days. Fixes are prioritised by the P1/P2 definitions in
+`docs/audit-2026-11-09/README.md`. The private vulnerability reporting channel
+above only works while it stays enabled in the repository settings, which cannot
+be verified from the tree.
+
+CODEOWNERS names the guardrail files, but it only bites when branch protection
+requires a review — also a repository setting, not a fact this file can assert.

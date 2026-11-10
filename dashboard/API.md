@@ -156,3 +156,10 @@ Notes that matter for a client:
   condition started; the message carries the age.
 - `signed` reports only the presence of a `sig=` segment. This process holds no
   key and cannot verify the chain; `status.py` does that.
+
+## Environment
+
+`ZTT_ROOT` points the server at the engine's tree (set by `start_dashboard.bat`;
+the raw `.exe` would inherit `System32`). `ZTT_PYTHON` overrides the interpreter
+used to spawn a scan — `py -3` on Windows, `python3` elsewhere. Neither is a
+setting the UI can change.

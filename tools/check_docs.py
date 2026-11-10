@@ -14,64 +14,87 @@ Exit 0 when everything agrees, 1 when something does not. Numbers that come from
 runtime artifacts (the universe, the tier 1 return) are checked only when those
 artifacts are present: a fresh clone does not have them, and a missing file is
 not a mismatch.
+
+    python tools/check_docs.py            # the tree this file lives in
+    python tools/check_docs.py --root DIR # a fixture, for the self-test
 """
 from __future__ import annotations
 
+import argparse
+import ast
 import json
-import re
 import sys
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parents[1]
-DIAGRAM = HERE / "docs" / "architecture.archify.json"
-README = HERE / "README.md"
-LIQUID = HERE / "liquid_universe.json"
-MEMOIRE = HERE.parent / "MemoireIPSSI" / "TradeBot_Memoire" / "05_memoire_long.md"
-
-FAMILIES = 3  # donchian, rsi, bollinger — the 13:00-17:00 UTC matrix
-failures: list[str] = []
-notes: list[str] = []
+DIAGRAM = Path("docs") / "architecture.archify.json"
+README = Path("README.md")
+LIQUID = Path("liquid_universe.json")
+MEMOIRE = Path("../MemoireIPSSI/TradeBot_Memoire/05_memoire_long.md")
 
 
-def fail(msg: str) -> None:
-    failures.append(msg)
-
-
-def note(msg: str) -> None:
-    notes.append(msg)
-
-
-def load(path: Path) -> dict | None:
+def load(path: Path):
     try:
         return json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return None
 
 
-def newest_tier1() -> Path | None:
-    files = sorted(HERE.glob("tier1_universe_*.json"), key=lambda p: p.stat().st_mtime)
-    return files[-1] if files else None
+def newest_tier1(root: Path) -> Path | None:
+    """Same rule as `make_liquid.newest_universe`: newest by name, and non-empty.
+
+    An empty tier1 artifact must never shadow a full one, so a stamped file with
+    `symbols: []` is skipped rather than selected.
+    """
+    files = sorted(root.glob("tier1_universe_*.json"), key=lambda p: p.name, reverse=True)
+    for path in files:
+        doc = load(path)
+        if doc and doc.get("symbols"):
+            return path
+    return None
 
 
-def main() -> int:
-    diagram = load(DIAGRAM)
+def family_count(root: Path) -> int:
+    """How many families the matrix scans, read from the source.
+
+    Not imported: `tier2_patterns` pulls `marketdata`, which pulls MetaTrader5,
+    which does not exist off Windows. A count that CI cannot compute is a count
+    that drifts.
+    """
+    try:
+        tree = ast.parse((root / "tier2_patterns.py").read_text(encoding="utf-8"))
+    except (OSError, SyntaxError):
+        return 3
+    for node in tree.body:
+        if isinstance(node, ast.Assign) and any(
+                getattr(t, "id", "") == "STRATEGIES" for t in node.targets):
+            try:
+                return len(ast.literal_eval(node.value))
+            except ValueError:
+                break
+    return 3
+
+
+def check(root: Path) -> tuple[list[str], list[str]]:
+    failures: list[str] = []
+    notes: list[str] = []
+
+    diagram = load(root / DIAGRAM)
     if diagram is None:
-        fail(f"{DIAGRAM.name} is missing or not JSON — the architecture map is part of the tree")
-        return report()
-
+        failures.append(f"{DIAGRAM.name} is missing or not JSON — the map is part of the tree")
+        return failures, notes
     components = {c.get("id"): c for c in diagram.get("components") or []}
 
-    # 1. Every file the map claims to describe must still exist. A rename that
-    #    leaves the map pointing at the old path makes the map fiction.
+    # 1. Every file the map claims to describe must still exist.
     for cid, comp in components.items():
         for src in comp.get("sources") or []:
             path = src.get("path")
-            if path and not (HERE / path).exists() and not (HERE.parent / path).exists():
-                fail(f"architecture map: component '{cid}' cites '{path}', which does not exist")
+            if path and not (root / path).exists() and not (root.parent / path).exists():
+                failures.append(f"architecture map: component '{cid}' cites '{path}', which does not exist")
 
     # 2. Numbers that come from the artifacts, when the artifacts are here.
-    liquid = load(LIQUID)
-    t1 = newest_tier1()
+    liquid = load(root / LIQUID)
+    t1 = newest_tier1(root)
     tier1_doc = load(t1) if t1 else None
 
     if liquid and tier1_doc:
@@ -82,44 +105,49 @@ def main() -> int:
         tag = (components.get("tier1") or {}).get("tag") or ""
         want = f"{broker:,} → {universe}"
         if want not in tag:
-            fail(f"architecture map: tier1 tag is '{tag}', the artifacts say '{want}'")
+            failures.append(f"architecture map: tier1 tag is '{tag}', the artifacts say '{want}'")
 
         ltag = (components.get("liquid") or {}).get("tag") or ""
         if shares is not None and f"{shares} shares" not in ltag:
-            fail(f"architecture map: liquid tag is '{ltag}', the universe has {shares} shares")
+            failures.append(f"architecture map: liquid tag is '{ltag}', the universe has {shares} shares")
 
         t2 = (components.get("tier2") or {}).get("tag") or ""
-        lo, hi = universe, universe * FAMILIES
+        lo, hi = universe, universe * family_count(root)
         if f"{lo}–{hi}" not in t2 and f"{lo}-{hi}" not in t2:
-            fail(f"architecture map: tier2 tag is '{t2}', the matrix is {lo}–{hi} tests/scan")
+            failures.append(f"architecture map: tier2 tag is '{t2}', the matrix is {lo}–{hi} tests/scan")
     else:
-        note("no liquid_universe.json / tier1 artifact on this tree — number checks skipped")
+        notes.append("no liquid_universe.json / tier1 artifact on this tree — number checks skipped")
 
     # 3. A tool that is not in the README is a tool nobody knows exists.
-    readme = README.read_text(encoding="utf-8") if README.exists() else ""
-    for tool in sorted((HERE / "tools").glob("*.py")):
+    readme_path = root / README
+    readme = readme_path.read_text(encoding="utf-8") if readme_path.exists() else ""
+    for tool in sorted((root / "tools").glob("*.py")):
         if tool.name not in readme:
-            fail(f"README does not mention tools/{tool.name}")
+            failures.append(f"README does not mention tools/{tool.name}")
 
     # 4. The mémoire carries the same structural facts, in French, and lives
     #    outside the repo: advisory, because CI cannot see or fix it.
-    if liquid and MEMOIRE.exists():
-        words = {
-            248: "deux cent quarante-huit",
-        }.get(liquid.get("count"))
-        body = MEMOIRE.read_text(encoding="utf-8")
+    memo = (root / MEMOIRE).resolve()
+    if liquid and memo.exists():
+        words = {248: "deux cent quarante-huit"}.get(liquid.get("count"))
+        body = memo.read_text(encoding="utf-8")
         if words and words not in body and str(liquid.get("count")) not in body:
-            note(f"mémoire does not mention {liquid.get('count')} symbols (neither digits nor '{words}')")
-    elif not MEMOIRE.exists():
-        note("mémoire not checked out beside the repo — its numbers were not verified")
+            notes.append(
+                f"mémoire does not mention {liquid.get('count')} symbols "
+                f"(neither digits nor '{words}')")
+    elif not memo.exists():
+        notes.append("mémoire not checked out beside the repo — its numbers were not verified")
 
-    return report()
+    return failures, notes
 
 
-def report() -> int:
-    width = max((len(f) for f in failures), default=0)
+def main(argv=None) -> int:
+    ap = argparse.ArgumentParser(description=__doc__)
+    ap.add_argument("--root", type=Path, default=HERE)
+    args = ap.parse_args(argv)
+    failures, notes = check(args.root.resolve())
     for f in failures:
-        print(f"FAIL  {f.ljust(width)}" if width > 30 else f"FAIL  {f}")
+        print(f"FAIL  {f}")
     for n in notes:
         print(f"note  {n}")
     if failures:

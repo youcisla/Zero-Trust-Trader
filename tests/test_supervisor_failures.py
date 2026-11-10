@@ -30,6 +30,12 @@ class TestBrokerFailures(unittest.TestCase):
         patcher = mock.patch.object(rf, "EXPECTED_LOGIN", 12345)
         patcher.start()
         self.addCleanup(patcher.stop)
+        # The pin is read from the environment at call time (a `.env` is loaded
+        # into os.environ at import), so patching the constant alone is not
+        # enough: the synthetic account must be the pinned one here too.
+        patcher = mock.patch.dict(os.environ, {"MT5_EXPECTED_LOGIN": "12345"})
+        patcher.start()
+        self.addCleanup(patcher.stop)
         self.account = types.SimpleNamespace(login=12345, server="Synthetic-Demo", trade_mode=0,
                                              balance=100, equity=100, currency="TEST", leverage=30)
         self.pos = types.SimpleNamespace(ticket=42, type=0, symbol="FIXTURE", volume=0.02,
@@ -130,12 +136,86 @@ class TestBrokerFailures(unittest.TestCase):
             self.assertIsNone(pm.next_stop(1, 100, 90, 105, field, 0.1, pm.Cfg())[0])
 
 
+class TestApplyRefusals(unittest.TestCase):
+    """The money path: every refusal between observing and sending.
+
+    These branches are all that stands between a position that changed between
+    the observation and the send, and a stop-modify against the wrong position.
+    Deleting any one of them used to pass the whole suite.
+    """
+
+    setUp = TestBrokerFailures.setUp
+    run_once = TestBrokerFailures.run_once
+
+    def _why(self, result):
+        return result.get("error") or ""
+
+    def test_position_mutation_between_observation_and_send_refuses(self):
+        calls = {"n": 0}
+
+        def positions_get(**kw):
+            calls["n"] += 1
+            if calls["n"] == 1:          # the first, pre-check snapshot
+                return (self.pos,)
+            return (types.SimpleNamespace(**{**vars(self.pos), "type": 1}),)
+
+        self.mt5.positions_get = positions_get
+        self.mt5.order_send = lambda request: self.sent.append(request) or types.SimpleNamespace(retcode=10009)
+        r = self.run_once(apply=True)
+        self.assertFalse(r["ok"])
+        self.assertIn("changed", self._why(r))
+        self.assertEqual(self.sent, [])
+
+    def test_unusable_quote_before_stop_update_refuses(self):
+        self.mt5.symbol_info_tick = lambda symbol: types.SimpleNamespace(bid=0.0, ask=0.0, time=time.time())
+        self.mt5.order_send = lambda request: self.sent.append(request) or types.SimpleNamespace(retcode=10009)
+        r = self.run_once(apply=True)
+        self.assertFalse(r["ok"])
+        self.assertIn("unusable quote", self._why(r))
+        self.assertEqual(self.sent, [])
+
+    def test_negative_take_profit_observation_refuses(self):
+        self.remaining = (types.SimpleNamespace(**{**vars(self.pos), "tp": -1.0}),)
+        self.mt5.order_send = lambda request: self.sent.append(request) or types.SimpleNamespace(retcode=10009)
+        r = self.run_once(apply=True)
+        self.assertFalse(r["ok"])
+        self.assertIn("take-profit", self._why(r))
+        self.assertEqual(self.sent, [])
+
+    def test_preflight_flip_between_observation_and_send_refuses(self):
+        self.mt5.terminal_info = mock.Mock(side_effect=[
+            types.SimpleNamespace(connected=True),
+            types.SimpleNamespace(connected=False),
+        ])
+        self.mt5.order_send = lambda request: self.sent.append(request) or types.SimpleNamespace(retcode=10009)
+        r = self.run_once(apply=True)
+        self.assertFalse(r["ok"])
+        self.assertIn("refused stop update", self._why(r))
+        self.assertEqual(self.sent, [])
+
+    def test_the_sltp_request_carries_the_full_mt5_contract(self):
+        self.mt5.order_send = lambda request: self.sent.append(request) or types.SimpleNamespace(retcode=10009)
+        self.assertTrue(self.run_once(apply=True)["ok"])
+        self.assertEqual(len(self.sent), 1)
+        # A dropped key is rejected by the real terminal and no test would notice.
+        self.assertEqual(set(self.sent[0]), {"action", "symbol", "position", "sl", "tp"})
+
+
 class TestProcessLock(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.path = pathlib.Path(self.tmp.name) / "test.lock"
         self.addCleanup(process_lock.release, self.path)
+
+    def test_fresh_legacy_lease_is_honored(self):
+        """An old-format lock file (plain pid) that is fresh still owns the lock.
+
+        Old programs write no OS lock, so age is the only evidence - but a fresh
+        one must be believed, or two supervisors overlap during the upgrade.
+        """
+        self.path.write_text("999", encoding="utf-8")
+        self.assertFalse(process_lock.acquire(self.path, 3600))
 
     def test_old_timestamp_cannot_evict_an_active_owner(self):
         self.assertTrue(process_lock.acquire(self.path, 1))

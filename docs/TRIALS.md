@@ -249,7 +249,7 @@ scan being judged.
 
 | Point | Cumulative trials | z_crit |
 | --- | --- | --- |
-| now | 9,081 | 4.54 |
+| now (2026-11-05) | 9,081 | 4.54 |
 | +1 day | 16,281 | 4.67 |
 | +1 week | 59,481 | 4.93 |
 | +30 days | 225,081 | 5.18 |

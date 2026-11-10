@@ -47,12 +47,21 @@ def build(root: Path, destination: Path) -> dict:
         if name.endswith(".py"):
             tree = ast.parse(raw, filename=name)
             for node in ast.walk(tree):
-                imports = ([alias.name.split(".")[0] for alias in node.names] if isinstance(node, ast.Import)
-                           else [(node.module or "").split(".")[0]] if isinstance(node, ast.ImportFrom) else [])
-                for module in imports:
-                    local = module + ".py"
-                    if (root / local).is_file() and local not in names:
-                        raise ValueError(f"local import missing from tracked source: {name} -> {local}")
+                modules = ([alias.name for alias in node.names] if isinstance(node, ast.Import)
+                           else [node.module or ""] if isinstance(node, ast.ImportFrom) else [])
+                for module in modules:
+                    if not module:
+                        continue
+                    parts = module.split(".")
+                    # `from tools.check_public import ROOT` used to be reduced to
+                    # "tools" and looked up as tools.py, so an untracked helper
+                    # inside a tracked package passed validation.
+                    candidates = (Path(*parts).with_suffix(".py"), Path(*parts) / "__init__.py",
+                                  Path(parts[0]).with_suffix(".py"))
+                    for cand in candidates:
+                        if (root / cand).is_file() and cand.as_posix() not in names:
+                            raise ValueError(
+                                f"local import missing from tracked source: {name} -> {cand.as_posix()}")
         target.write_bytes(raw)
         hashes[name] = hashlib.sha256(raw).hexdigest()
     revision = subprocess.run(["git", "rev-parse", "HEAD"], cwd=root, capture_output=True,

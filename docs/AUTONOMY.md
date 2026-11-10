@@ -16,9 +16,8 @@ what exists in the tree today.
 | --- | --- | --- |
 | Universe scan (tier 1 → tier 2 → tier 3 → gate) | every 15 min, 05:00–17:00 UTC | `HermesMT5Funnel` → `run_funnel.py` |
 | Universe rebuild (tier 1 + liquidity) | daily | `HermesMT5Rebuild` |
-| Ledger sync between the two paths | 15 min | `HermesMT5Sync` |
 | Four-agent desk brief | every 15 min in-window | `HermesMT5Desk` → `agent_brief.py` |
-| Stop management (trail, break-even, session close) | continuous, 24/5 | `position_manager.py` |
+| Stop management (trail, break-even, session close) | **not scheduled** — manual, dry-run until a real position exists (AGENTS.md §12) | `position_manager.py` |
 
 The manual step left is the one that can lose money: typing `APPROVED` for an
 entry.

@@ -12,7 +12,6 @@ from __future__ import annotations
 
 import pathlib
 import sys
-import time
 import types
 import unittest
 from unittest import mock

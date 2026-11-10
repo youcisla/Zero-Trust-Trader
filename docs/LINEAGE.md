@@ -53,5 +53,6 @@ measurement, then the honest output of a scan that finds nothing is *no trade*:
   not a flag an agent can type.
 - The success state is `STAND_DOWN`.
 
-Current figures: 6,320 cumulative trials → a 4.47σ bar; every scheduled scan so
-far stands down.
+Figures as of 2026-11-05: 6,320 cumulative trials → a 4.47σ bar; every scheduled
+scan so far stands down. The live count is `python trials_total.py` — a static
+number in prose is true only on the day it was written.

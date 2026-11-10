@@ -31,7 +31,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import time
 from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path

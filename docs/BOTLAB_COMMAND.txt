@@ -11,7 +11,7 @@ cd <project-dir>
 
 python trials_total.py
 
-It prints the total on line 1 (e.g. `5106`) and the breakdown on line 2
+It prints the total on line 1 (5106 on 2026-11-05) and the breakdown on line 2
 (`# legacy=2205 logged=2901`). Each scheduled funnel run adds ~1,791, so this
 number is stale the moment tomorrow's run finishes. Always re-run it.
 

@@ -95,7 +95,6 @@ class TestTGateReplacesThePhantomBenchmark(unittest.TestCase):
 class TestPermutationNeverPassesANonPositiveExpectancy(unittest.TestCase):
     def setUp(self):
         self.bars = flat_bars()
-        n = len(self.bars["c"])
         self.trades = [{"bar": 100 + i, "time": int(self.bars["t"][100 + i]),
                         "side": "long", "R": r, "outcome": "stop", "mae_R": 0.0,
                         "bars_held": 1}

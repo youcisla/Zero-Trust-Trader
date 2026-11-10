@@ -25,6 +25,8 @@ python -m pip install -r requirements-dev.txt
 python tools/run_tests.py
 python -m ruff check .
 python tools/check_public.py
+python tools/check_docs.py                  # README + architecture map + mémoire (AGENTS.md §2b)
+node --test dashboard/tests/ui.test.cjs    # if you touched the dashboard
 ```
 
 No trading terminal is required — MetaTrader5 is stubbed in
@@ -62,3 +64,13 @@ indicator code, add the degenerate case to its test.
 - Making any scheduled job able to place an order
 - Throwing away trades or trials that did not work out
 - Committing a real account number, API key, or personal filesystem path
+
+## Checklist for a pull request
+
+- [ ] The bar was not lowered — no threshold, permutation count or `LEGACY_TRIALS` change
+- [ ] Trials are counted in `total_tests`, or the change adds none
+- [ ] A degenerate-case test exists for new indicator or maths code
+- [ ] `python tools/check_docs.py` is green
+- [ ] No runtime state in the diff
+
+Commit style: Conventional Commits with a lowercase scope, e.g. `fix(tier3): …`.

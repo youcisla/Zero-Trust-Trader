@@ -12,6 +12,7 @@ null while gating on the binomial z.
 from __future__ import annotations
 
 import json
+import os
 import sys
 import tempfile
 import subprocess
@@ -38,31 +39,40 @@ class _Awake:
         return False
 
 
-def _fake_run(calls: list, tmp: Path, writes: bool, count=150):
+def _fake_run(calls: list, tmp: Path, writes: bool, count=150,
+              rc: dict | None = None, stale: bool = False):
     """Stand in for subprocess.run: tier3 must leave its artifact behind."""
+    rc = rc or {}
+
     def run(args, **kw):
         calls.append(list(args))
-        scan_id = args[args.index("--scan-id") + 1]
-        if args[0] == "tier2_patterns.py":
+        stage = args[0] if args else ""
+        scan_id = args[args.index("--scan-id") + 1] if "--scan-id" in args else ""
+        if stage == "tier2_patterns.py":
             (tmp / "tier2_candidates.json").write_text(json.dumps(
                 {"top": [], "total_tests": count, "scan_id": scan_id}), encoding="utf-8")
-        if writes and args and args[0] == "tier3_deep.py":
-            (tmp / "tier3_results.json").write_text(
+        if writes and stage == "tier3_deep.py":
+            art = tmp / "tier3_results.json"
+            art.write_text(
                 json.dumps({"stood_down": True, "survivors": [], "results": [], "scan_id": scan_id}),
                 encoding="utf-8")
-        return _Proc()
+            if stale:
+                old = 1_700_000_000  # a previous scan's file, in the mtime sense
+                os.utime(art, (old, old))
+        return _Proc(rc.get(stage, 0))
     return run
 
 
 class TestTGateReachesTier3(unittest.TestCase):
-    def _main(self, extra_argv, writes: bool = True, count=150, ledger_text="", failed_stage=None):
+    def _main(self, extra_argv, writes: bool = True, count=150, ledger_text="", failed_stage=None,
+              rc: dict | None = None, stale: bool = False):
         import run_funnel as rf
 
         calls: list[list[str]] = []
         audited: list[tuple] = []
         with tempfile.TemporaryDirectory() as d:
             tmp = Path(d)
-            fake_run = _fake_run(calls, tmp, writes, count)
+            fake_run = _fake_run(calls, tmp, writes, count, rc, stale)
             if failed_stage:
                 normal_run = fake_run
                 def fake_run(args, **kwargs):
@@ -146,6 +156,30 @@ class TestTGateReachesTier3(unittest.TestCase):
         self.assertEqual(rc, 1)
         self.assertEqual(calls, [])
         self.assertIn("total_tests=UNKNOWN", ledger)
+
+    def test_tier2_failure_recovers_the_real_count_from_its_own_artifact(self):
+        """A non-zero exit that still wrote its count must not become UNKNOWN.
+
+        `trials_total` parses these rows; an UNKNOWN there under-pays the bar and
+        makes every later scan look more significant than it is.
+        """
+        rc, calls, ledger, _ = self._main([], rc={"tier2_patterns.py": 1})
+        self.assertEqual(rc, 1)
+        self.assertIn("FAILED tier2", ledger)
+        self.assertIn("total_tests=150", ledger)
+        self.assertNotIn("total_tests=UNKNOWN", ledger)
+        self.assertFalse(any(c[0] == "tier3_deep.py" for c in calls))
+
+    def test_a_previous_scans_artifact_is_not_read_as_this_one(self):
+        rc, _, ledger, audited = self._main(["--t-gate"], stale=True)
+        self.assertEqual(rc, 1)
+        self.assertIn("wrote no artifact", ledger)
+        self.assertEqual(audited, [])
+
+    def test_a_rebuild_records_a_tier1_failure_in_the_ledger(self):
+        rc, _, ledger, _ = self._main(["--rebuild"], rc={"tier1_universe.py": 1})
+        self.assertEqual(rc, 1)
+        self.assertIn("FAILED tier1", ledger)
 
     def test_tier3_timeout_preserves_completed_trial_count(self):
         rc, calls, ledger, _ = self._main([], failed_stage="tier3_deep.py")

@@ -9,9 +9,15 @@ on:
 permissions:
   contents: read
 
+# A superseded push must not keep burning runners.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -25,6 +31,7 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: ${{ matrix.python-version }}
+          cache: pip
       - name: Install pinned dependencies
         run: python -m pip install -r requirements-dev.txt
       - name: Guard all tracked files without printing matched values
@@ -40,18 +47,25 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.14'
         with:
-          node-version: "26.12.1"
+          node-version-file: .nvmrc
       - name: Dashboard state and transport fixtures
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.14'
         run: node --test dashboard/tests/ui.test.cjs
-      - name: Audit installed Python dependencies
-        run: python -m pip_audit --progress-spinner off
+      # Once, on the declared closure. `pip-audit` with no arguments audits the
+      # installed environment - ruff and pip-audit's own transitives included -
+      # in all four cells, which is a different (and noisier) question.
+      - name: Audit declared Python dependencies
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.14'
+        run: >-
+          python -m pip_audit --progress-spinner off
+          -r requirements.txt -r requirements-dev.txt
       - name: Validate release build from tracked source
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.14'
         run: python tools/build_public.py --check
 
   rust:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
       - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
@@ -62,4 +76,18 @@ jobs:
         run: |
           cargo build --release --locked --manifest-path dashboard/Cargo.toml
           cargo test --locked --manifest-path dashboard/Cargo.toml
+          cargo fmt --check --manifest-path dashboard/Cargo.toml
           cargo clippy --locked --manifest-path dashboard/Cargo.toml -- -D warnings
+
+  # The dashboard ships on Windows (`start_dashboard.bat`, `py -3`, APPDATA).
+  # A Linux-only Rust job never executes those branches.
+  rust-windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
+        with:
+          toolchain: "1.96.0"
+      - name: Test the dashboard on the platform it runs on
+        run: cargo test --locked --manifest-path dashboard/Cargo.toml

@@ -60,7 +60,7 @@ Two consequences worth stating plainly:
 ## 3. What the best measured edge actually buys
 
 `tier3_deep.py` on the live demo gave XAUUSD/bollinger: n=458, win 36.0%,
-avg R +0.102, t 1.215 against a 4.54 bar. Simulating that edge over 63 trades
+avg R +0.102, t 1.215 against the 4.54 bar in force on 2026-11-05. Simulating that edge over 63 trades
 (3/day for 21 days), compounding, 20,000 paths:
 
 ```

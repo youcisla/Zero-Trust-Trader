@@ -2,7 +2,10 @@
 
 [![CI](https://github.com/youcisla/Zero-Trust-Trader/actions/workflows/ci.yml/badge.svg)](https://github.com/youcisla/Zero-Trust-Trader/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
-[![Python 3.12+](https://img.shields.io/badge/python-3.12%2B-blue.svg)](https://www.python.org/)
+[![Python 3.12–3.14](https://img.shields.io/badge/python-3.12%E2%80%933.14-blue.svg)](https://www.python.org/)
+
+> **Not financial advice — research software.** Read [DISCLAIMER.md](DISCLAIMER.md)
+> before pointing this at any account.
 
 > **My AI agent has no authority to lose my money.**
 
@@ -216,6 +219,16 @@ scheduled — they answer a question on demand.
 | `check_public.py` | refuse to publish a machine path, a login or a key prefix |
 | `check_docs.py` | refuse to ship a README, a map or a mémoire that describe the tree as it was |
 | `export_desk_history.py` | publish the desk's answers as `docs/desk-history.jsonl`; the live SQLite stays local |
+
+`batch_backtest.py`, `broker_math.py`, `vol_dispersion.py` and `exit_policy_ab.py`
+need the **MT5 terminal on Windows** — they read live bars, so they fail with
+`ModuleNotFoundError` on a Linux clone. `check_public.py`, `check_docs.py`,
+`build_public.py`, `run_tests.py` and `export_desk_history.py` are pure stdlib.
+
+Canonical universe figures, dated: **2026-11-10 — 1,712 quoted → 561 tradable at
+14:32 UTC → 248 liquid (210 shares)**. A rebuild counts what the markets that are
+open at that minute return; the standalone `tier1_universe.py` defaults to
+`--min-days 100`, while the funnel pins 160.
 | `build_public.py` | sanitise a copy into `_publish/`; refuses if it finds a machine path |
 
 ### On TradingView
@@ -349,10 +362,15 @@ rather than the 7,200 a naive 12-hour expansion would.
 
 ```bash
 $ python trials_total.py
-9081
+2205
+# legacy=2205 logged=0
 ```
 
-That number is what feeds `honest_backtest check trades.csv --trials 9081`.
+That is what a fresh clone prints: `LEGACY_TRIALS` is frozen at 2,205 and the
+logged part lives only where scans have run. On the research machine the same
+command returns a much larger number, and *that* is the one to pass to
+`honest_backtest check trades.csv --trials "$(python trials_total.py)"`. Never
+write a live count into this file — read it.
 Under-counting trials is the classic way a backtest lies; this repository refuses
 to count only the runs that looked good.
 
@@ -400,8 +418,9 @@ $env:MT5_EXPECTED_LOGIN = Read-Host "Numeric demo account login"
 .\.venv\Scripts\python.exe run_funnel.py --window-utc 05:00-17:00
 ```
 
-`MT5_EXPECTED_LOGIN` must be exported in the process/launcher environment; the
-scanner does **not** load it from `.env`. `ZTT_LEDGER_KEY` and `DEEPSEEK_API_KEY`
+`MT5_EXPECTED_LOGIN` is read at call time: an exported value wins, and a `.env`
+beside the tree is the fallback (that is how the scheduler and the dashboard
+button satisfy the same pre-flight). `ZTT_LEDGER_KEY` and `DEEPSEEK_API_KEY`
 are consumed by their own components and may use the private `.env` file.
 `MT5_SERVER` and `ZTT_WINDOW_UTC` are not scanner settings; the window is a CLI
 argument and the actual account server is inspected by preflight. `.env.example`
@@ -409,9 +428,8 @@ documents this distinction. Missing account pin remains a refusal.
 
 Supervisor (dry run by default — it prints what it would do):
 
-```bash
-python position_manager.py                    # watches, changes nothing
-
+```powershell
+.\.venv\Scripts\python.exe position_manager.py    # watches, changes nothing
 ```
 
 Dashboard:
@@ -443,7 +461,8 @@ a `NameError` once reached production twelve runs in a row while CI stayed green
 
 ## Verify safety without placing an order
 
-`manual_e2e_test.py` now runs offline safety checks only. It has no direct
+`manual_safety_smoke.py` (formerly `manual_e2e_test.py`) runs the offline safety
+checks only. It has no direct
 terminal execution or enable-AutoTrading prompt. Those checks cannot prove the
 installed bridge's transport, consent-token lifetime or broker fill behavior.
 Run the stubbed regression suite instead of opening a test position:
@@ -530,3 +549,19 @@ See [operations and recovery](docs/OPERATIONS.md),
 [vendor provenance](docs/VENDOR-PROVENANCE.md), and the
 [audit/fix record](docs/audit-2026-11-09/README.md). Current run state belongs in
 the dashboard/diagnostics, not in static README examples.
+
+## Documents
+
+| Document | What it answers |
+| --- | --- |
+| [DISCLAIMER.md](DISCLAIMER.md) | what this is not |
+| [AGENTS.md](AGENTS.md) | the rules for a change, and the gates |
+| [DESK.md](DESK.md) | what the four advisory agents may say |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | how to land a change |
+| [SECURITY.md](SECURITY.md) | threat model and disclosure |
+| [docs/TRIALS.md](docs/TRIALS.md) | how the significance bar is computed |
+| [docs/SIZE-AND-RUIN.md](docs/SIZE-AND-RUIN.md) | whether the account can be multiplied |
+| [docs/LINEAGE.md](docs/LINEAGE.md) | the three attempts, and what each measured |
+| [docs/AUTONOMY.md](docs/AUTONOMY.md) | what runs without a human, and the three options |
+| [docs/ALTERNATIVES.md](docs/ALTERNATIVES.md) | the charting platforms, and why none changes the source |
+| [dashboard/API.md](dashboard/API.md) | every HTTP route and the snapshot contract |
