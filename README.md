@@ -192,7 +192,7 @@ symbol in the universe, one family at a time, and ranks them against the real ba
 
 ```bash
 python tools/batch_backtest.py --limit 40 --family donchian
-python tools/batch_backtest.py --limit 0                     # all 120, all families
+python tools/batch_backtest.py --limit 0                     # every symbol, every family
 ```
 
 It is a **pre-screen, not a gate**: it runs with `permutations=0` because a nought-
@@ -317,9 +317,10 @@ scan.
 | 1,791 (one full-universe run) | 4.19 |
 | 5,388 | 4.43 |
 | 9,081 (historical example) | 4.54 |
-| **12,516 (today, 10 Nov 2026)** | **4.61** |
-| 40,388 (a week at 5,000/day) | 4.85 |
-| 155,388 (a month at 5,000/day) | 5.11 |
+| **16,292 (today, 10 Nov 2026, 248 symbols)** | **4.67** |
+| 52,000 (a day at 741 tests x 48 scans) | 4.92 |
+| 265,000 (a week at that rate) | 5.21 |
+| 1,084,000 (a month at that rate) | 5.47 |
 
 This table is an illustrative historical snapshot, not a live trial count.
 Every value is computed by `bonferroni_z()`, not estimated — `python status.py`

@@ -29,9 +29,9 @@ a trade-off, it is the product.
 ## 2. The pipeline
 
 ```
-Tier 1  universe filter      ~1,700 symbols -> ~600 tradable, liquid, live
-        liquidity build      top 120 by M15 turnover: FX, indices, commodities,
-                             crypto AND shares (83 of 120 at the last rebuild)
+Tier 1  universe filter      1,508 quoted -> 561 tradable, liquid, live at 14:32 UTC
+        liquidity build      every survivor, not a top-N: FX, indices, commodities,
+                             crypto AND shares (248 at the last rebuild, 210 shares)
 Tier 2  strategy matrix      3 families x every symbol with fresh bars
 Tier 3  deep test            15k bars, 10k Monte-Carlo paths, BOTH gates
    |
