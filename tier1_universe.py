@@ -55,6 +55,28 @@ def newest_universe(directory: Path = HERE) -> Path | None:
     return legacy if legacy.exists() else None
 
 
+# ---------------------------------------------------------------------------
+# The terminal is single-occupancy.
+#
+# Two processes reading bars at once is how `(-10005, 'IPC timeout')` happens, and
+# how `symbol_select` churn leaves a symbol with spread 0 — which turns a backtest
+# into a cost-free market with no error at all. Called from run_funnel.py the lock
+# is already held and `--lock-held` says so; called by hand, take it here.
+def _claim_terminal(held: bool, max_age_min: float = 40.0) -> bool:
+    if held:
+        return True
+    import process_lock
+    from pathlib import Path as _P
+    lock = _P(__file__).with_name("funnel.lock")
+    if process_lock.acquire(lock, max_age_min * 60):
+        import atexit
+        atexit.register(process_lock.release, lock)
+        return True
+    print("REFUSED: the funnel holds funnel.lock — run this through "
+          "`run_funnel.py --rebuild`, or wait for the scan to finish")
+    return False
+
+
 def _main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--min-days", type=int, default=100)
@@ -67,7 +89,11 @@ def _main() -> int:
     ap.add_argument("--out", default=None,
                     help="default: tier1_universe_<UTC stamp>.json — a unique file "
                          "per run, so concurrent scans can never overwrite each other")
+    ap.add_argument("--lock-held", action="store_true",
+                    help="the caller already holds funnel.lock (set by run_funnel --rebuild)")
     a = ap.parse_args()
+    if not _claim_terminal(a.lock_held):
+        return 3
 
     # ponytail: unique filename per run. A shared tier1_universe.json let a stale
     # background scan clobber a corrected one; the fix is no shared mutable path.

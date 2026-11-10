@@ -238,6 +238,8 @@ def _main() -> int:
                     help="print the session plan and expected test count, then exit")
     ap.add_argument("--tolerance-min", type=int, default=10)
     ap.add_argument("--tf", default="M15")
+    ap.add_argument("--pool", type=int, default=0,
+                    help="candidates considered before correlation dedupe; 0 = all measured")
     ap.add_argument("--top", type=int, default=0,
                     help="intraday universe size: 120 covers shares as well as FX, "
                          "indices, commodities and crypto; 50 held no shares outside the top 15")
@@ -330,12 +332,16 @@ def _main() -> int:
 
     if a.rebuild:
         # min-days 160 => ~15,400 M15 bars available, the deep-test window.
-        t1 = run(["tier1_universe.py", "--min-days", "160", "--h1-bars", "6000"])
+        t1 = run(["tier1_universe.py", "--min-days", "160", "--h1-bars", "6000",
+                  "--lock-held"])
         if t1.returncode != 0:
             log(f"FAILED tier1 rc={t1.returncode} | {tail(t1.stderr, 3)}")
             return 1
         print(tail(t1.stdout, 6))
-        t1b = run(["make_liquid.py", "--top", str(a.top), "--tf", a.tf])
+        # Pass both caps. Leaving `--pool` out meant "everything" rebuilt 150
+        # candidates and kept 93 — fewer symbols than the 120 cap it replaced.
+        t1b = run(["make_liquid.py", "--top", str(a.top), "--pool", str(a.pool),
+                   "--tf", a.tf, "--lock-held"])
         if t1b.returncode != 0:
             log(f"FAILED make_liquid rc={t1b.returncode} | {tail(t1b.stderr, 3)}")
             return 1

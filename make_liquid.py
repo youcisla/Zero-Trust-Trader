@@ -125,8 +125,32 @@ def dedupe(rows: list[dict], tf: str, corr_max: float, pool: int,
     return kept, len(cand) - len(kept)
 
 
+# ---------------------------------------------------------------------------
+# The terminal is single-occupancy.
+#
+# Two processes reading bars at once is how `(-10005, 'IPC timeout')` happens, and
+# how `symbol_select` churn leaves a symbol with spread 0 — which turns a backtest
+# into a cost-free market with no error at all. Called from run_funnel.py the lock
+# is already held and `--lock-held` says so; called by hand, take it here.
+def _claim_terminal(held: bool, max_age_min: float = 40.0) -> bool:
+    if held:
+        return True
+    import process_lock
+    from pathlib import Path as _P
+    lock = _P(__file__).with_name("funnel.lock")
+    if process_lock.acquire(lock, max_age_min * 60):
+        import atexit
+        atexit.register(process_lock.release, lock)
+        return True
+    print("REFUSED: the funnel holds funnel.lock — run this through "
+          "`run_funnel.py --rebuild`, or wait for the scan to finish")
+    return False
+
+
 def _main() -> int:
     ap = argparse.ArgumentParser()
+    ap.add_argument("--lock-held", action="store_true",
+                    help="the caller already holds funnel.lock (set by run_funnel --rebuild)")
     ap.add_argument("--tier1", default=None)
     ap.add_argument("--top", type=int, default=120,
                     help="0 = keep every symbol that survives dedupe")
@@ -135,9 +159,13 @@ def _main() -> int:
     ap.add_argument("--max-spread-pct", type=float, default=5.0,
                     help="veto anything whose spread exceeds this %% of D1 ATR")
     ap.add_argument("--corr-max", type=float, default=0.7)
+    ap.add_argument("--force", action="store_true",
+                    help="write a universe less than half the size of the one on disk")
     ap.add_argument("--pool", type=int, default=150,
                     help="candidates considered before correlation dedupe; 0 = all measured")
     a = ap.parse_args()
+    if not _claim_terminal(a.lock_held):
+        return 3
 
     src_path = Path(a.tier1) if a.tier1 else newest_universe()
     src = json.loads(src_path.read_text())
@@ -174,6 +202,18 @@ def _main() -> int:
         # two days scanning zero symbols and reporting STAND_DOWN.
         print("no symbol survived the filter — keeping the existing universe")
         return 1
+    # A universe that halves is a diagnosis, not a selection. A `--top 1` probe
+    # overwrote 188 symbols with EURUSD and nothing complained: the next scan
+    # tested one symbol and reported STAND_DOWN as if that were the market.
+    # Shrinking is sometimes right, so the escape is explicit.
+    try:
+        before = int(json.loads(OUT.read_text())["count"])
+    except (OSError, ValueError, KeyError, TypeError):
+        before = 0
+    if before and len(picked) * 2 < before and not a.force:
+        print(f"REFUSED: {len(picked)} symbols would replace {before} on disk. "
+              f"Pass --force if that is the measurement you want.")
+        return 4
     OUT.write_text(json.dumps(payload, indent=2) + "\n")
 
     print(f"measured {len(measured)} | dedupe dropped {dropped} | "
