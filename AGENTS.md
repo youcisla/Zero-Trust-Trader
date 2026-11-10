@@ -131,6 +131,41 @@ Rules that follow from this:
 
 ---
 
+## 2b. The public record moves with the code
+
+Two documents describe this system to people outside it, and both are part of
+"done". A change is not finished while they still describe the tree as it was.
+
+| Document | Lives | Update when |
+| --- | --- | --- |
+| `README.md` | this repo | any change a reader can see: endpoints, pages, tools, test counts, the bar |
+| the EISI mémoire | `..\..\MemoireIPSSI\TradeBot_Memoire\` | any change to the thesis, the gates, the numbers or the operational surface |
+
+The mémoire is a `.docx` built from `05_memoire_long.md`; never edit the docx by
+hand, and never renumber the table of contents:
+
+```bash
+cd "C:\Users\Y.CHEHBOUB\PERSONAL__DO_NOT_TOUCH\MemoireIPSSI\TradeBot_Memoire"
+uv run --quiet --with python-docx python build_docx.py
+python sync_toc.py            # ToC page numbers are hand-typed text, not a field
+python sync_toc.py --check    # exit 1 if stale
+```
+
+Rules that bind the mémoire (the jury has the ToC):
+
+- **The ToC is frozen.** No new part, no new numbered subsection. New material goes
+  in as **prose under a bold lead-in** inside an existing section.
+- **Body 65–80 pages**, counted from "Introduction et problématique" to
+  "Conclusion". Measure with Word, not with a word count: `ComputeStatistics(2)`
+  plus the page of the introduction and of the conclusion.
+- **Every number is a claim someone can falsify from this tree.** Read it from
+  `tier3_results.json` (`trials_cumulative`, `z_crit_corrected`) — the pair the gate
+  actually used — not from memory, and not from the README's historical example.
+
+The full procedure, with the pitfalls that have already bitten (typographic
+apostrophes, Word holding the file, `Find` matching the ToC first), is the
+`eisi-memoire` skill.
+
 ## 3. The fail-closed gates
 
 Every gate fails **closed**: when it cannot verify, it refuses.

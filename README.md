@@ -228,6 +228,14 @@ against the demo account.
 cd dashboard && cargo run --release        # http://localhost:8787
 ```
 
+**Controls.** The ledger is 400 rows, so it is filtered and paged in the browser —
+search across scan id, date and cumulative count, verdict chips with their counts,
+25/50/100 per page. The candidate cards filter by family, search by symbol and sort
+by |t|, average R or symbol. The canvas has a freeze button: a live graph is
+unreadable while a scan is running, so freezing holds the snapshot you were looking
+at and says so. None of it is a request — the rows are already in the snapshot, and
+nothing on the page can touch the engine.
+
 **Design rule: the engine never knows the dashboard exists.** No IPC, no callback,
 no socket the Python side opens. The dashboard tails ordinary files the engine
 already writes (`engine_state.<ns>.json` — a fresh generation each tick, never
@@ -243,9 +251,11 @@ as a green "no data", and both were fixed here after being caught on screen.
 | `GET /` | the UI — one embedded HTML file, React vendored, no build step |
 | `GET /api/snapshot` | one-shot state, last 12 lines of each log |
 | `GET /api/logs/{audit,funnel,actions}` | bounded newest log excerpt with explicit truncation metadata; see [API contract](dashboard/API.md) |
-| `GET /ws` | updates on change, plus a 1 Hz heartbeat so `engine_age_s` keeps ticking — a frozen age is indistinguishable from a dead supervisor |
+| `GET /ws` | the snapshot on change, and again every 5 s regardless, so a quiet tree cannot be mistaken for a dead feed; the server pings every 15 s and the page reconnects itself when messages stop |
 | `GET /architecture` | the generated stage map (Archify, embedded at build time) |
 | `GET /api/report/latest` | the newest per-scan HTML report (`reports/run-*.html`) |
+| `/vendor/echarts.min.js` | the chart bundle, vendored from a pinned npm tarball (sha256 in `PROVENANCE.json`) |
+| `POST /api/scan` | **the only write in this process.** Takes no argument, so the button runs exactly what the scheduler runs — same lock, same window, same demo pre-flight. It cannot reach an order |
 
 #> **Can a 50 EUR account become 1,000 EUR in a month?** `docs/SIZE-AND-RUIN.md`
 > works it out with the broker's own numbers, the ruin distribution of the best
@@ -303,6 +313,7 @@ scan.
 | 1,791 (one full-universe run) | 4.19 |
 | 5,388 | 4.43 |
 | 9,081 (historical example) | 4.54 |
+| **12,516 (today, 10 Nov 2026)** | **4.61** |
 | 40,388 (a week at 5,000/day) | 4.85 |
 | 155,388 (a month at 5,000/day) | 5.11 |
 

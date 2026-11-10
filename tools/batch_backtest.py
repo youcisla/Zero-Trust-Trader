@@ -58,6 +58,13 @@ def summarise(doc: dict, family: str, symbol: str, klass: str | None) -> dict | 
     }
 
 
+def corrected_bar(legacy: int, logged: int) -> float:
+    """The bar is set by *every* hypothesis ever tested, so the frozen legacy
+    count is part of it. `trials_total.total()` returns the two apart; adding
+    only the second one understates the bar by two thousand trials."""
+    return tm.bonferroni_z(legacy + logged)
+
+
 def rank(rows: list[dict], bar: float | None) -> list[dict]:
     """Highest statistic first; margin is distance to the corrected bar.
 
@@ -115,11 +122,11 @@ def main(argv: list[str] | None = None) -> int:
     # The bar is set by every hypothesis ever tested, so it comes from the same
     # function the funnel uses — never from a guess about the file's line count.
     try:
-        _legacy, cumulative = trials_total.total(ROOT / "funnel_history.log")
+        legacy, cumulative = trials_total.total(ROOT / "funnel_history.log")
     except (OSError, ValueError) as e:
         print(f"cannot read the trial count ({e}); the bar will be unset")
         cumulative = None
-    bar = tm.bonferroni_z(cumulative) if cumulative else None
+    bar = corrected_bar(legacy, cumulative) if cumulative else None
 
     rows: list[dict] = []
     failed = 0

@@ -2,7 +2,7 @@
 
 import unittest
 
-from tools.batch_backtest import rank, summarise
+from tools.batch_backtest import corrected_bar, rank, summarise
 
 
 class TestSummarise(unittest.TestCase):
@@ -27,6 +27,19 @@ class TestSummarise(unittest.TestCase):
     def test_a_missing_statistic_stays_missing(self):
         doc = {"history": {"n_decided": 3}, "significance": {"gate": "t"}}
         self.assertIsNone(summarise(doc, "donchian", "X", None)["stat"])
+
+
+class TestBar(unittest.TestCase):
+    def test_the_frozen_legacy_trials_are_inside_the_bar(self):
+        # 2,205 legacy + 10,311 logged is 12,516, the number the engine writes.
+        with_legacy = corrected_bar(2205, 10311)
+        self.assertAlmostEqual(with_legacy, 4.612, places=3)
+        self.assertGreater(with_legacy, corrected_bar(0, 10311),
+                           "dropping the legacy count would lower the bar silently")
+
+    def test_more_trials_never_lower_the_bar(self):
+        bars = [corrected_bar(2205, n) for n in (1000, 5000, 10311, 40000)]
+        self.assertEqual(bars, sorted(bars))
 
 
 class TestRank(unittest.TestCase):
