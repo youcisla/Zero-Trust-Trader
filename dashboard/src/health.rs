@@ -170,6 +170,22 @@ pub fn alerts(
                 "warn",
                 "the desk's note failed the citation guard".into(),
             );
+        } else if status == "error" {
+            // The roles carry the reason ("HTTP 401 from the model endpoint").
+            // Without this the page showed four dashes and the audit said
+            // nothing: an auth outage that ran for three hours unanswered.
+            let why = a["roles"]
+                .as_object()
+                .and_then(|r| {
+                    r.values()
+                        .find_map(|v| v.get("reason").and_then(|x| x.as_str()))
+                })
+                .unwrap_or("no reason recorded");
+            push(
+                "desk_error",
+                "bad",
+                format!("the desk's model call failed — {why}"),
+            );
         }
     }
 
@@ -228,6 +244,26 @@ fn tmpdir(tag: &str) -> std::path::PathBuf {
         let f = files(d.path());
         assert_eq!(f["liquid_universe.json"]["exists"], true);
         assert!(f["liquid_universe.json"]["age_s"].as_i64().unwrap() < 60);
+    }
+
+    #[test]
+    fn a_failed_desk_call_raises_an_alert_that_says_why() {
+        // Three hours of HTTP 401 were invisible: the page showed four dashes and
+        // the alert rail was silent. The reason the roles carry is the alert.
+        let agent = serde_json::json!({
+            "status": "error",
+            "roles": {
+                "scout": {"status": "error", "reason": "HTTP 401 from the model endpoint"},
+                "chief": {"status": "error", "reason": "HTTP 401 from the model endpoint"}
+            }
+        });
+        let a = alerts(false, None, true, None, None, Some(&agent),
+                       &serde_json::json!({"active": false}), false);
+        let hit = a.as_array().unwrap().iter()
+            .find(|x| x["id"] == "desk_error")
+            .expect("the failure must surface");
+        assert_eq!(hit["severity"], "bad");
+        assert!(hit["message"].as_str().unwrap().contains("401"));
     }
 
     #[test]

@@ -607,6 +607,11 @@ def append_journal(root: Path, notes: dict) -> Path:
         "chief": (chief.get("summary") or "")[:400],
         "rejected": [v.get("reason") for v in (notes.get("roles") or {}).values()
                      if v.get("status") == "rejected"],
+        # A run that failed left no trace of *why*: the audit said "error" twelve
+        # times in a row and answering it meant re-reading the live file. The
+        # reasons belong in the record.
+        "reasons": {k: v.get("reason") for k, v in (notes.get("roles") or {}).items()
+                    if v.get("status") == "error" and v.get("reason")},
     }
     path = root / JOURNAL
     with path.open("a", encoding="utf-8") as fh:

@@ -1184,7 +1184,8 @@ function Desk({agent, compact}) {
   return html`<div>
     <div className="chain">${order.map(([key, label]) => {
       const r = roles[key] || {};
-      const say = r.headline || r.summary || r.verdict || r.why || (r.status === "no key" ? "no model key — nothing called" : "");
+      const say = r.headline || r.summary || r.verdict || r.why || r.reason
+        || (r.status === "no key" ? "no model key — nothing called" : "");
       return html`<div key=${key} className=${"step " + tone(r)}>
         <div className="who"><span className="dot"></span>${label}
           ${r.status && r.status !== "ok" ? html`<${Badge} tone="warn">${r.status}</${Badge}>` : null}</div>
