@@ -439,7 +439,7 @@ no terminal and no chat session.
 | --- | --- |
 | Green **live** dot | WebSocket connected to the Rust server |
 | Large equity figure | Pushed ~every second from `engine_state.json` |
-| Amber **engine Ns stale** | The supervisor is not running, or is writing to a different tree. The UI is showing old data — **not** a quiet market |
+| Amber **engine 2h 34m stale** | The supervisor is not running, or is writing to a different tree. The UI is showing old data — **not** a quiet market. Durations are one helper (`fmtDur`): `45s`, `2m`, `1h`, `1h 30m`, `1d 1h` |
 | Positions table | Empty = flat; the funnel is standing down |
 | Supervisor actions | Every stop move made, or that would be made in dry run |
 | Funnel history | Last 12 verdicts |

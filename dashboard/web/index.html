@@ -430,6 +430,20 @@ function LogPane({lines, empty, missing, raw}) {
 const pct = (a, b) => (a == null || !b ? 0 : Math.max(0, Math.min(100, (a / b) * 100))) + "%";
 const pick = (...v) => { for (const x of v) if (x !== null && x !== undefined) return x; return null; };
 const nowUtcHours = () => { const d = new Date(); return d.getUTCHours() + d.getUTCMinutes() / 60; };
+// One duration, one spelling. 61 -> "1m", 120 -> "2m", 3600 -> "1h",
+// 5400 -> "1h 30m", 90000 -> "1d 1h". Seconds only below a minute, and the
+// remainder is dropped when it is zero, so a strip never reads "2m 0s".
+const fmtDur = (s) => {
+  if (s == null) return "—";
+  const n = Math.max(0, Math.round(Number(s)));
+  if (!Number.isFinite(n)) return "—";
+  if (n < 60) return n + "s";
+  const m = Math.floor(n / 60), h = Math.floor(m / 60), d = Math.floor(h / 24);
+  if (n < 600) return (n % 60) ? m + "m " + (n % 60) + "s" : m + "m";
+  if (n < 3600) return m + "m";
+  if (h < 24) return (m % 60) ? h + "h " + (m % 60) + "m" : h + "h";
+  return (h % 24) ? d + "d " + (h % 24) + "h" : d + "d";
+};
 
 // ponytail: mirrors run_funnel.SESSION_MATRIX. Every ledger row prints
 // strategies=N, so a drift between this table and the runner shows up on screen
@@ -592,7 +606,7 @@ function VerdictPanel({ x, data }) {
       <div><b>Supervisor</b> — ${protectionLabel(data, data?.engine_age_s, data?.transport_live === true)}.</div>
     </div>
     <div className="telcap"><span>last ${tail.length} scans · bars = symbols tested · amber = triggering</span>
-      <span>${dur.length ? "dur " + dur[dur.length - 1].dur_s + "s" : ""}</span></div>
+      <span>${dur.length ? "dur " + fmtDur(dur[dur.length - 1].dur_s) : ""}</span></div>
     <div className="tel">
       ${tested.map((v, k) => html`<div key=${k} className=${hits[k] ? "hit" : ""}
         style=${{ height: (v == null ? 0 : (v / max) * 100) + "%" }}
@@ -640,7 +654,7 @@ function Pipe({ data, detail }) {
       pills: [["lot cap", "0.01"], ["approval", "human"]] },
     { title: "Supervisor", state: !hasEngine || data?.engine?.ok !== true ? "bad" : stale || !data?.transport_live ? "warn" : "good",
       sub: protectionLabel(data, age, data?.transport_live === true),
-      pills: [["age", age == null ? "—" : age + "s"], ["close", "17:00Z"]] },
+      pills: [["age", age == null ? "—" : fmtDur(age)], ["close", "17:00Z"]] },
   ];
   const flow = [x.s.open, x.fresh > 0, x.trig > 0, x.short > 0, x.passed > 0];
 
@@ -891,7 +905,7 @@ function ScanBar({ progress, onRun, running }) {
         ${progress.tests != null ? html`<span className="l-dim">${progress.tests} tests</span>` : null}
         ${progress.verdict ? html`<span className=${"badge " + (progress.verdict === "PROPOSAL" ? "pass" : "")}>${progress.verdict}</span>` : null}
         ${ageS != null ? html`<span className=${"l-dim" + (ageS > 600 && !done ? " l-bad" : "")}>
-          ${done ? "finished" : "updated"} ${ageS < 90 ? ageS + "s" : Math.round(ageS / 60) + "m"} ago</span>` : null}`}
+          ${done ? "finished" : "updated"} ${fmtDur(ageS)} ago</span>` : null}`}
     <span className="spacer"></span>
     <span className="l-dim">the button cannot place an order — see §9 of AGENTS.md</span>
   </div>`;
@@ -1077,7 +1091,7 @@ function App() {
         </div>
         <span className="spacer"></span>
         <span className=${`pill ${up ? "live" : "down"}`} aria-live="polite"><span className="dot"></span>${up ? "live" : "disconnected / stale"}</span>
-        ${stale ? html`<span className="pill stale" title="the supervisor has not written engine_state recently">${age}s stale</span>` : null}
+        ${stale ? html`<span className="pill stale" title="the supervisor has not written engine_state recently">${fmtDur(age)} stale</span>` : null}
         ${data && !hasEngine ? html`<span className="pill down">engine state missing</span>` : null}
         ${engineErr ? html`<span className="pill down" title=${engineErr}>engine refusing</span>` : null}
         ${err ? html`<span className="pill down">${err}</span>` : null}
@@ -1116,7 +1130,7 @@ function App() {
             <div className="label">Engine heartbeat</div>
             <div className="value mono small"
               style=${{ color: age == null ? "var(--bad)" : stale ? "var(--warn)" : "var(--good)" }}>
-              ${age === null || age === undefined ? "no engine state" : age + "s ago"}</div>
+              ${age === null || age === undefined ? "no engine state" : fmtDur(age) + " ago"}</div>
             <div className="note">${!hasEngine ? "engine state missing" : accountLabel(account)}</div>
           </div></section>
 
