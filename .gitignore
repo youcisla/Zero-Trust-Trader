@@ -61,3 +61,7 @@ desk_history.json
 # Written by run_funnel.progress() every scan; the dashboard reads it live.
 scan_progress.json
 liquid_universe.backup*.json
+
+# Archify receipts: they record absolute machine paths and file hashes.
+# The diagram itself (architecture.html) and its source JSON are tracked.
+dashboard/web/architecture.*.json

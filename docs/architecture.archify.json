@@ -2,11 +2,15 @@
   "schema_version": 1,
   "diagram_type": "architecture",
   "meta": {
-    "title": "Zero-Trust Trader \u2014 research funnel and consent gate",
+    "title": "Zero-Trust Trader — research loop, advisory desk, consent gate",
     "subtitle": "The agent may research freely and may change the system. It may not trade.",
-    "output": "architecture.html",
+    "output": "dashboard/web/architecture.html",
     "quality_profile": "showcase",
-    "visual_preset": "classic",
+    "repository": {
+      "url": "https://github.com/youcisla/Zero-Trust-Trader",
+      "provider": "github",
+      "revision": "a8da643bf4ef3a6ea495883fe77f7fc17a36bc5c"
+    },
     "legend": {
       "mode": "auto"
     }
@@ -19,89 +23,110 @@
       "sublabel": "HermesMT5Funnel",
       "pos": [
         40,
-        70
+        60
       ],
       "size": [
         130,
         62
       ],
       "tag": "every 15 min",
-      "icon": "clock"
+      "icon": "clock",
+      "sources": [
+        {
+          "path": "run_funnel.cmd",
+          "label": "scheduled entry point"
+        }
+      ]
     },
     {
       "id": "preflight",
       "type": "backend",
       "label": "run_funnel",
-      "sublabel": "window \u00b7 lock \u00b7 demo pin",
+      "sublabel": "window · lock · demo pin",
       "pos": [
-        220,
-        70
+        250,
+        60
       ],
       "size": [
-        140,
+        150,
         62
       ],
-      "tag": "fails closed"
+      "tag": "fails closed",
+      "sources": [
+        {
+          "path": "run_funnel.py",
+          "line": 62,
+          "end_line": 95,
+          "label": "preflight_check"
+        },
+        {
+          "path": "run_funnel.py",
+          "label": "progress()"
+        }
+      ]
     },
     {
       "id": "tier1",
       "type": "backend",
       "label": "Tier 1 universe",
-      "sublabel": "tradable \u00b7 liquid \u00b7 live",
+      "sublabel": "tradable · liquid · live",
       "pos": [
-        410,
-        70
+        475,
+        60
       ],
       "size": [
-        140,
+        150,
         62
       ],
-      "tag": "50 symbols"
+      "tag": "1,723 → 120",
+      "sources": [
+        {
+          "path": "make_liquid.py",
+          "label": "liquidity build"
+        }
+      ]
     },
     {
       "id": "tier2",
       "type": "backend",
       "label": "Tier 2 matrix",
-      "sublabel": "3 families \u00d7 symbols",
+      "sublabel": "3 families × symbols",
       "pos": [
-        600,
-        70
+        700,
+        60
       ],
       "size": [
-        140,
+        150,
         62
       ],
-      "tag": "150 tests/scan"
+      "tag": "150–360 tests/scan",
+      "sources": [
+        {
+          "path": "tier2_patterns.py",
+          "label": "matrix + correlation dedupe"
+        }
+      ]
     },
     {
       "id": "tier3",
       "type": "backend",
       "label": "Tier 3 deep test",
-      "sublabel": "15k bars \u00b7 1000 permutations",
+      "sublabel": "15k bars · 1000 permutations",
       "pos": [
-        790,
-        120
+        930,
+        60
       ],
       "size": [
-        150,
+        170,
         62
       ],
-      "tag": "two gates"
-    },
-    {
-      "id": "ledger",
-      "type": "database",
-      "label": "funnel_history.log",
-      "sublabel": "append-only \u00b7 HMAC chained",
-      "pos": [
-        700,
-        285
-      ],
-      "size": [
-        150,
-        62
-      ],
-      "tag": "cumulative trials"
+      "tag": "two gates",
+      "sources": [
+        {
+          "path": "tier3_deep.py",
+          "label": "both gates, then the ledger row"
+        }
+      ]
     },
     {
       "id": "human",
@@ -109,15 +134,99 @@
       "label": "Operator",
       "sublabel": "types APPROVED",
       "pos": [
-        1000,
-        120
+        1180,
+        60
       ],
       "size": [
-        130,
+        150,
         62
       ],
       "icon": "person",
       "tag": "no agent can"
+    },
+    {
+      "id": "progress",
+      "type": "database",
+      "label": "scan_progress.json",
+      "sublabel": "5 stages, written atomically",
+      "pos": [
+        250,
+        230
+      ],
+      "size": [
+        150,
+        56
+      ],
+      "tag": "the UI reads it",
+      "sources": [
+        {
+          "path": "run_funnel.py",
+          "label": "progress()"
+        }
+      ]
+    },
+    {
+      "id": "liquid",
+      "type": "database",
+      "label": "liquid_universe.json",
+      "sublabel": "top 120 by M15 turnover",
+      "pos": [
+        475,
+        230
+      ],
+      "size": [
+        150,
+        56
+      ],
+      "tag": "83 shares",
+      "sources": [
+        {
+          "path": "make_liquid.py",
+          "label": "shares, FX, indices, commodities, crypto"
+        }
+      ]
+    },
+    {
+      "id": "cands",
+      "type": "database",
+      "label": "tier2_candidates.json",
+      "sublabel": "shortlist, correlation-deduped",
+      "pos": [
+        700,
+        230
+      ],
+      "size": [
+        150,
+        56
+      ],
+      "tag": "|ρ| > 0.7 splits",
+      "sources": [
+        {
+          "path": "tier2_patterns.py",
+          "label": "total_tests owns the count"
+        }
+      ]
+    },
+    {
+      "id": "ledger",
+      "type": "database",
+      "label": "funnel_history.log",
+      "sublabel": "append-only · HMAC chained",
+      "pos": [
+        930,
+        230
+      ],
+      "size": [
+        170,
+        56
+      ],
+      "tag": "cumulative trials",
+      "sources": [
+        {
+          "path": "tier3_deep.py",
+          "label": "the only writer"
+        }
+      ]
     },
     {
       "id": "bridge",
@@ -125,15 +234,77 @@
       "label": "MT5 MCP bridge",
       "sublabel": "single-use token + idempotency",
       "pos": [
-        1000,
-        300
+        1180,
+        230
       ],
       "size": [
-        130,
-        62
+        150,
+        56
       ],
       "icon": "security",
       "tag": "consent gate"
+    },
+    {
+      "id": "desk_sched",
+      "type": "external",
+      "label": "Task Scheduler",
+      "sublabel": "HermesMT5Desk",
+      "pos": [
+        40,
+        400
+      ],
+      "size": [
+        140,
+        62
+      ],
+      "icon": "clock",
+      "tag": "every 15 min, in window"
+    },
+    {
+      "id": "desk",
+      "type": "backend",
+      "label": "desk.py",
+      "sublabel": "scout · skeptic · chief · jury",
+      "pos": [
+        250,
+        400
+      ],
+      "size": [
+        170,
+        62
+      ],
+      "tag": "advisory only",
+      "sources": [
+        {
+          "path": "desk.py",
+          "label": "four roles, citation guard"
+        },
+        {
+          "path": "agent_brief.py",
+          "label": "one run, then the record"
+        }
+      ]
+    },
+    {
+      "id": "deskdb",
+      "type": "database",
+      "label": "desk_history.sqlite",
+      "sublabel": "every answer, every run",
+      "pos": [
+        475,
+        400
+      ],
+      "size": [
+        170,
+        56
+      ],
+      "tag": "tracked, redacted",
+      "sources": [
+        {
+          "path": "desk_store.py",
+          "label": "runs + answers, login stripped"
+        }
+      ]
     },
     {
       "id": "broker",
@@ -141,62 +312,122 @@
       "label": "Pepperstone demo",
       "sublabel": "MetaTrader 5 terminal",
       "pos": [
-        1000,
-        465
-      ],
-      "size": [
-        130,
-        62
-      ],
-      "tag": "server name must say demo"
-    },
-    {
-      "id": "supervisor",
-      "type": "backend",
-      "label": "position_manager",
-      "sublabel": "trail \u00b7 break-even \u00b7 17:00Z",
-      "pos": [
-        1000,
-        630
+        1180,
+        400
       ],
       "size": [
         150,
-        62
+        56
       ],
-      "tag": "risk-reducing only"
+      "tag": "server must say demo"
+    },
+    {
+      "id": "feeds",
+      "type": "external",
+      "label": "News feeds",
+      "sublabel": "BBC business · investing.com",
+      "pos": [
+        40,
+        570
+      ],
+      "size": [
+        140,
+        56
+      ],
+      "tag": "RSS, read-only"
+    },
+    {
+      "id": "llm",
+      "type": "external",
+      "label": "DeepSeek",
+      "sublabel": "deepseek-flash",
+      "pos": [
+        250,
+        570
+      ],
+      "size": [
+        150,
+        56
+      ],
+      "tag": "prose, never arithmetic"
     },
     {
       "id": "dash",
       "type": "frontend",
       "label": "Dashboard",
-      "sublabel": "Rust / Axum \u00b7 read-only",
+      "sublabel": "Rust / Axum · one write",
       "pos": [
-        560,
+        700,
         400
       ],
       "size": [
-        150,
+        180,
         62
       ],
-      "tag": "tailers + WS"
+      "tag": "tails files + WS",
+      "sources": [
+        {
+          "path": "dashboard/src/main.rs",
+          "label": "GET routes + POST /api/scan"
+        },
+        {
+          "path": "dashboard/web/index.html",
+          "label": "no build step, vendored React"
+        }
+      ]
+    },
+    {
+      "id": "supervisor",
+      "type": "backend",
+      "label": "position_manager",
+      "sublabel": "trail · break-even · session close",
+      "pos": [
+        1180,
+        570
+      ],
+      "size": [
+        150,
+        56
+      ],
+      "tag": "risk-reducing only",
+      "sources": [
+        {
+          "path": "position_manager.py",
+          "label": "never opens or enlarges"
+        }
+      ]
     }
   ],
   "boundaries": [
     {
       "kind": "region",
-      "label": "Research loop \u2014 analysis only, no order path",
+      "label": "Research loop — analysis only, no order path",
       "wraps": [
         "sched",
         "preflight",
         "tier1",
         "tier2",
         "tier3",
+        "progress",
+        "liquid",
+        "cands",
         "ledger"
       ]
     },
     {
+      "kind": "region",
+      "label": "Advisory desk — four agents, a stored memory, no path to the terminal",
+      "wraps": [
+        "desk_sched",
+        "desk",
+        "deskdb",
+        "feeds",
+        "llm"
+      ]
+    },
+    {
       "kind": "security-group",
-      "label": "Consent gate \u2014 human approval, then a single-use token",
+      "label": "Consent gate — APPROVED, then one token",
       "wraps": [
         "human",
         "bridge"
@@ -211,55 +442,65 @@
       "label": "15 min"
     },
     {
-      "id": "gate1",
+      "id": "g1",
       "from": "preflight",
       "to": "tier1"
     },
     {
-      "id": "gate2",
+      "id": "g2",
       "from": "tier1",
       "to": "tier2"
     },
     {
-      "id": "gate3",
+      "id": "g3",
       "from": "tier2",
       "to": "tier3",
       "label": "shortlist"
+    },
+    {
+      "id": "proposal",
+      "from": "tier3",
+      "to": "human",
+      "label": "proposal"
+    },
+    {
+      "id": "w_prog",
+      "from": "preflight",
+      "to": "progress",
+      "label": "each stage"
+    },
+    {
+      "id": "w_uni",
+      "from": "tier1",
+      "to": "liquid",
+      "label": "writes"
+    },
+    {
+      "id": "w_cand",
+      "from": "tier2",
+      "to": "cands",
+      "label": "writes"
     },
     {
       "id": "verdict",
       "from": "tier3",
       "to": "ledger",
       "label": "verdict row",
-      "variant": "emphasis",
-      "fromSide": "bottom",
-      "toSide": "top"
-    },
-    {
-      "id": "proposal",
-      "from": "tier3",
-      "to": "human",
-      "label": "proposal",
-      "fromSide": "right",
-      "toSide": "top"
+      "variant": "emphasis"
     },
     {
       "id": "approve",
       "from": "human",
       "to": "bridge",
       "label": "APPROVED",
-      "variant": "security",
-      "fromSide": "bottom",
-      "toSide": "top"
+      "variant": "security"
     },
     {
       "id": "order",
       "from": "bridge",
       "to": "broker",
       "label": "0.01 lot cap",
-      "variant": "security",
-      "fromSide": "bottom",
-      "toSide": "top"
+      "variant": "security"
     },
     {
       "id": "fills",
@@ -275,49 +516,91 @@
       "variant": "dashed"
     },
     {
-      "id": "state",
+      "id": "desk_tick",
+      "from": "desk_sched",
+      "to": "desk",
+      "label": "15 min"
+    },
+    {
+      "id": "desk_feeds",
+      "from": "feeds",
+      "to": "desk",
+      "label": "headlines"
+    },
+    {
+      "id": "desk_llm",
+      "from": "desk",
+      "to": "llm",
+      "label": "asks"
+    },
+    {
+      "id": "desk_store",
+      "from": "desk",
+      "to": "deskdb",
+      "label": "records"
+    },
+    {
+      "id": "read_ledger",
+      "from": "ledger",
+      "to": "dash",
+      "label": "tails",
+      "variant": "dashed"
+    },
+    {
+      "id": "read_desk",
+      "from": "deskdb",
+      "to": "dash",
+      "label": "exports 24 runs",
+      "variant": "dashed"
+    },
+    {
+      "id": "read_sup",
       "from": "supervisor",
       "to": "dash",
       "label": "reads",
-      "fromSide": "left",
-      "toSide": "right"
+      "variant": "dashed"
     },
     {
-      "id": "tail",
-      "from": "ledger",
+      "id": "read_prog",
+      "from": "progress",
       "to": "dash",
-      "label": "tails, never writes",
-      "variant": "dashed",
-      "fromSide": "left",
-      "toSide": "top"
+      "label": "live stage",
+      "variant": "dashed"
+    },
+    {
+      "id": "trigger",
+      "from": "dash",
+      "to": "preflight",
+      "label": "POST /api/scan — the one write",
+      "variant": "emphasis"
     }
   ],
   "cards": [
     {
       "dot": "rose",
-      "title": "Fail-closed gates",
+      "title": "What changed since the last map",
       "items": [
-        "Demo-only pre-flight refuses any other server",
-        "Correlation dedupe at |rho| > 0.7 keeps the stronger hit",
-        "z above bonferroni_z(cumulative) and permutation p < 0.05"
+        "Universe is 120 symbols, 83 of them shares — every market the terminal offers, under the same 5%-of-ATR spread veto",
+        "A scan can be started from the dashboard, and that button runs nothing but the research loop",
+        "A fourth agent (jury) plus a database: the desk's answers survive the run that produced them"
       ]
     },
     {
       "dot": "emerald",
       "title": "What the numbers mean",
       "items": [
-        "150 tests per scan at 3 families, 50 at 1",
-        "Cumulative trial count, never per-scan",
-        "STAND_DOWN is the expected outcome, not a failure"
+        "10,128 cumulative trials; the bar is z 4.56 and is never recomputed per scan",
+        "Best candidate today: SAN.ES donchian +0.308R, t 2.68 — it does not clear the bar",
+        "150 to 360 tests per scan depending on the session's family count; STAND_DOWN is the expected answer"
       ]
     },
     {
       "dot": "cyan",
-      "title": "Read-only monitor",
+      "title": "One write, and it cannot trade",
       "items": [
-        "Six-stage canvas streams over one WebSocket",
-        "Missing file renders as unknown, never as zero",
-        "No endpoint can place, modify or close anything"
+        "POST /api/scan takes no argument, so the button cannot run a configuration the scheduler does not",
+        "Its only product is a stage in scan_progress.json — the UI reads it, the engine never knows",
+        "Orders still need a human APPROVED and a single-use token; no path here reaches order_send"
       ]
     }
   ]
