@@ -185,6 +185,25 @@
   .tel div{flex:1;background:#2a313b;border-radius:2px 2px 0 0;min-height:2px}
   .tel div.hit{background:var(--warn)}
   .telcap{display:flex;justify-content:space-between;font-size:10px;color:var(--faint)}
+  .badge.warn{color:var(--warn);border-color:rgba(214,160,42,.4);background:var(--warn-dim)}
+  .hist .run{padding:9px 0;border-top:1px solid var(--line)}
+  .hist .run:first-child{border-top:0;padding-top:0}
+  .hist .when{font-size:11px;color:var(--faint);margin-bottom:3px}
+  .hist .cells{display:flex;flex-wrap:wrap;gap:2px 16px}
+  .hist .cell{font-size:12px;color:var(--dim);max-width:100%}
+  .hist .cell b{font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--faint);
+    font-weight:500;margin-right:5px}
+  .chain{display:flex;flex-direction:column;margin-left:5px;border-left:1px solid var(--line2)}
+  .chain .step{position:relative;padding:0 0 var(--s3) var(--s4)}
+  .chain .step:last-child{padding-bottom:0}
+  .chain .step:before{content:"";position:absolute;left:-5px;top:4px;width:9px;height:9px;
+    border-radius:50%;background:var(--surface3);border:1px solid var(--line2)}
+  .chain .step.pass:before{background:var(--good);border-color:var(--good)}
+  .chain .step.rej:before{background:var(--bad);border-color:var(--bad)}
+  .chain .role{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;
+    color:var(--faint);margin-bottom:3px}
+  .chain .out{font-size:12px;color:var(--dim);line-height:1.5}
+  .chain .out b{color:var(--ink);font-weight:600}
   .rules{display:flex;flex-direction:column;gap:7px;font-size:12px;color:var(--dim)}
   .rules b{color:var(--ink);font-weight:600}
   .badge{font-size:10px;border-radius:5px;padding:1px 6px;border:1px solid var(--line2);color:var(--dim)}
@@ -736,41 +755,104 @@ function Desk({ agent }) {
   if (!agent) return html`<div className="empty">
     No desk notes yet — run <code>python agent_brief.py</code>. The agents write
     <code>agent_notes.json</code> and cannot place, size or cancel anything.</div>`;
+
   const r = agent.roles || {};
-  const badge = agent.status === "ok" ? "pass" : agent.status === "no key" ? "" : "rej";
+  const tone = (v) => !v ? "" : (v.status === "rejected" || v.status === "error") ? "rej" : "pass";
+  const skipped = (v) => (v && v.status) || "";
+  const jury = r.jury || {};
+  const verdict = jury.verdict || null;
+  const vTone = verdict === "propose" ? "pass" : verdict === "escalate" ? "warn" : verdict ? "rej" : "";
+  const chain = ["scout", "skeptic", "chief", "jury"].filter((k) => r[k]).length;
+  // A headline that matches no symbol in the universe is not a lead. Show the
+  // ones that do first, and say how many of how many, rather than listing the
+  // three newest and letting them look like dead ends.
+  const scoutItems = (r.scout && r.scout.items) || [];
+  const mapped = scoutItems.filter((it) => (it.symbols || []).length);
+
   return html`<div className="insp">
     <div className="inshead">
-      <b>${agent.status === "ok" ? "notes accepted" : agent.status === "no key" ? "no model key" : "notes rejected"}</b>
-      <span className=${"badge " + badge}>${agent.status}</span>
-      <span>facts ${agent.facts_sha || "—"}</span>
-      <span>${agent.hint || ""}</span>
-      ${agent.model_drift ? html`<span className="badge rej"
-        title="the provider served a different model than the one pinned">model drift: ${agent.model_drift.served}</span>` : null}
+      <b>${verdict ? "desk verdict" : "desk"}</b>
+      ${verdict ? html`<span className=${"badge " + vTone}>${verdict}</span>` : null}
+      <span className=${"badge " + (agent.status === "ok" ? "pass" : agent.status === "no key" ? "" : "rej")}>
+        ${agent.status}</span>
+      <span className="mono">${agent.model || ""}</span>
+      <span className="mono">${agent.generated_utc || ""}</span>
+      <span>${chain}/4 agents answered</span>
       ${agent.usage ? html`<span className="badge">${agent.usage.prompt_tokens} in / ${agent.usage.completion_tokens} out</span>` : null}
+      ${agent.model_drift ? html`<span className="badge rej"
+        title="the provider served a different model than the one pinned">drift: ${agent.model_drift.served}</span>` : null}
     </div>
-    ${r.chief && r.chief.summary ? html`<div className="rules">
-      <div><b>Chief of staff</b> — ${r.chief.summary}</div>
-      ${(r.chief.contradictions || []).map((c, i) => html`<div key=${"c" + i}>
-        <b>Contradiction</b> — ${c}</div>`)}
-      ${r.chief.watch ? html`<div><b>Watch</b> — ${r.chief.watch}</div>` : null}
-    </div>` : null}
-    ${r.skeptic && r.skeptic.verdict ? html`<div className="rules">
-      <div><b>Risk officer · ${r.skeptic.symbol || "—"}</b> — ${r.skeptic.verdict}</div>
-      ${(r.skeptic.reasons || []).slice(0, 3).map((x, i) => html`<div key=${"s" + i}>· ${x}</div>`)}
-      ${r.skeptic.what_would_change_my_mind
-        ? html`<div><b>Would change on</b> — ${r.skeptic.what_would_change_my_mind}</div>` : null}
-    </div>` : null}
-    ${r.scout && (r.scout.items || []).length ? html`<div className="rules">
-      <div><b>Scout</b> — ${r.scout.items.length} headline${r.scout.items.length === 1 ? "" : "s"}</div>
-      ${r.scout.items.slice(0, 4).map((it, i) => html`<div key=${"n" + i}>
-        <b>${it.stance || "neutral"}</b> — ${it.headline}
-        ${(it.symbols || []).length ? html` <span className="badge">${it.symbols.join(" ")}</span>` : null}</div>`)}
-      ${r.scout.caveat ? html`<div className="l-dim">${r.scout.caveat}</div>` : null}
-    </div>` : html`<div className="rules"><div><b>Scout</b> — ${(r.scout && r.scout.status) || "not run"}</div></div>`}
+
+    <div className="chain">
+      <div className=${"step " + tone(r.scout)}>
+        <div className="role">1 · veilleur — headlines → symbols</div>
+        <div className="out">${mapped.length
+          ? html`<div><b>${mapped.length}</b> of ${scoutItems.length} headline${scoutItems.length === 1 ? "" : "s"} mapped to a symbol
+              ${mapped.slice(0, 3).map((it, i) => html`<div className="l-dim" key=${"h" + i}>
+                <span className="badge">${it.symbols.join(" ")}</span> ${it.headline}</div>`)}
+              ${r.scout.caveat ? html`<div className="l-dim">${r.scout.caveat}</div>` : null}</div>`
+          : html`<span className="l-dim">${scoutItems.length
+              ? scoutItems.length + " headlines read, none of them names a symbol in the universe"
+              : (r.scout && (r.scout.reason || r.scout.status)) || "not run"}</span>`}</div>
+      </div>
+
+      <div className=${"step " + tone(r.skeptic)}>
+        <div className="role">2 · risk officer — may only argue noise</div>
+        <div className="out">${r.skeptic && r.skeptic.verdict
+          ? html`<div><b>${r.skeptic.symbol || "—"}</b> · ${r.skeptic.verdict}
+              ${(r.skeptic.reasons || []).slice(0, 2).map((x, i) => html`<div className="l-dim" key=${"s" + i}>· ${x}</div>`)}</div>`
+          : html`<span className="l-dim">${r.skeptic ? (r.skeptic.reason || r.skeptic.status) : "not run"}</span>`}</div>
+      </div>
+
+      <div className=${"step " + tone(r.chief)}>
+        <div className="role">3 · chief of staff — synthesis</div>
+        <div className="out">${r.chief && r.chief.summary
+          ? html`<div>${r.chief.summary}
+              ${(r.chief.contradictions || []).map((c, i) => html`<div className="l-bad" key=${"c" + i}>
+                contradiction — ${c}</div>`)}</div>`
+          : html`<span className="l-dim">${r.chief ? (r.chief.reason || r.chief.status) : "not run"}</span>`}</div>
+      </div>
+
+      <div className=${"step " + tone(r.jury)}>
+        <div className="role">4 · jury — final verdict, never an order</div>
+        <div className="out">${jury.verdict
+          ? html`<div><span className=${"badge " + vTone}>${jury.verdict}</span> ${jury.why || ""}
+              ${(jury.conditions || []).slice(0, 3).map((c, i) => html`<div className="l-dim" key=${"j" + i}>· ${c}</div>`)}
+              <div className="l-dim">size is policy: ${jury.size_lots == null ? "0.01" : jury.size_lots} lots ·
+                a human types APPROVED · no agent holds a token</div></div>`
+          : html`<span className="l-dim">${jury.reason || jury.status || "not run"}</span>`}</div>
+      </div>
+    </div>
+
     ${Object.entries(r).filter(([, v]) => v && v.status === "rejected").map(([k, v]) => html`
       <div className="rules" key=${"x" + k}><div><b>${k} rejected</b> — ${v.reason}</div></div>`)}
   </div>`;
 }
+
+
+function History({ h }) {
+  // agent_notes.json is the last word; this is the record of every word before
+  // it, read back from desk_history.sqlite through desk_store.export().
+  // Wrapped rows, not a five-column table: the last column was the one that got
+  // clipped at 768px, and a history you have to scroll sideways is not a record.
+  if (!h || !(h.runs || []).length) return html`<div className="empty">
+    No stored answers yet. <code>agent_brief.py</code> writes one row per run into
+    <code>desk_history.sqlite</code>; run it once and they appear here.</div>`;
+  const roles = ["scout", "skeptic", "chief", "jury"];
+  return html`<div className="hist">${h.runs.map((run) => html`<div className="run" key=${run.generated_utc}>
+    <div className="when mono">${run.generated_utc} · ${run.status || "—"}${
+      run.usage && run.usage.prompt_tokens ? " · " + run.usage.prompt_tokens + " in / " + run.usage.completion_tokens + " out" : ""}</div>
+    <div className="cells">${roles.map((r) => {
+      const v = (run.roles || {})[r];
+      const bad = v && (v.status === "rejected" || v.status === "error");
+      return html`<span className="cell" key=${r} title=${v ? (v.headline || "") : "no answer stored"}>
+        <b>${r}</b><span className=${bad ? "l-bad" : ""}>${v
+          ? (v.headline || v.status || "ok").slice(0, 180) + ((v.headline || "").length > 180 ? "…" : "")
+          : "—"}</span></span>`;
+    })}</div>
+  </div>`)}</div>`;
+}
+
 
 const ICONS = {
   overview: "M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z",
@@ -990,6 +1072,11 @@ function App() {
             <${Pipe} data=${viewData} detail=${false} />
           <//>
 
+          <${Card} title="Desk · the agent chain" wide="tap12"
+            count=${data?.agent?.generated_utc ? data.agent.model + " · " + data.agent.generated_utc : null}>
+            <${Desk} agent=${data?.agent} />
+          <//>
+
           <${Card} title="Positions" wide="tap12">
             ${positions.length
               ? html`<div className="scrollx"><table>
@@ -1022,9 +1109,9 @@ function App() {
             count=${data?.funnel?.length ? data.funnel.length + " lines in the ledger tail" : null}>
             <${Trials} data=${data} x=${x} />
           <//>
-          <${Card} title="Desk · agent notes" wide="tap12"
-            count=${data?.agent?.generated_utc ? data.agent.model + " · " + data.agent.generated_utc : null}>
-            <${Desk} agent=${data?.agent} />
+          <${Card} title="Desk history · every answer kept" wide="tap12"
+            count=${data?.desk_history?.count ? data.desk_history.count + " runs in desk_history.sqlite" : null}>
+            <${History} h=${data?.desk_history} />
           <//>
         </div>` : null}
 

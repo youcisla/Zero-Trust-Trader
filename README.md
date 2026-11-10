@@ -191,9 +191,9 @@ touching the terminal.
 
 A Rust (Axum) server streaming to a React UI: an app shell with four pages
 (overview, pipeline, trials, logs), a six-stage pipeline canvas with live wires,
-a verdict banner, the trial ledger with its cumulative bar, desk notes and the
-raw log panes. The screenshot is the real thing running against the demo
-account.
+a verdict banner, the trial ledger with its cumulative bar, the desk's four-agent
+chain, the stored answers of every past run, and the raw log panes. The
+screenshot is the real thing running against the demo account.
 
 ```bash
 cd dashboard && cargo run --release        # http://localhost:8787

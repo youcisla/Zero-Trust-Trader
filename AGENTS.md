@@ -68,6 +68,7 @@ directory the ledger lives in. There is no second copy and nothing to sync.
 | Code | this repository (tracked) |
 | Execution | the same directory — `HermesMT5Funnel` runs `run_funnel.local.cmd` here, `HermesMT5Rebuild` runs `run_rebuild.local.cmd` here |
 | Ledger | `funnel_history.log`, `trades.csv`, `stops.json`, `liquid_universe.json`, `engine_state.json`, `audit.jsonl`, `idempotency.db` — same directory, gitignored |
+| Desk record | `desk_history.sqlite` — same directory, **tracked** (§9b): agent prose only, broker login redacted before every write |
 | Policy | `config.toml` at the root — gitignored, pinned by both the MCP `--config` argument and its own `[audit]` / `[idempotency]` paths |
 | Dashboard | `dashboard/target/release/zero-trust-dashboard.exe`, launched through `dashboard/start_dashboard.bat` |
 
@@ -324,6 +325,25 @@ terminal — `AGENTS.md` §1 still owns execution.
 | `scout` | RSS headlines + the snapshot | symbol mapping, stance | text, not arithmetic |
 | `skeptic` | one candidate's own test output | reasons it is noise | adversarial prose |
 | `chief` | the ledger, tier2/tier3, engine state | one paragraph + contradictions | synthesis |
+| `jury` | the facts, the skeptic's objection, the chief's summary | `stand_down` / `escalate` / `propose`, plus conditions | the last voice before a human, and the only role whose `size_lots` is policed: anything but 0.01 is rejected |
+
+`desk_store.py` keeps every answer the desk ever gave in `desk_history.sqlite`
+(one row per run, one per role), and exports the last 24 runs to
+`desk_history.json` for the dashboard. `agent_notes.json` is the current state;
+the database is the record, and it is the only one that answers "what did the
+judge say before the last three scans?":
+
+```bash
+python desk_store.py --history 20      # the last 20 runs, every role
+python desk_store.py --query jury      # every jury answer, newest first
+```
+
+**`desk_history.sqlite` is the one tracked runtime file, and the exception is
+narrow.** It holds agent prose only — no terminal state, no order, no position.
+The broker login is redacted before every write (`.env` and `MT5_EXPECTED_LOGIN`),
+and `tests/test_desk_store.py` fails if it ever survives into the file. If a
+future change wants to store an artifact instead of an answer, it does not
+belong in this database.
 
 **The citation rule.** Every number a note contains must already appear in the
 artifact the model was given. `desk._guard()` rejects the whole note otherwise
@@ -331,6 +351,11 @@ artifact the model was given. `desk._guard()` rejects the whole note otherwise
 This is what makes an LLM safe next to a quantitative pipeline: it cannot invent
 a z-score, a win rate or a trial count, and a rounded rendering of a real number
 (`4.53` for `4.531`) is still a citation.
+
+`HermesMT5Desk` runs `run_desk.local.cmd` every 15 minutes with `--window-only`,
+so the four roles brief on the same cadence as the funnel and call nothing outside
+05:00–17:00 UTC. A green scheduled run outside the window means "nothing to do",
+never "the desk worked all night".
 
 It never runs inside the scan. A scan must not depend on a network call or a
 model's mood; `agent_brief.py` runs after it, writes one derived file and one

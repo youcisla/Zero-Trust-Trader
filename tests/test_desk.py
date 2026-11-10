@@ -176,7 +176,7 @@ class TestRun(unittest.TestCase):
             notes = desk.run(self.root, feeds=[])
         os.environ.pop("ZTT_AGENT_URL", None)
         self.assertEqual(notes["roles"]["scout"]["status"], "no feed configured")
-        self.assertEqual(len(s.seen), 2, "only skeptic and chief may call the model")
+        self.assertEqual(len(s.seen), 3, "only skeptic, chief and jury may call the model")
 
 
 class TestFeeds(unittest.TestCase):
@@ -386,6 +386,100 @@ class TestDigestSaysWhenItClips(unittest.TestCase):
         text = desk.digest(self.root)
         self.assertIn("tier3_results.json:", text)
         self.assertNotIn("the desk shows the first", text)
+
+
+class UsageMetadataTests(unittest.TestCase):
+    """The provider may add fields to `usage`; it may not lie about the counts.
+
+    DeepSeek added `prompt_tokens_details` and `completion_tokens_details` as
+    nested objects. The old rule was "every value in usage is a non-negative
+    int", so that harmless addition made scout, skeptic, chief - and the new
+    jury - all raise "invalid usage metadata" at once. The rule now constrains
+    the two counts this code actually sums, and nothing else.
+    """
+
+    def _reply(self, usage):
+        return {"model": "deepseek-flash", "usage": usage,
+                "choices": [{"finish_reason": "stop",
+                             "message": {"content": '{"agent":"chief","summary":"x"}'}}]}
+
+    def test_nested_detail_objects_are_accepted(self):
+        usage = {"prompt_tokens": 63, "completion_tokens": 16, "total_tokens": 79,
+                 "prompt_tokens_details": {"cached_tokens": 0},
+                 "completion_tokens_details": {"reasoning_tokens": 16}}
+        meta = {}
+        with mock.patch.object(desk, "_post", return_value=self._reply(usage)):
+            note = desk.chat([{"role": "user", "content": "json"}], "k", meta=meta)
+        self.assertEqual(note["agent"], "chief")
+        self.assertEqual(meta["usage"]["prompt_tokens"], 63)
+
+    def test_a_negative_or_textual_count_is_still_refused(self):
+        for bad in ({"prompt_tokens": -1}, {"completion_tokens": "16"},
+                    {"prompt_tokens": True}):
+            with self.subTest(usage=bad):
+                with mock.patch.object(desk, "_post", return_value=self._reply(bad)):
+                    with self.assertRaises(desk.DeskError):
+                        desk.chat([{"role": "user", "content": "json"}], "k", meta={})
+
+    def test_usage_that_is_not_an_object_is_refused(self):
+        with mock.patch.object(desk, "_post", return_value=self._reply("79")):
+            with self.assertRaises(desk.DeskError):
+                desk.chat([{"role": "user", "content": "json"}], "k", meta={})
+
+
+class JuryCannotSizeTests(unittest.TestCase):
+    """The judge returns a verdict. Size is policy, and 0.01 is not negotiable."""
+
+    def _jury_note(self, **kw):
+        base = {"agent": "jury", "verdict": "stand_down", "size_lots": 0.01,
+                "why": "no candidate cleared the bar", "conditions": ["none"]}
+        base.update(kw)
+        return base
+
+    def test_the_policy_size_passes(self):
+        self.assertIsNone(desk._validate_note(self._jury_note(), "facts 0.01", "jury"))
+
+    def test_any_other_size_is_rejected(self):
+        for size in (0.02, 1.0, 100, "0.01"):
+            with self.subTest(size=size):
+                note = self._jury_note(size_lots=size)
+                self.assertEqual(desk._validate_note(note, "facts 0.01", "jury"),
+                                 "jury may not size an order")
+
+    def test_an_unknown_verdict_is_rejected(self):
+        note = self._jury_note(verdict="buy")
+        self.assertEqual(desk._validate_note(note, "facts 0.01", "jury"),
+                         "invalid jury verdict")
+
+
+class WatcherWindowTests(unittest.TestCase):
+    """The watcher is scheduled every 15 minutes around the clock; the bill is not.
+
+    Outside the scan window it must exit 0 having called nothing, so a green
+    scheduled run never means "the desk briefed all night".
+    """
+
+    def test_outside_the_window_nothing_is_called(self):
+        import agent_brief, run_funnel
+        with TemporaryDirectory() as d, \
+             mock.patch.object(run_funnel, "in_window", return_value=False), \
+             mock.patch.object(desk, "run") as ran, \
+             mock.patch.object(agent_brief, "HERE", Path(d)):
+            code = agent_brief.main(["--window-only", "--root", d])
+        self.assertEqual(code, 0)
+        ran.assert_not_called()
+
+    def test_inside_the_window_the_desk_runs(self):
+        import agent_brief, run_funnel
+        with TemporaryDirectory() as d, \
+             mock.patch.object(run_funnel, "in_window", return_value=True), \
+             mock.patch.object(desk, "run", return_value={
+                 "status": "ok", "model": "m", "facts_sha": "x", "roles": {}}) as ran, \
+             mock.patch.object(agent_brief, "HERE", Path(d)), \
+             mock.patch.object(agent_brief.audit, "write"):
+            code = agent_brief.main(["--window-only", "--root", d, "--feeds", ""])
+        self.assertEqual(code, 0)
+        ran.assert_called_once()
 
 
 if __name__ == "__main__":

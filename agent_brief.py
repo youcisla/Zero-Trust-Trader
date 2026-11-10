@@ -18,6 +18,7 @@ from pathlib import Path
 
 import audit
 import desk
+import desk_store as store
 
 HERE = Path(__file__).resolve().parent
 
@@ -44,9 +45,20 @@ def main(argv=None) -> int:
     ap.add_argument("--feeds", default="", help="comma-separated RSS/Atom URLs")
     ap.add_argument("--model", default=None, help="override ZTT_AGENT_MODEL")
     ap.add_argument("--json", action="store_true", help="print the notes as JSON")
+    ap.add_argument("--window-only", action="store_true",
+                    help="do nothing outside 05:00-17:00 UTC, for the scheduled watcher")
     a = ap.parse_args(argv)
 
     root = Path(a.root).resolve()
+    if a.window_only:
+        # The watcher is scheduled around the clock; the model bill is not. The
+        # desk speaks during the same hours the funnel scans, and exits 0 quietly
+        # outside them so a green task never means "I worked all night".
+        from datetime import datetime, timezone
+        import run_funnel
+        if not run_funnel.in_window("05:00-17:00", datetime.now(timezone.utc)):
+            print("desk: outside the scan window - nothing called")
+            return 0
     if a.offline:
         print(desk.digest(root))
         return 0
@@ -55,6 +67,10 @@ def main(argv=None) -> int:
     notes = desk.run(root, feeds, a.model)
     path = desk.write_notes(root, notes)
     journal = desk.append_journal(root, notes)
+    # The JSON above is the current state; the database is the record. Both are
+    # written even when a role failed, because a failure is an answer too.
+    store.record(root, notes)
+    store.export(root)
 
     if a.json:
         print(json.dumps(notes, indent=1))

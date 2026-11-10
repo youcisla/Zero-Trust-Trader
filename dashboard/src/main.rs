@@ -261,6 +261,10 @@ fn build(root: &Path) -> Value {
     let tier2 = read_json(&root.join("tier2_candidates.json"));
     let tier3 = read_json(&root.join("tier3_results.json"));
     let agent = read_json(&root.join("agent_notes.json"));
+    // Derived from desk_history.sqlite by desk_store.export(): the last runs, one
+    // object each. The database is the record; this is the view the UI can read
+    // without a SQLite driver in the dashboard binary.
+    let desk_history = read_json(&root.join("desk_history.json"));
     let funnel = tail(&root.join("funnel_history.log"), TAIL);
     let scan = scan_state(root, &tier2, &tier3, funnel.as_ref());
 
@@ -271,6 +275,7 @@ fn build(root: &Path) -> Value {
         "tier2": tier2,
         "tier3": tier3,
         "agent": agent,
+        "desk_history": desk_history,
         "scan": scan,
         "equity": equity,
         "balance": balance,

@@ -4,4 +4,7 @@
 # Kept out of config.toml on purpose: that file is the MCP bridge's claim about
 # its own policy, and its schema rejects unknown sections — adding [agents]
 # there made policy_check.py fail with extra_forbidden.
-news_feeds = []
+news_feeds = [
+  "https://feeds.bbci.co.uk/news/business/rss.xml",
+  "https://www.investing.com/rss/news_1.rss",
+]

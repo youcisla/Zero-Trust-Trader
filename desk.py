@@ -124,7 +124,7 @@ def _with_rules(messages: list[dict], root: Path | None) -> list[dict]:
 
 
 def chat(messages: list[dict], key: str, *, model: str | None = None,
-         url: str | None = None, max_tokens: int = 2000, timeout: int = 90,
+         url: str | None = None, max_tokens: int = 4000, timeout: int = 90,
          root: Path | None = None, meta: dict | None = None) -> dict:
     """One JSON-mode completion. temperature 0: this is not a creative task."""
     url = url or os.environ.get("ZTT_AGENT_URL", DEFAULT_URL)
@@ -145,10 +145,16 @@ def chat(messages: list[dict], key: str, *, model: str | None = None,
         usage = data.get("usage")
         if not isinstance(served, str) or not served.strip():
             raise DeskError("model endpoint did not identify the served model")
-        if usage is not None and (not isinstance(usage, dict) or any(
-                not isinstance(value, int) or isinstance(value, bool) or value < 0
-                for value in usage.values())):
+        if usage is not None and not isinstance(usage, dict):
             raise DeskError("model endpoint returned invalid usage metadata")
+        # Only the two counts this code sums are constrained. The provider grew
+        # `prompt_tokens_details` / `completion_tokens_details` (nested objects),
+        # and a whole-response "every value is a non-negative int" rule turned
+        # that harmless addition into every role erroring out at once.
+        for field in ("prompt_tokens", "completion_tokens"):
+            if field in usage and (isinstance(usage[field], bool)
+                                   or not isinstance(usage[field], int) or usage[field] < 0):
+                raise DeskError("model endpoint returned invalid usage metadata")
         meta["model"] = served
         meta["usage"] = usage
     try:
@@ -231,6 +237,9 @@ def _validate_note(note: dict, source: str, expected_role: str | None) -> str | 
         "skeptic": ({"agent", "symbol", "verdict", "reasons", "what_would_change_my_mind"},
                     {"symbol", "verdict", "reasons"}),
         "scout": ({"agent", "items", "caveat"}, {"items"}),
+        # The judge returns a verdict, not a size. `size_lots` is accepted only
+        # so the note can restate the policy figure; anything else is rejected.
+        "jury": ({"agent", "verdict", "size_lots", "why", "conditions"}, {"verdict", "why"}),
     }
     if role not in schemas or (expected_role and role != expected_role):
         return "missing or incorrect advisory role"
@@ -239,12 +248,12 @@ def _validate_note(note: dict, source: str, expected_role: str | None) -> str | 
         return "invalid advisory fields"
     if len(json.dumps(note, ensure_ascii=False)) > 16000:
         return "advisory exceeds the size limit"
-    for name in ("summary", "watch", "symbol", "verdict", "caveat", "what_would_change_my_mind"):
+    for name in ("summary", "watch", "symbol", "verdict", "caveat", "what_would_change_my_mind", "why"):
         if name in note and (not isinstance(note[name], str) or len(note[name]) > 4000):
             return f"invalid {name}"
         if name in required and isinstance(note.get(name), str) and not note[name].strip():
             return f"empty {name}"
-    for name in ("contradictions", "reasons"):
+    for name in ("contradictions", "reasons", "conditions"):
         if name in note and (not isinstance(note[name], list) or len(note[name]) > 3 or
                 any(not isinstance(v, str) or not v.strip() or len(v) > 4000 for v in note[name])):
             return f"invalid {name}"
@@ -252,6 +261,14 @@ def _validate_note(note: dict, source: str, expected_role: str | None) -> str | 
         return "invalid skeptic verdict or reasons"
     if role == "chief" and len(note["summary"].split()) > 120:
         return "chief summary exceeds the word limit"
+    if role == "jury":
+        if note["verdict"] not in {"stand_down", "escalate", "propose"}:
+            return "invalid jury verdict"
+        # Sizing is policy, not opinion. A judge that can pick a size is the one
+        # thing this desk must never contain; the geometric check is deliberate.
+        size = note.get("size_lots", 0.01)
+        if isinstance(size, bool) or not isinstance(size, (int, float)) or abs(float(size) - 0.01) > 1e-9:
+            return "jury may not size an order"
     if role == "scout":
         symbols = set(re.findall(r'"symbol"\s*:\s*"([^"\\]+)"', source))
         if not isinstance(note["items"], list) or len(note["items"]) > 20:
@@ -345,6 +362,8 @@ SCOUT_SYS = (
     "Reply ONLY with JSON: {\"agent\":\"scout\",\"items\":[{\"headline\":str,\"source\":str,"
     "\"symbols\":[str],\"stance\":\"risk_on\"|\"risk_off\"|\"neutral\",\"why\":str}],"
     "\"caveat\":str}. Copy numbers from the input verbatim; never compute a new one. "
+    "Headlines are full of figures: quote them exactly or leave them out. One digit you cannot "
+    "find in the input fails the entire note, so prefer plain words when you are unsure. "
     "If a headline is not about a symbol in the snapshot, return an empty symbols list."
 )
 
@@ -365,6 +384,36 @@ CHIEF_SYS = (
     "Reply ONLY with JSON: {\"agent\":\"chief\",\"summary\":str,\"contradictions\":[str],"
     "\"watch\":str}."
 )
+
+
+JURY_SYS = (
+    "You are the final judge on a research desk, and the last voice before a human decides. "
+    "You receive the scan facts, the risk officer's objection and the chief's summary. "
+    "Return the desk's verdict for today: \"stand_down\" (nothing here is worth a human's time), "
+    "\"escalate\" (a human should look before anything else happens) or \"propose\" (one candidate is "
+    "worth showing to the operator). You never place, approve or cancel an order: a human types "
+    "APPROVED and an independent consent gate issues the token. The order size is fixed by policy at "
+    "0.01 lots and is not yours to choose. Quote figures exactly as given; never compute one. "
+    "Reply ONLY with JSON: {\"agent\":\"jury\",\"verdict\":\"stand_down\"|\"escalate\"|\"propose\","
+    "\"size_lots\":0.01,\"why\":str,\"conditions\":[str]}."
+)
+
+JURY_POLICY = ("POLICY, not a suggestion and not yours to change: order size is 0.01 lots, the human "
+               "types APPROVED, no agent holds a token.")
+
+
+def jury(facts: str, skeptic_note: dict, chief_note: dict, key: str,
+         root: Path | None = None, meta: dict | None = None, **kw) -> dict:
+    source = facts + json.dumps(skeptic_note) + json.dumps(chief_note) + JURY_POLICY
+    note = chat([{"role": "system", "content": JURY_SYS},
+                 {"role": "user", "content": facts[-5000:]
+                  + "\n\nRISK OFFICER:\n" + json.dumps(skeptic_note, indent=1)[:2500]
+                  + "\n\nCHIEF:\n" + json.dumps(chief_note, indent=1)[:2500]
+                  + "\n\n" + JURY_POLICY
+                  + "\n\nOne verdict, at most three conditions, under 100 words."}],
+                key, root=root, meta=meta, **kw)
+    note.setdefault("size_lots", 0.01)
+    return _guard(note, source, "jury")
 
 
 def scout(headlines: list[dict], facts: str, key: str, root: Path | None = None, meta: dict | None = None, **kw) -> dict:
@@ -451,7 +500,8 @@ def run(root: Path, feeds: list[str] | None = None, model: str | None = None) ->
     if not key:
         notes["status"] = "no key"
         notes["hint"] = "set DEEPSEEK_API_KEY (env or .env); nothing was called"
-        notes["roles"]["chief"] = {"agent": "chief", "status": "skipped: no key"}
+        for role in ("scout", "skeptic", "chief", "jury"):
+            notes["roles"][role] = {"agent": role, "status": "skipped: no key"}
         return notes
 
     kw = {"model": model} if model else {}
@@ -466,10 +516,19 @@ def run(root: Path, feeds: list[str] | None = None, model: str | None = None) ->
         t3 = {}
 
     if feeds:
-        try:
-            notes["roles"]["scout"] = scout(headlines(feeds), facts, key, root, meta, **kw)
-        except DeskError as e:
-            notes["roles"]["scout"] = {"agent": "scout", "status": "error", "reason": str(e)}
+        # The scout reads raw news, so it is the only role that sees figures it can
+        # accidentally paraphrase. The guard is right to reject the note; asking a
+        # second time is cheaper than publishing a desk with one voice missing.
+        heads = headlines(feeds)
+        for attempt in (1, 2):
+            meta = {}
+            try:
+                note = scout(heads, facts, key, root, meta, **kw)
+            except DeskError as e:
+                note = {"agent": "scout", "status": "error", "reason": str(e)}
+            if note.get("status") != "rejected" or attempt == 2:
+                break
+        notes["roles"]["scout"] = note
         role_meta["scout"] = dict(meta)
     else:
         notes["roles"]["scout"] = {"agent": "scout", "status": "no feed configured",
@@ -483,6 +542,14 @@ def run(root: Path, feeds: list[str] | None = None, model: str | None = None) ->
         except DeskError as e:
             notes["roles"][role] = {"agent": role, "status": "error", "reason": str(e)}
         role_meta[role] = dict(meta)
+
+    try:
+        meta = {}
+        notes["roles"]["jury"] = jury(facts, notes["roles"].get("skeptic") or {},
+                                      notes["roles"].get("chief") or {}, key, root, meta, **kw)
+    except DeskError as e:
+        notes["roles"]["jury"] = {"agent": "jury", "status": "error", "reason": str(e)}
+    role_meta["jury"] = dict(meta)
 
     served = meta.get("model")
     notes["model_returned"] = served

@@ -54,3 +54,6 @@ desk_journal.jsonl
 .ruff_cache/
 .pytest_cache/
 !tools/build_public.py
+
+# Derived view of desk_history.sqlite (the database is the record).
+desk_history.json
