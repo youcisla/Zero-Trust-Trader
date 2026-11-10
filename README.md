@@ -189,11 +189,16 @@ touching the terminal.
 
 ![Zero-Trust Trader dashboard](docs/dashboard.png)
 
-A Rust (Axum) server streaming to a React UI: an app shell with four pages
-(overview, pipeline, trials, logs), a six-stage pipeline canvas with live wires,
-a verdict banner, the trial ledger with its cumulative bar, the desk's four-agent
-chain, the stored answers of every past run, and the raw log panes. The
-screenshot is the real thing running against the demo account.
+A Rust (Axum) server streaming to a React UI: six pages behind one design
+language. The default page is a **nine-stage flow canvas** (scheduler, pre-flight,
+tier 1, tier 2, correlation dedupe, tier 3, verdict, consent, supervisor) with
+live per-edge counts, a click-to-inspect drawer, zoom/pan/minimap and a ledger
+replay. Behind it: a verdict hero, an equity and drawdown series collected in
+memory, gate-margin and trials-activity heatmaps, universe health tiles, an
+outcome mix, the cumulative-trials burn-up with a what-if mirror of the bar, the
+full parsed ledger, the desk's four-agent chain with every stored answer, and an
+alert rail derived on the server. The screenshot is the real thing running
+against the demo account.
 
 ```bash
 cd dashboard && cargo run --release        # http://localhost:8787

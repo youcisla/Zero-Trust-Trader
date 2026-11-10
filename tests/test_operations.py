@@ -146,7 +146,10 @@ class VendorTests(unittest.TestCase):
         for asset in metadata["assets"]:
             self.assertEqual(hashlib.sha256((vendor / asset["file"]).read_bytes()).hexdigest(), asset["sha256"])
             text = (vendor / asset["license"]).read_text()
-            self.assertIn("Apache License" if asset["package"] == "htm" else "MIT", text)
+            # The family is a property of the package, not of "everything that is
+            # not htm": ECharts is Apache-2.0 and would fail a blanket MIT check.
+            expected = "Apache License" if asset["package"] in ("htm", "echarts") else "MIT"
+            self.assertIn(expected, text)
 
 
 

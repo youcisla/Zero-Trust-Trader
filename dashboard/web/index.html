@@ -2,437 +2,334 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Zero-Trust Trader — live</title>
-<!-- Vendored, not CDN-loaded: no third-party runtime dependency, works offline,
-     and no SRI hash to maintain against a moving upstream. Served by the same
-     Axum process, so there is also no CORS surface. -->
-<script src="/vendor/react.production.min.js"></script>
-<script src="/vendor/react-dom.production.min.js"></script>
-<script src="/vendor/htm.umd.js"></script>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Zero-Trust Trader</title>
+<!--
+  One file, no build step, no CDN.
+  React 18 + htm + ECharts are vendored under web/vendor/ with PROVENANCE.json
+  (pinned npm tarball, sha256, licence text). Nothing here is fetched at runtime.
+
+  The rule this page serves: the engine never knows it exists. Everything on
+  screen is read from files the engine already writes. The single exception is
+  POST /api/scan, which starts the research pipeline and cannot place an order.
+-->
 <style>
-  /* ---- design tokens ---------------------------------------------------
-     One dark surface scale, one accent, one type scale (11/12/13/15/20/28).
-     Radius only on surfaces and controls; no bevels, no gradients except the
-     significance meter. Numbers are tabular; prose is never mono. */
+  /* ---- design tokens: neon terminal ---------------------------------- */
   :root{
-    --bg:#0a0b0d; --surface:#111317; --surface2:#161a20; --surface3:#1b2028;
-    --line:#20252d; --line2:#2a313b;
-    --ink:#e7eaf0; --dim:#98a2b3; --faint:#69737f;
-    --accent:#5b8def; --accent-dim:rgba(91,141,239,.14);
-    --good:#3fb950; --good-dim:rgba(63,185,80,.14);
-    --warn:#d6a02a; --warn-dim:rgba(214,160,42,.14);
-    --bad:#f0564f; --bad-dim:rgba(240,86,79,.13);
-    --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px;
+    --bg:#050608; --bg-grid:rgba(0,255,170,.025);
+    --surface:#0b0e12; --surface2:#10151b; --surface3:#161d26;
+    --line:#1c2430; --line2:#28323f;
+    --ink:#e8f0f2; --dim:#8b9bab; --faint:#5b6a79;
+    --neon:#00ffa3; --neon-dim:rgba(0,255,163,.12);
+    --cyan:#22d3ee; --cyan-dim:rgba(34,211,238,.12);
+    --magenta:#f472b6; --magenta-dim:rgba(244,114,182,.12);
+    --amber:#ffb454; --amber-dim:rgba(255,180,84,.12);
+    --red:#ff4d5e; --red-dim:rgba(255,77,94,.12);
+    /* legacy names the components already speak */
+    --good:var(--neon); --warn:var(--amber); --bad:var(--red); --accent:var(--cyan);
+    --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px; --s7:48px;
+    --font-ui:ui-sans-serif,-apple-system,"Segoe UI",Inter,system-ui,sans-serif;
+    --font-mono:ui-monospace,"SF Mono","Cascadia Mono",Menlo,Consolas,monospace;
+    --t1:11px; --t2:12px; --t3:13px; --t4:15px; --t5:20px; --t6:28px; --t7:40px;
     --r:10px; --r-sm:7px;
+    --glow:0 0 12px var(--neon-dim),0 0 2px rgba(0,255,163,.4);
+    --glow-cyan:0 0 12px var(--cyan-dim);
+    --shadow:0 8px 24px rgba(0,0,0,.45);
   }
   *{box-sizing:border-box}
   html,body{height:100%;margin:0}
-  body{background:var(--bg);color:var(--ink);
-    font:13px/1.55 ui-sans-serif,-apple-system,"Segoe UI",Inter,system-ui,sans-serif;
-    -webkit-font-smoothing:antialiased}
-  .mono{font-family:ui-monospace,"SF Mono","Cascadia Mono",Menlo,Consolas,monospace;
-    font-variant-numeric:tabular-nums;letter-spacing:-.01em}
+  body{background:var(--bg);color:var(--ink);font:13px/1.55 var(--font-ui);
+    -webkit-font-smoothing:antialiased;overflow-x:hidden}
+  body:before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
+    background-image:linear-gradient(var(--bg-grid) 1px,transparent 1px),
+                     linear-gradient(90deg,var(--bg-grid) 1px,transparent 1px);
+    background-size:36px 36px}
+  .mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
   button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   a{color:inherit}
-  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:var(--r-sm)}
+  :focus-visible{outline:2px solid var(--cyan);outline-offset:2px;border-radius:var(--r-sm)}
   ::-webkit-scrollbar{width:10px;height:10px}
-  ::-webkit-scrollbar-thumb{background:#242a33;border-radius:99px;border:2px solid var(--bg)}
+  ::-webkit-scrollbar-thumb{background:#1d2530;border-radius:99px;border:2px solid var(--bg)}
+  @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
 
-  /* ---- shell ----------------------------------------------------------- */
-  .app{display:grid;grid-template-columns:212px 1fr;min-height:100vh}
+  /* ---- shell ---------------------------------------------------------- */
+  .app{position:relative;z-index:1;display:grid;grid-template-columns:206px minmax(0,1fr);min-height:100vh}
   .side{position:sticky;top:0;height:100vh;display:flex;flex-direction:column;
-    background:#0c0e11;border-right:1px solid var(--line);padding:var(--s4) var(--s3)}
+    background:linear-gradient(180deg,#080b0f,#06080b);border-right:1px solid var(--line);
+    padding:var(--s4) var(--s3)}
   .brand{display:flex;align-items:center;gap:10px;padding:0 var(--s2) var(--s5)}
   .mark{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;
-    background:linear-gradient(160deg,#2a3a5c,#1a2333);border:1px solid #2e3b52;
-    color:#9cc0ff;font-size:12px;font-weight:700;letter-spacing:.02em}
+    background:linear-gradient(160deg,#0b2b22,#071a15);border:1px solid #14453a;
+    color:var(--neon);font-size:11px;font-weight:700;letter-spacing:.02em;
+    box-shadow:inset 0 0 12px rgba(0,255,163,.12)}
   .brand h1{font-size:13px;margin:0;font-weight:600;letter-spacing:-.01em}
-  .brand .sub{color:var(--faint);font-size:10.5px;letter-spacing:.06em;text-transform:uppercase}
+  .brand .sub{color:var(--faint);font-size:10px;letter-spacing:.08em;text-transform:uppercase}
   .nav{display:flex;flex-direction:column;gap:2px}
   .navitem{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:7px;
     color:var(--dim);font-size:12.5px;text-align:left;transition:background .12s,color .12s}
   .navitem svg{width:14px;height:14px;flex:0 0 14px;opacity:.75}
   .navitem:hover{background:var(--surface2);color:var(--ink)}
-  .navitem.on{background:var(--accent-dim);color:#cfe0ff}
-  .navitem.on svg{opacity:1;color:var(--accent)}
-  .navitem .kbd{margin-left:auto;font-size:9.5px;color:var(--faint);font-family:ui-monospace,monospace}
-  .side .grow{flex:1}
-  .sidenote{padding:var(--s3) var(--s2);border-top:1px solid var(--line);font-size:11px;color:var(--faint)}
-  .sidenote b{color:var(--dim);font-weight:500;display:block;margin-bottom:4px}
-  .sidelink{display:flex;align-items:center;gap:6px;padding:5px 9px;border-radius:6px;
-    color:var(--dim);font-size:12px;text-decoration:none}
+  .navitem.on{background:var(--neon-dim);color:#c8ffe8;box-shadow:inset 0 0 0 1px #17453a}
+  .navitem.on svg{opacity:1;color:var(--neon)}
+  .navitem .kbd{margin-left:auto;font-family:var(--font-mono);font-size:10px;color:var(--faint);
+    border:1px solid var(--line2);border-radius:4px;padding:0 4px}
+  .grow{flex:1}
+  .sidenote{color:var(--faint);font-size:11px;line-height:1.5;padding:var(--s2);border-top:1px solid var(--line)}
+  .sidenote b{display:block;color:var(--dim);font-weight:500;font-size:11px}
+  .sidelink{display:flex;align-items:center;gap:7px;color:var(--dim);font-size:11.5px;
+    padding:5px var(--s2);border-radius:6px;text-decoration:none}
   .sidelink:hover{background:var(--surface2);color:var(--ink)}
 
+  /* ---- topbar --------------------------------------------------------- */
   .main{min-width:0;display:flex;flex-direction:column}
-  .topbar{position:sticky;top:0;z-index:6;display:flex;align-items:center;gap:var(--s3);
-    padding:14px var(--s6);background:rgba(10,11,13,.88);backdrop-filter:blur(8px);
-    border-bottom:1px solid var(--line)}
-  .pagetitle{font-size:15px;font-weight:600;letter-spacing:-.01em}
-  .pagesub{color:var(--faint);font-size:11.5px}
+  .topbar{display:flex;align-items:center;gap:var(--s2);padding:var(--s3) var(--s4);
+    border-bottom:1px solid var(--line);background:rgba(8,11,15,.86);backdrop-filter:blur(8px);
+    position:sticky;top:0;z-index:20;flex-wrap:wrap}
+  .pagetitle{font-size:var(--t4);font-weight:600;letter-spacing:-.01em}
+  .pagesub{color:var(--faint);font-size:11px}
   .spacer{flex:1}
+  .pill{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;padding:3px 9px;
+    border-radius:99px;border:1px solid var(--line2);background:var(--surface2);color:var(--dim)}
+  .pill .dot{width:6px;height:6px;border-radius:50%;background:var(--faint)}
+  .pill.live{border-color:#155a44;color:#9dffd4;background:rgba(0,255,163,.07)}
+  .pill.live .dot{background:var(--neon);box-shadow:0 0 8px var(--neon);animation:pulse 2s infinite}
+  .pill.stale{color:var(--amber);border-color:#5a4218;background:var(--amber-dim)}
+  .pill.down{color:var(--red);border-color:#5c2026;background:var(--red-dim)}
+  .pill.tz{color:var(--faint)}
+  .pill.bell{border-color:var(--line2);color:var(--dim);cursor:pointer}
+  .pill.bell.has{color:var(--amber);border-color:#5a4218;background:var(--amber-dim)}
+  .copy{font-size:11.5px;padding:4px 10px;border:1px solid var(--line2);border-radius:var(--r-sm);
+    background:var(--surface2);color:var(--dim)}
+  .copy:hover{color:var(--ink);border-color:var(--neon)}
+  .copy.done{color:var(--neon);border-color:#155a44}
+  .copy.fail{color:var(--red);border-color:#5c2026}
+  .equity{margin-left:auto;text-align:right;line-height:1.1}
+  .equity b{font-size:var(--t4);font-weight:600}
+  .equity span{display:block;font-size:9.5px;color:var(--faint);letter-spacing:.08em;text-transform:uppercase}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
 
-  .runbtn{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;
-    padding:6px 11px;border-radius:var(--r-sm);border:1px solid var(--line2);
-    background:var(--surface2);color:var(--ink);cursor:pointer}
-  .runbtn:hover{background:var(--surface3);border-color:var(--accent)}
-  .runbtn:disabled{opacity:.55;cursor:progress}
-  .runbtn.armed{border-color:var(--accent);color:#cfe0ff;background:var(--accent-dim)}
+  /* ---- scan bar ------------------------------------------------------- */
   .progress{display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap;font-size:11.5px;
     color:var(--dim);padding:7px var(--s4);border-bottom:1px solid var(--line);
-    background:var(--surface2)}
+    background:linear-gradient(180deg,var(--surface2),rgba(11,14,18,.6))}
   .progress .stage{display:inline-flex;align-items:center;gap:5px}
-  .progress .stage.done{color:var(--good)}
+  .progress .stage.done{color:var(--neon)}
   .progress .stage.now{color:var(--ink);font-weight:600}
   .progress .stage.now:before{content:"";width:7px;height:7px;border-radius:50%;
-    background:var(--accent);animation:pulse 1.1s infinite}
+    background:var(--neon);box-shadow:0 0 8px var(--neon);animation:pulse 1.1s infinite}
   .progress .stage.todo{color:var(--faint)}
-  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
-  .pill{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;
-    padding:4px 10px;border-radius:99px;border:1px solid var(--line2);color:var(--dim);
-    white-space:nowrap}
-  .pill .dot{width:6px;height:6px;border-radius:50%;background:currentColor}
-  .pill.live{color:var(--good);border-color:rgba(63,185,80,.32);background:rgba(63,185,80,.07)}
-  .pill.down{color:var(--bad);border-color:rgba(240,86,79,.32);background:var(--bad-dim)}
-  .pill.stale{color:var(--warn);border-color:rgba(214,160,42,.32);background:var(--warn-dim)}
-  .pill.tz{color:var(--faint);font-size:11px}
-  a.pill{text-decoration:none}
-  .equity{display:flex;align-items:baseline;gap:7px;margin-left:auto}
-  .equity b{font-size:20px;font-weight:600;letter-spacing:-.02em}
-  .equity span{color:var(--faint);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase}
+  .runbtn{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;
+    padding:6px 11px;border-radius:var(--r-sm);border:1px solid var(--line2);
+    background:var(--surface3);color:var(--ink)}
+  .runbtn:hover{border-color:var(--neon);box-shadow:var(--glow)}
+  .runbtn:disabled{opacity:.55;cursor:progress}
+  .runbtn.armed{border-color:var(--neon);color:var(--neon);background:var(--neon-dim)}
 
-  .page{padding:var(--s5) var(--s6) var(--s6);display:grid;gap:var(--s4);
-    grid-template-columns:repeat(12,1fr);align-items:start;max-width:1480px;width:100%}
-  .tap3{grid-column:span 3} .tap4{grid-column:span 4} .tap6{grid-column:span 6}
-  .tap8{grid-column:span 8} .tap12{grid-column:1/-1}
-  @media (max-width:1180px){ .tap3,.tap4{grid-column:span 6} .tap6,.tap8{grid-column:span 12} }
-  @media (max-width:720px){ .page{padding:var(--s4)} .tap3,.tap4{grid-column:span 12} }
-  @media (max-width:900px){ .app{grid-template-columns:64px 1fr} .side{padding:var(--s3) 6px}
-    .brand h1,.brand .sub,.navitem span,.sidenote,.sidelink span{display:none}
-    .brand{justify-content:center;padding:0 0 var(--s4)} .navitem{justify-content:center}
-    .topbar{padding:12px var(--s4)} }
+  /* ---- page & cards --------------------------------------------------- */
+  .page{padding:var(--s4);display:flex;flex-direction:column;gap:var(--s4);min-width:0}
+  .contents{display:flex;flex-direction:column;gap:var(--s4);min-width:0}
+  .grid{display:grid;gap:var(--s4);min-width:0}
+  .g2{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .g3{grid-template-columns:repeat(3,minmax(0,1fr))}
+  .g4{grid-template-columns:repeat(4,minmax(0,1fr))}
+  .g21{grid-template-columns:minmax(0,2fr) minmax(0,1fr)}
+  .g12{grid-template-columns:minmax(0,1fr) minmax(0,2fr)}
+  .card{border:1px solid var(--line);border-radius:var(--r);background:var(--surface);
+    overflow:hidden;min-width:0}
+  .card>header{display:flex;align-items:center;gap:var(--s2);padding:9px var(--s3);
+    border-bottom:1px solid var(--line);background:var(--surface2);min-height:38px}
+  .card>header h2{margin:0;font-size:11.5px;font-weight:600;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--dim)}
+  .card>header .note{color:var(--faint);font-size:10.5px;margin-left:auto;
+    white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:60%}
+  .card .body{padding:var(--s3);min-width:0}
+  .card .flush{padding:0}
+  .badge{display:inline-flex;align-items:center;gap:4px;font-size:10.5px;padding:1px 7px;
+    border-radius:99px;border:1px solid var(--line2);color:var(--dim);background:var(--surface3);
+    font-family:var(--font-mono)}
+  .badge.pass{color:var(--neon);border-color:#155a44;background:var(--neon-dim)}
+  .badge.warn{color:var(--amber);border-color:#5a4218;background:var(--amber-dim)}
+  .badge.bad{color:var(--red);border-color:#5c2026;background:var(--red-dim)}
+  .badge.info{color:var(--cyan);border-color:#14454f;background:var(--cyan-dim)}
+  .kpi{display:flex;flex-direction:column;gap:2px}
+  .kpi .k{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
+  .kpi .v{font-size:var(--t5);font-weight:600;font-family:var(--font-mono);font-variant-numeric:tabular-nums}
+  .kpi .h{font-size:11px;color:var(--dim)}
+  .l-dim{color:var(--dim)} .l-faint{color:var(--faint)}
+  .l-good{color:var(--neon)} .l-warn{color:var(--amber)} .l-bad{color:var(--red)}
+  .empty{display:flex;flex-direction:column;gap:6px;align-items:flex-start;
+    color:var(--dim);font-size:12px;padding:var(--s4)}
+  .empty code{font-family:var(--font-mono);font-size:11px;color:var(--cyan);
+    background:var(--surface3);border:1px solid var(--line2);border-radius:5px;padding:1px 6px}
 
-  /* ---- surfaces -------------------------------------------------------- */
-  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);
-    overflow:hidden;box-shadow:0 1px 0 rgba(255,255,255,.02) inset}
-  .card>header{display:flex;align-items:center;gap:var(--s2);padding:11px 14px;
-    border-bottom:1px solid var(--line)}
-  .card h2{margin:0;font-size:11.5px;letter-spacing:.08em;text-transform:uppercase;
-    color:var(--dim);font-weight:600}
-  .card .count{color:var(--faint);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .tile{padding:14px 16px}
-  .tile .label{color:var(--faint);font-size:10.5px;letter-spacing:.09em;text-transform:uppercase}
-  .tile .value{font-size:24px;font-weight:600;letter-spacing:-.02em;margin-top:3px}
-  .tile .value.small{font-size:16px;font-weight:500}
-  .tile .note{color:var(--faint);font-size:11.5px;margin-top:3px}
+  /* ---- tables --------------------------------------------------------- */
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th{text-align:left;font-weight:500;color:var(--faint);font-size:10px;letter-spacing:.07em;
+    text-transform:uppercase;padding:6px var(--s3);border-bottom:1px solid var(--line)}
+  td{padding:6px var(--s3);border-bottom:1px solid var(--line);vertical-align:top}
+  tr:last-child td{border-bottom:0}
+  tr:hover td{background:rgba(255,255,255,.012)}
+  .num{font-family:var(--font-mono);font-variant-numeric:tabular-nums;text-align:right}
 
-  .verdict{grid-column:1/-1;display:flex;align-items:center;gap:12px;padding:13px 16px;
-    border-radius:var(--r);border:1px solid var(--line);background:var(--surface)}
-  .verdict b{font-size:14px;font-weight:600}
-  .verdict small{margin-left:auto;color:var(--faint);font-size:11.5px}
-  .verdict .tag{font-size:10px;letter-spacing:.1em;text-transform:uppercase;padding:2px 7px;
-    border-radius:5px;border:1px solid var(--line2);color:var(--faint)}
-  .verdict.down{border-color:rgba(214,160,42,.28);background:linear-gradient(90deg,var(--warn-dim),var(--surface) 55%)}
-  .verdict.down b{color:#f0c776} .verdict.down .tag{color:#f0c776;border-color:rgba(214,160,42,.3)}
-  .verdict.up{border-color:rgba(63,185,80,.35);background:linear-gradient(90deg,var(--good-dim),var(--surface) 55%)}
-  .verdict.up b{color:#6ee787}
+  /* ---- verdict hero --------------------------------------------------- */
+  .hero{border:1px solid #3a2330;border-left:3px solid var(--magenta);border-radius:var(--r);
+    background:linear-gradient(90deg,rgba(244,114,182,.08),rgba(244,114,182,.01) 60%,transparent);
+    padding:var(--s4) var(--s5);display:flex;align-items:center;gap:var(--s5);flex-wrap:wrap}
+  .hero.up{border-color:#11523d;border-left-color:var(--neon);
+    background:linear-gradient(90deg,rgba(0,255,163,.09),rgba(0,255,163,.01) 60%,transparent)}
+  .hero.pending{border-color:#5a4218;border-left-color:var(--amber);
+    background:linear-gradient(90deg,rgba(255,180,84,.08),transparent 60%)}
+  .hero .tag{font-family:var(--font-mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;
+    padding:2px 8px;border-radius:99px;border:1px solid currentColor;color:var(--magenta)}
+  .hero.up .tag{color:var(--neon)}
+  .hero.pending .tag{color:var(--amber)}
+  .hero h2{margin:0;font-size:var(--t5);font-weight:600;letter-spacing:-.015em}
+  .hero .sub{color:var(--dim);font-size:12px}
+  .hero .stats{margin-left:auto;display:flex;gap:var(--s5);text-align:right}
+  .hero .stats div span{display:block;font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
 
-  /* ---- pipeline -------------------------------------------------------- */
-  .pipewrap{padding:var(--s4)}
-  .track{position:relative;display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:22px 20px}
-  @media (max-width:1240px){.track{grid-template-columns:repeat(3,minmax(0,1fr))}}
-  @media (max-width:760px){.track{grid-template-columns:repeat(2,minmax(0,1fr))}}
-  .wires{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;overflow:visible}
-  .wire{fill:none;stroke:#2b323d;stroke-width:1.5}
-  .wire.on{stroke:var(--accent);stroke-dasharray:4 4;animation:flow .9s linear infinite}
-  @keyframes flow{to{stroke-dashoffset:-8}}
-  @media (prefers-reduced-motion:reduce){.wire.on{animation:none}}
-  .stop{position:absolute;transform:translate(-50%,-50%);z-index:4;pointer-events:none;
-    width:16px;height:16px;display:grid;place-items:center;font-size:10px;line-height:1;
-    border-radius:50%;background:#1a1f27;border:1px solid rgba(214,160,42,.5);color:var(--warn)}
-  .node{position:relative;width:auto;min-width:0;background:var(--surface2);
-    border:1px solid var(--line);border-left:2px solid var(--line2);border-radius:var(--r-sm);
-    padding:10px 11px;cursor:pointer;display:flex;flex-direction:column;gap:6px;
-    text-align:left;font:inherit;color:inherit;transition:border-color .12s,background .12s}
-  .node:hover{background:var(--surface3);border-color:var(--line2)}
-  .node.good{border-left-color:var(--good)} .node.warn{border-left-color:var(--warn)}
-  .node.bad{border-left-color:var(--bad)}  .node.dim{border-left-color:#39424f}
-  .node.sel{box-shadow:0 0 0 1px var(--accent),0 0 0 4px var(--accent-dim)}
-  .nh{display:flex;align-items:baseline;gap:6px;font-size:12px;line-height:1.3}
-  .nh b{font-weight:600;letter-spacing:-.01em}
-  .idx{font-size:9.5px;color:var(--faint);border:1px solid var(--line2);border-radius:4px;
-    padding:0 4px;font-variant-numeric:tabular-nums}
-  .nsub{font-size:11.5px;color:var(--dim)}
-  .npills{display:flex;flex-wrap:wrap;gap:4px;margin-top:auto}
-  .np{font-size:10px;color:var(--faint);background:var(--surface);border:1px solid var(--line);
-    border-radius:5px;padding:1px 5px}
-  .np b{font-weight:600;color:var(--dim)}
-  .nbar{height:3px;border-radius:2px;background:#1c2129;overflow:hidden}
-  .nbar span{display:block;height:100%;background:var(--accent)}
+  /* ---- desk chain ----------------------------------------------------- */
+  .chain{display:flex;align-items:stretch;gap:6px;flex-wrap:wrap}
+  .step{flex:1 1 150px;min-width:120px;border:1px solid var(--line);border-radius:8px;
+    padding:7px 9px;background:var(--surface2);position:relative}
+  .step:after{content:"";position:absolute;right:-6px;top:50%;width:6px;height:1px;background:var(--line2)}
+  .step:last-child:after{display:none}
+  .step .who{display:flex;align-items:center;gap:6px;font-size:10.5px;letter-spacing:.06em;
+    text-transform:uppercase;color:var(--faint)}
+  .step .dot{width:6px;height:6px;border-radius:50%;background:var(--faint)}
+  .step.ok .dot{background:var(--neon);box-shadow:0 0 6px var(--neon)}
+  .step.warn .dot{background:var(--amber)}
+  .step.bad .dot{background:var(--red)}
+  .step .say{font-size:11.5px;color:var(--ink);margin-top:3px;line-height:1.35;
+    display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 
-  .insp{padding:var(--s4);display:flex;flex-direction:column;gap:var(--s3)}
-  .inshead{display:flex;align-items:baseline;gap:var(--s2);font-size:12px;color:var(--dim);
-    flex-wrap:wrap}
-  .inshead b{color:var(--ink);font-size:13px}
-  .sched{position:relative;height:54px;border-radius:var(--r-sm);background:var(--surface);
-    border:1px solid var(--line)}
-  .band{position:absolute;top:0;bottom:0;border-right:1px solid var(--line)}
-  .band.on{background:rgba(91,141,239,.09)}
-  .band b{position:absolute;top:5px;left:6px;font-size:10px;color:var(--faint);font-weight:500}
-  .band i{position:absolute;bottom:4px;left:6px;font-size:9.5px;font-style:normal;color:var(--faint)}
-  .nowline{position:absolute;top:0;bottom:0;width:2px;background:var(--accent)}
-  .nowline b{position:absolute;top:-3px;left:4px;font-size:9px;color:var(--accent)}
-  .conv{display:flex;flex-direction:column;gap:6px}
-  .convrow{display:grid;grid-template-columns:132px 1fr 54px;align-items:center;gap:8px;font-size:11.5px}
-  .convrow i{font-style:normal;color:var(--dim);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-  .convbar{height:6px;border-radius:3px;background:#1c2129;overflow:hidden}
-  .convbar span{display:block;height:100%;background:var(--accent)}
-  .gates{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:10px}
-  .gate{border:1px solid var(--line);border-radius:var(--r-sm);padding:11px;
-    background:var(--surface);font-size:11.5px}
-  .gate h4{margin:0 0 7px;font-size:12.5px;display:flex;gap:6px;align-items:center;flex-wrap:wrap}
-  .gauge{position:relative;height:8px;border-radius:4px;background:#1c2129;margin:10px 0 4px;
-    border:1px solid var(--line)}
-  .gauge span{position:absolute;top:1px;bottom:1px;background:var(--bad);border-radius:4px}
-  .gauge span.ok{background:var(--good)}
-  .gauge u{position:absolute;top:-3px;bottom:-3px;width:1px;background:var(--faint);text-decoration:none}
-  .glegend{display:flex;justify-content:space-between;font-size:10.5px;color:var(--faint)}
-  .tel{display:flex;align-items:flex-end;gap:3px;height:56px}
-  .tel div{flex:1;background:#2a313b;border-radius:2px 2px 0 0;min-height:2px}
-  .tel div.hit{background:var(--warn)}
-  .telcap{display:flex;justify-content:space-between;font-size:10px;color:var(--faint)}
-  .badge.warn{color:var(--warn);border-color:rgba(214,160,42,.4);background:var(--warn-dim)}
-  .hist .run{padding:9px 0;border-top:1px solid var(--line)}
-  .hist .run:first-child{border-top:0;padding-top:0}
-  .hist .when{font-size:11px;color:var(--faint);margin-bottom:3px}
-  .hist .cells{display:flex;flex-wrap:wrap;gap:2px 16px}
-  .hist .cell{font-size:12px;color:var(--dim);max-width:100%}
-  .hist .cell b{font-size:10px;letter-spacing:.07em;text-transform:uppercase;color:var(--faint);
-    font-weight:500;margin-right:5px}
-  .chain{display:flex;flex-direction:column;margin-left:5px;border-left:1px solid var(--line2)}
-  .chain .step{position:relative;padding:0 0 var(--s3) var(--s4)}
-  .chain .step:last-child{padding-bottom:0}
-  .chain .step:before{content:"";position:absolute;left:-5px;top:4px;width:9px;height:9px;
-    border-radius:50%;background:var(--surface3);border:1px solid var(--line2)}
-  .chain .step.pass:before{background:var(--good);border-color:var(--good)}
-  .chain .step.rej:before{background:var(--bad);border-color:var(--bad)}
-  .chain .role{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;
-    color:var(--faint);margin-bottom:3px}
-  .chain .out{font-size:12px;color:var(--dim);line-height:1.5}
-  .chain .out b{color:var(--ink);font-weight:600}
-  .rules{display:flex;flex-direction:column;gap:7px;font-size:12px;color:var(--dim)}
-  .rules b{color:var(--ink);font-weight:600}
-  .badge{font-size:10px;border-radius:5px;padding:1px 6px;border:1px solid var(--line2);color:var(--dim)}
-  .badge.pass{color:var(--good);border-color:rgba(63,185,80,.4);background:var(--good-dim)}
-  .badge.rej{color:var(--bad);border-color:rgba(240,86,79,.4);background:var(--bad-dim)}
+  /* ---- flow canvas ---------------------------------------------------- */
+  .flowwrap{position:relative;border:1px solid var(--line);border-radius:var(--r);
+    background:radial-gradient(1200px 400px at 20% 0%,rgba(0,255,163,.04),transparent 70%),var(--surface);
+    overflow:hidden}
+  .flowtop{display:flex;align-items:center;gap:var(--s2);padding:8px var(--s3);
+    border-bottom:1px solid var(--line);background:var(--surface2);flex-wrap:wrap}
+  .flowtop .hint{color:var(--faint);font-size:10.5px;margin-left:auto}
+  .flowsvg{display:block;width:100%;height:calc(100vh - 258px);min-height:420px;
+    cursor:grab;touch-action:none}
+  .flowsvg.dragging{cursor:grabbing}
+  .node{cursor:pointer}
+  .node rect{fill:var(--surface2);stroke:var(--line2);stroke-width:1;rx:9}
+  .node.live rect{stroke:#1a6b52}
+  .node.hot rect{stroke:var(--neon);filter:drop-shadow(0 0 6px rgba(0,255,163,.35))}
+  .node.bad rect{stroke:var(--red)}
+  .node.warn rect{stroke:var(--amber)}
+  .node.sel rect{stroke:var(--cyan);stroke-width:2}
+  .node text{fill:var(--ink);font-family:var(--font-ui)}
+  .node .t{font-size:11px;font-weight:600;letter-spacing:.05em;text-transform:uppercase;fill:var(--dim)}
+  .node .s{font-size:16px;font-family:var(--font-mono);font-weight:600}
+  .node .c{font-size:10.5px;fill:var(--faint)}
+  .edge{fill:none;stroke:var(--line2);stroke-width:1.4}
+  .edge.hot{stroke:var(--neon);stroke-width:1.8;stroke-dasharray:5 5;animation:dash 1.1s linear infinite}
+  .edge.blocked{stroke:var(--red);stroke-dasharray:4 4}
+  .edge.dim{stroke:var(--line2);opacity:.5}
+  .edge.replay{stroke:var(--cyan);stroke-width:2}
+  @keyframes dash{to{stroke-dashoffset:-20}}
+  .elabel{font-family:var(--font-mono);font-size:10px;fill:var(--dim)}
+  .elabel.bad{fill:var(--red);font-weight:600}
+  .elabel-bg{fill:var(--surface);stroke:var(--line)}
+  .chip-stop{fill:var(--red-dim);stroke:var(--red);rx:4}
+  .chip-stop-t{font-size:10px;fill:var(--red);font-family:var(--font-mono)}
+  .flowwrap.withd{margin-right:430px}
+  @media (max-width:1240px){.flowwrap.withd{margin-right:0}}
+  .minimap{position:absolute;right:10px;bottom:10px;border:1px solid var(--line2);
+    border-radius:6px;background:rgba(6,8,11,.9);padding:4px}
 
-  /* ---- analytics ------------------------------------------------------- */
-  .analytics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));
-    border-top:1px solid var(--line);background:var(--surface)}
-  @media (max-width:1100px){.analytics{grid-template-columns:1fr}}
-  .ana{padding:14px 16px;border-right:1px solid var(--line);min-width:0}
-  .ana:last-child{border-right:0}
-  .ana h3{margin:0 0 9px;font-size:10.5px;letter-spacing:.09em;color:var(--faint);
-    text-transform:uppercase;font-weight:600;display:flex;justify-content:space-between;gap:8px}
-  .ana h3 b{color:var(--dim);font-weight:500;letter-spacing:0;text-transform:none}
-  .fstep{display:grid;grid-template-columns:94px 1fr 40px;align-items:center;gap:8px;
-    font-size:11.5px;color:var(--dim);padding:2px 0}
-  .fstep i{font-style:normal;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .fstep b{text-align:right;color:var(--ink);font-weight:600}
-  .fstep .fb{height:7px;background:#1c2129;border-radius:4px;overflow:hidden}
-  .fstep .fb span{display:block;height:100%;background:var(--accent)}
-  .fstep.gone .fb span{background:#7a3a3a}
-  .drop{font-size:10px;color:var(--faint);margin-left:102px;line-height:1.4}
-  .runs{display:flex;align-items:flex-end;gap:4px;height:66px}
-  .runs div{flex:1;min-width:3px;background:#39424f;border-radius:2px 2px 0 0}
-  .runs div.hit{background:var(--good)} .runs div.none{background:#6d3434}
-  .runlbl{display:flex;justify-content:space-between;font-size:10px;color:var(--faint);margin-top:5px}
-  .gaterow{display:grid;grid-template-columns:1fr 96px 76px;gap:8px;align-items:center;
-    font-size:11.5px;padding:3px 0}
-  .gaterow i{font-style:normal;color:var(--dim);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-  .gaterow b{font-weight:600;text-align:right}
-  .gaterow .fb{height:7px;background:#1c2129;border-radius:4px;position:relative;overflow:hidden}
-  .gaterow .fb span{display:block;height:100%;border-radius:4px}
+  /* ---- inspector drawer ----------------------------------------------- */
+  .drawer{position:fixed;top:0;right:0;bottom:0;width:430px;max-width:92vw;z-index:40;
+    background:var(--surface);border-left:1px solid var(--line2);box-shadow:var(--shadow);
+    display:flex;flex-direction:column}
+  .drawer header{display:flex;align-items:center;gap:var(--s2);padding:var(--s3) var(--s4);
+    border-bottom:1px solid var(--line);background:var(--surface2)}
+  .drawer header h3{margin:0;font-size:12px;letter-spacing:.07em;text-transform:uppercase;color:var(--dim)}
+  .drawer .x{margin-left:auto;color:var(--dim);font-size:18px;line-height:1;padding:0 4px}
+  .drawer .inner{overflow:auto;padding:var(--s4);display:flex;flex-direction:column;gap:var(--s3)}
+  .scrim{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:35}
 
-  /* ---- logs & controls ------------------------------------------------- */
-  table{width:100%;border-collapse:collapse}
-  th,td{text-align:right;padding:8px 14px;font-size:12.5px}
-  th{color:var(--faint);font-weight:500;font-size:10.5px;text-transform:uppercase;
-    letter-spacing:.07em;border-bottom:1px solid var(--line)}
-  th:first-child,td:first-child{text-align:left}
-  tbody tr+tr td{border-top:1px solid rgba(255,255,255,.04)}
-  tbody tr:hover td{background:rgba(255,255,255,.015)}
-  .pos{color:var(--good)} .neg{color:var(--bad)}
-  .scrollx{overflow-x:auto}
-  .log{font-family:ui-monospace,"SF Mono","Cascadia Mono",Menlo,Consolas,monospace;
-    font-size:11.5px;line-height:1.7;color:#9aa7b6;max-height:300px;overflow:auto;
-    white-space:pre-wrap;word-break:break-word;padding:6px 0;margin:0}
-  .log div{padding:2px 14px;border-bottom:1px solid rgba(255,255,255,.025)}
-  .log div:last-child{border-bottom:0}
-  .l-bad{color:#ff9a92} .l-good{color:#7ee787} .l-dim{color:var(--faint)}
-  .l-past{opacity:.35}
-  .empty{color:var(--faint);font-style:italic;padding:18px 16px;font-size:12px}
-  .copy{border:1px solid var(--line2);border-radius:6px;padding:3px 9px;font-size:11px;
-    color:var(--dim);transition:color .12s,border-color .12s,background .12s}
-  .copy:hover{color:var(--ink);background:var(--surface2)}
-  .copy.done{color:var(--good);border-color:rgba(63,185,80,.4)}
-  .copy.fail{color:var(--bad);border-color:rgba(240,86,79,.4)}
+  /* ---- charts & heatmaps ---------------------------------------------- */
+  .chart{width:100%}
+  .heat{display:grid;gap:3px;font-size:10px}
+  .heat .cellw{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--dim)}
+  .cell{height:20px;border-radius:4px;position:relative;border:1px solid var(--line)}
+  .tiles{display:flex;flex-wrap:wrap;gap:3px}
+  .tile{width:16px;height:16px;border-radius:3px;border:1px solid var(--line);
+    position:relative;cursor:default}
+  .legend{display:flex;gap:var(--s3);flex-wrap:wrap;color:var(--faint);font-size:10.5px;align-items:center}
+  .legend i{width:8px;height:8px;border-radius:2px;display:inline-block;margin-right:4px}
 
-  .toast{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);z-index:20;
-    background:#2a1518;border:1px solid rgba(240,86,79,.45);color:#ffb4ae;
-    padding:9px 14px;border-radius:8px;font-size:12px;box-shadow:0 8px 30px rgba(0,0,0,.5)}
-  .toast b{display:block;color:var(--bad);font-size:11px;letter-spacing:.1em;text-transform:uppercase}
+  /* ---- log panes ------------------------------------------------------ */
+  .log{font-family:var(--font-mono);font-size:11px;line-height:1.5;max-height:220px;
+    overflow:auto;padding:var(--s2) var(--s3);background:#070a0d;border-radius:6px;
+    border:1px solid var(--line);margin:0;white-space:pre-wrap;word-break:break-word}
+  .log .err{color:var(--red)}
+  .log .old{color:var(--faint)}
+  .trunc{color:var(--faint);font-size:10px;padding:2px var(--s3) 0}
 
-  .contents{display:contents}
-@media(max-width:600px){.topbar{flex-wrap:wrap}.pagesub{overflow-wrap:anywhere}.equity{margin-left:auto}}
+  /* ---- responsive ----------------------------------------------------- */
+  @media (max-width:1180px){
+    .g4{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .g3{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .g21,.g12{grid-template-columns:minmax(0,1fr)}
+  }
+  @media (max-width:900px){
+    .app{grid-template-columns:64px minmax(0,1fr)}
+    .brand h1,.brand .sub,.navitem .lbl,.sidenote,.sidelink span{display:none}
+    .navitem{justify-content:center}
+    .drawer{top:auto;left:0;width:auto;height:62vh;border-left:0;border-top:1px solid var(--line2)}
+    .g2{grid-template-columns:minmax(0,1fr)}
+    .flowsvg{height:calc(100vh - 300px);min-height:360px}
+  }
+  @media (max-width:640px){
+    .g4,.g3{grid-template-columns:minmax(0,1fr)}
+    .page{padding:var(--s3)}
+    .hero .stats{margin-left:0}
+  }
 </style>
 </head>
 <body>
 <div id="root"></div>
+<script src="/vendor/react.production.min.js"></script>
+<script src="/vendor/react-dom.production.min.js"></script>
+<script src="/vendor/htm.umd.js"></script>
+<script src="/vendor/echarts.min.js"></script>
 <script>
-// A blank page is the worst failure mode for a monitor: surface the error.
-window.addEventListener("error", (e) => {
-  const r = document.getElementById("root");
-  if (r && !r.firstChild) r.textContent = "render error: " + (e.message || e.type) + " @" + (e.lineno || "?");
-});
-const {useState, useEffect, useCallback, useRef} = React;
+/* Zero-Trust Trader dashboard.
+ *
+ * No build step: React + htm + ECharts are globals loaded from /vendor/.
+ * Every number on this page comes from a file the engine wrote. When a file is
+ * missing the page says so — it never renders a zero it did not observe.
+ */
+(function () {
+"use strict";
+
+const {useState, useEffect, useRef, useMemo, useCallback} = React;
 const html = htm.bind(React.createElement);
+const HAS_ECHARTS = typeof echarts !== "undefined";
 
-const money = (v, c) => {
-  if (v === null || v === undefined) return "—";
-  // producer rounds to 2dp, so a sub-cent P&L arrives as -0.0 and would print
-  // "-0.00" while the row is coloured green by a >= 0 test. Collapse the dust.
-  const n = Math.abs(Number(v)) < 0.005 ? 0 : Number(v);
-  return `${n.toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2})} ${c||""}`.trim();
-};
-const num = (v, d=5) => v === null || v === undefined ? "—" : Number(v).toFixed(d);
-// Keep enough to recognise the account, not enough to leak it into a screenshot.
-const accountLabel = (account) => account.label || "waiting for supervisor";
-
-// Logs are written in UTC and must stay that way: the ledger is HMAC-chained
-// over its exact bytes, and a local timestamp in the file would break
-// verification for anyone reading it in another timezone. Localisation belongs
-// to the viewer, so it happens here, from the browser's own zone.
-const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || "local";
-const clock = new Intl.DateTimeFormat(undefined,
-  {hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false});
-const todayLocal = () => new Date().toLocaleDateString("sv-SE");   // YYYY-MM-DD, local
-
-const localize = (line) => String(line).replace(
-  /(\d{4}-\d{2}-\d{2})T(\d{2}:\d{2}:\d{2})Z/g,
-  (_, date, time) => {
-    const at = new Date(`${date}T${time}Z`);
-    if (Number.isNaN(at.getTime())) return `${date}T${time}Z`;
-    const hms = clock.format(at);
-    const localDate = at.toLocaleDateString("sv-SE");
-    return localDate === todayLocal() ? hms : `${localDate.slice(5)} ${hms}`;
-  });
-
-// Colour by meaning, not by position: a failure should be findable by eye in a
-// wall of green rows.
-const isError = (l) => /FAILED|ERROR|TAMPERED|REFUSED|not configured|denied/i.test(l);
-const lineClass = (l) => {
-  if (isError(l)) return "l-bad";
-  if (/(^|[^A-Z])OK\b|RECOVERED|PROPOSAL|WINNER/.test(l)) return "l-good";
-  if (/STAND_DOWN/.test(l)) return "l-dim";
-  return "";
-};
-
+/* ====================================================================== */
 // BEGIN fixture-tested state helpers
-function scanCurrent(data) {
-  return data?.scan?.current === true && data.transport_live !== false;
-}
-function transportFresh(receivedAt, now = Date.now()) {
-  return receivedAt != null && now - receivedAt <= 5000;
-}
-function protectionLabel(data, age, connected) {
-  const engine = data?.engine;
-  if (!engine) return "no engine state — positions unknown";
-  if (engine.ok !== true) return "engine refusing — protection unverified";
-  if (!connected) return "transport stale — protection unverified";
-  if (age == null || age > 30) return "engine stale — protection unverified";
-  if (!Array.isArray(engine.positions)) return "position count unknown";
-  if (!engine.positions.length) return "confirmed flat";
-  return engine.applied ? "apply enabled · observation current" : "observed only · dry run";
-}
-async function fetchLog(which) {
-  const response = await fetch(`/api/logs/${which}`);
-  if (!response.ok) throw new Error(`${which}: HTTP ${response.status}`);
-  const text = await response.text();
-  return response.headers.get("x-log-truncated") === "true"
-    ? "[EXCERPT: newest complete lines from a bounded 4 MB window; older content omitted]\n" + text
-    : text;
-}
-function parseFunnel(line) {
-  const [ts, fields, verdict] = String(line).split(" | ");
-  if (!fields || !verdict) return null;
-  const values = Object.fromEntries([...fields.matchAll(/\b(\w+)=([^\s|]+)/g)].map(m => [m[1], m[2]]));
-  const numeric = ["universe", "tested", "strategies", "total_tests", "triggering", "deduped", "shortlist", "passed_both", "trials", "cumulative"];
-  if (!numeric.every(k => /^\d+$/.test(values[k] || "") && Number.isSafeInteger(+values[k]))) return null;
-  return {ts, ...Object.fromEntries(numeric.map(k => [k, +values[k]])),
-    passed: +values.passed_both, scan_id: values.scan_id,
-    permutations: values.permutations ? +values.permutations : null, verdict: verdict.split(/\s/)[0]};
-}
-const lastFunnel = lines => lines?.length ? parseFunnel(lines[lines.length - 1]) : null;
-// END fixture-tested state helpers
+/* Everything between these markers is pure: no DOM, no fetch, no React.
+   dashboard/tests/ui.test.cjs loads this block with node:vm and asserts on it.
+   Formatting, coherence, the ledger, the edge counts and the bar mirror all
+   live here, so "what the page says" is testable without a browser. */
 
-function CopyBtn({which, label}) {
-  const [state, setState] = useState("");
-  const onClick = useCallback(async () => {
-    try {
-      await navigator.clipboard.writeText(await fetchLog(which));
-      setState("done");
-    } catch (e) {
-      setState("fail");
-    }
-    setTimeout(() => setState(""), 1400);
-  }, [which]);
-  return html`<button className=${`copy ${state}`} onClick=${onClick}
-    aria-label=${`Copy ${label || which} log to clipboard`}
-    title=${`Copy recent ${which} log (up to a 4 MB window)`}>
-    ${state === "done" ? "copied ✓" : state === "fail" ? "copy failed" : "copy"}
-  </button>`;
-}
+/* ======================================================================
+   Formatting — one spelling of every number and every duration
+   ====================================================================== */
 
-function Card({title, which, count, wide, open, children}) {
-  return html`<section className=${`card ${wide || ""}${open ? " open" : ""}`}>
-    <header>
-      <h2>${title}</h2>
-      ${count ? html`<span className="count">${count}</span>` : null}
-      <span className="spacer"></span>
-      ${which ? html`<${CopyBtn} which=${which} label=${title} />` : null}
-    </header>
-    ${children}
-  </section>`;
-}
+const money = (v, c) => v == null ? "—"
+  : Number(v).toLocaleString(undefined, {minimumFractionDigits: 2, maximumFractionDigits: 2}) + " " + (c || "");
+const num0 = (v) => v == null ? "—" : Number(v).toLocaleString();
+const num2 = (v) => v == null ? "—" : Number(v).toFixed(2);
+const pct = (v, d = 1) => v == null ? "—" : (Number(v) * 100).toFixed(d) + "%";
+const signed = (v, d = 2) => v == null ? "—" : (v > 0 ? "+" : "") + Number(v).toFixed(d);
 
-function LogPane({lines, empty, missing, raw}) {
-  // null (file absent) is not [] (file empty): the first is usually a wrong
-  // ZTT_ROOT and must not read as "nothing has happened yet".
-  if (lines === null) return html`<div className="empty">${missing || "Log file not found on disk — check ZTT_ROOT"}</div>`;
-  if (!lines || !lines.length) return html`<div className="empty">${empty}</div>`;
-  // Newest first: the last line is what is happening now. Oldest-first made a
-  // fixed failure look current for as long as the tail window was full.
-  // raw panes show the bytes as stored: localising inside JSON turns an ISO
-  // timestamp into "12:58:06", so the row stops being what the file says.
-  const view = raw ? lines.slice().reverse() : lines.slice().reverse().map(localize);
-  // Anything failing BELOW the newest healthy row is history. Dim it rather
-  // than hide it: the ledger is append-only and honest, the UI just stops
-  // shouting about problems that were fixed hours ago.
-  const healthy = view.findIndex(l => !isError(l));
-  return html`<div className="log">${view.map((l,i)=>
-    html`<div key=${i}
-      className=${lineClass(l) + (healthy >= 0 && i > healthy && isError(l) ? " l-past" : "")}>${l}</div>`)}</div>`;
-}
-
-// ---- pipeline: n8n-style stage graph -----------------------------------
-// 40px gap keeps six nodes inside a 1440px card (6*190 + 5*40 = 1340).
-const pct = (a, b) => (a == null || !b ? 0 : Math.max(0, Math.min(100, (a / b) * 100))) + "%";
-const pick = (...v) => { for (const x of v) if (x !== null && x !== undefined) return x; return null; };
-const nowUtcHours = () => { const d = new Date(); return d.getUTCHours() + d.getUTCMinutes() / 60; };
-// One duration, one spelling. 61 -> "1m", 120 -> "2m", 3600 -> "1h",
-// 5400 -> "1h 30m", 90000 -> "1d 1h". Seconds only below a minute, and the
-// remainder is dropped when it is zero, so a strip never reads "2m 0s".
+// 45 -> 45s, 120 -> 2m, 3600 -> 1h, 5400 -> 1h 30m, 90000 -> 1d 1h
 const fmtDur = (s) => {
   if (s == null) return "—";
   const n = Math.max(0, Math.round(Number(s)));
@@ -445,534 +342,1266 @@ const fmtDur = (s) => {
   return (h % 24) ? d + "d " + (h % 24) + "h" : d + "d";
 };
 
-// ponytail: mirrors run_funnel.SESSION_MATRIX. Every ledger row prints
-// strategies=N, so a drift between this table and the runner shows up on screen
-// as a mismatch rather than staying invisible.
-const sessionNow = () => {
-  const h = nowUtcHours();
-  const fams = h < 5 || h >= 17 ? []
-    : h < 8 ? ["donchian"] : h < 13 ? ["donchian", "bollinger"] : ["donchian", "bollinger", "rsi"];
-  return { h, open: fams.length > 0, fams };
+const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || "local";
+const localize = (iso) => {
+  if (!iso) return "—";
+  const d = new Date(iso);
+  if (isNaN(d)) return iso;
+  return d.toLocaleString(undefined, {hour: "2-digit", minute: "2-digit", day: "2-digit", month: "short"});
 };
+const clockLocal = (unixS) => new Date(unixS * 1000)
+  .toLocaleTimeString(undefined, {hour: "2-digit", minute: "2-digit"});
 
-// The ledger line is the fallback when tier2/tier3 are absent (most of the day).
 
-const jsonLines = (lines) => (lines || []).map((l) => { try { return JSON.parse(l); } catch (_) { return null; } }).filter(Boolean);
-
-function pipeline(d) {
-  const current = scanCurrent(d);
-  const t2 = current && d.tier2?.symbols_in !== undefined ? d.tier2 : null;
-  const t3 = current && d.tier3?.results !== undefined ? d.tier3 : null;
-  const f = current ? lastFunnel(d && d.funnel) : null;
-  const x = {
-    in: pick(t2 && t2.symbols_in, f && f.universe),
-    fresh: pick(t2 && t2.symbols_tested, f && f.tested),
-    fams: pick(t2 && t2.strategies_tested, f && f.strategies),
-    tests: pick(t2 && t2.total_tests, f && f.total_tests),
-    trig: pick(t2 && t2.triggering, f && f.triggering),
-    ded: t2 ? (t2.deduped || []).length : (f ? f.deduped : null),
-    short: t2 ? (t2.top || []).length : (f ? f.shortlist : null),
-    passed: t3 ? (t3.passed_both_gates || []).length : (f ? f.passed : null),
-    cum: pick(t3 && t3.trials_cumulative, f && f.cumulative),
-    zc: t3 && t3.z_crit_corrected,
-    perms: pick(t3 && t3.permutations, f && f.permutations),
-    t2, t3, f, s: sessionNow(), current,
-  };
-  x.stale = x.in != null && x.fresh != null ? Math.max(0, x.in - x.fresh) : null;
-  x.empty = !t2 && !t3 && !f;
-  return x;
+/** The stage artifacts only describe *this* scan when the ids agree and they are
+ *  recent. Otherwise they are history and the UI must say "historical". */
+function scanCurrent(data) {
+  if (!data || !data.scan) return false;
+  return data.scan.current === true;
 }
 
-function NodeCard({ n, i, sel, on }) {
-  return html`<button className=${"node " + n.state + (sel ? " sel" : "")} onClick=${() => on(i)}
-      aria-pressed=${String(sel)} title=${n.title + " — click for detail"}>
-    <div className="nh"><span className="idx">${i + 1}</span><b>${n.title}</b></div>
-    <div className="nsub">${n.sub}</div>
-    ${n.bar ? html`<div className="nbar"><span style=${{ width: n.bar }}></span></div>` : null}
-    <div className="npills">${n.pills.map(([k, v]) => html`<span className="np" key=${k}>${k}<b> ${v}</b></span>`)}</div>
-  </button>`;
+function transportFresh(receivedAt, now = Date.now()) {
+  return receivedAt != null && (now - receivedAt) <= 5000;
 }
 
-function SessionPanel({ x }) {
-  const h = x.s.h;
-  const left = (hh) => ((hh - 5) / 12) * 100;
-  return html`<div className="insp">
-    <div className="sched">
-      ${[[5, 8, "05:00–08:00", 1], [8, 13, "08:00–13:00", 2], [13, 17, "13:00–17:00", 3]].map(([a, b, label, f]) => html`
-        <div key=${label} className=${"band" + (h >= a && h < b ? " on" : "")}
-             style=${{ left: left(a) + "%", width: ((b - a) / 12 * 100) + "%" }}>
-          <b>${label}</b><i>${f} famil${f === 1 ? "y" : "ies"}</i>
-        </div>`)}
-      ${h >= 5 && h < 17 ? html`<div className="nowline" style=${{ left: left(h) + "%" }}><b>now</b></div>` : null}
-    </div>
-    <div className="conv">
-      <div className="convrow"><i>fresh (≤45 min)</i>
-        <div className="convbar"><span style=${{ width: pct(x.fresh, x.in), background: "var(--good)" }}></span></div>
-        <b className="mono">${x.fresh ?? "—"}</b></div>
-      <div className="convrow"><i>stale skipped</i>
-        <div className="convbar"><span style=${{ width: pct(x.stale, x.in), background: "var(--warn)" }}></span></div>
-        <b className="mono">${x.stale ?? "—"}</b></div>
-      <div className="convrow"><i>symbols in universe</i>
-        <div className="convbar"><span style=${{ width: "100%" }}></span></div>
-        <b className="mono">${x.in ?? "—"}</b></div>
-    </div>
-  </div>`;
+/** The one sentence that tells you whether anything is watching the positions. */
+function protectionLabel(data, ageSecs, transportLive) {
+  if (!data) return "no engine state — positions unknown";
+  if (!data.engine) return "no engine state — positions unknown";
+  if (data.engine.ok === false) return "engine refusing — protection unverified";
+  if (!transportLive || ageSecs == null) return "transport stale — protection unverified";
+  // 30 s, not the alert rail's 120 s: the supervisor writes every second, so half
+  // a minute of silence already means what you see is not what is happening.
+  if (ageSecs > 30) return "engine stale — protection unverified";
+  const n = (data.engine.positions || []).length;
+  if (n === 0) return "confirmed flat";
+  return data.engine.applied ? "apply enabled · observation current" : "observed only · dry run";
 }
 
-function Tier2Panel({ x }) {
-  const t2 = x.t2 || {};
-  const top = t2.top || [];
-  const dropped = t2.deduped || [];
-  const rows = [["universe", x.in], ["fresh", x.fresh], ["triggering", x.trig],
-                ["after ρ dedupe", x.short], ["shortlist", x.short]];
-  const base = x.in || 1;
-  return html`<div className="insp">
-    <div className="conv">
-      ${rows.map(([label, v], k) => html`<div className="convrow" key=${label}>
-        <i>${label}</i>
-        <div className="convbar"><span style=${{ width: pct(v, base), background: k === 3 || k === 4 ? "var(--warn)" : "var(--dim)" }}></span></div>
-        <b className="mono">${v ?? "—"}</b></div>`)}
-    </div>
-    ${t2.per_family ? html`<div className="npills">${Object.entries(t2.per_family).map(([k, v]) =>
-        html`<span className="np" key=${k}>${k}<b> ${v}</b></span>`)}</div>` : null}
-    ${top.length ? html`<div className="conv">
-      ${top.map((c, k) => html`<div className="convrow" key=${c.symbol + k}>
-        <i>${c.symbol} · ${c.strategy}</i>
-        <div className="convbar"><span style=${{ width: pct(c.score, 1) }}></span></div>
-        <b className="mono">${c.side || ""} ${(c.score ?? 0).toFixed(2)}</b></div>`)}
-    </div>` : html`<div className="empty">No candidate survived to the shortlist this scan.</div>`}
-    ${dropped.length ? html`<div className="rules">
-      ${dropped.map((c, k) => html`<div key=${k}>dropped <b>${c.symbol} ${c.strategy}</b>
-        — |ρ| ${c.correlation} against a stronger hit</div>`)}
-    </div>` : null}
-  </div>`;
-}
-
-function Gate({ r }) {
-  const s = r.significance || {}, p = r.permutation || {}, h = r.history || {};
-  const useT = s.gate === "t";
-  const stat = useT ? s.t_stat_R : s.z;
-  const zc = s.z_crit_bonferroni || 4.5;
-  const span = Math.max(5, zc * 1.6);
-  const at = (v) => Math.max(0, Math.min(100, ((v + span) / (2 * span)) * 100));
-  const statPct = stat == null ? 50 : at(stat);
-  const pv = p.p_value;
-  const pass1 = Boolean(s.passes_corrected), pass2 = Boolean(p.passes);
-  const side = (r.tier2 && r.tier2.side) || "—";
-  const statLabel = (useT ? "t_stat_R " : "z ") + (stat == null ? "—" : stat.toFixed(2));
-  const winLabel = h.win_rate == null ? "—" : (h.win_rate * 100).toFixed(1) + "%";
-  const avgLabel = h.avg_R == null ? "—" : h.avg_R.toFixed(2);
-  const ddLabel = h.max_drawdown_R == null ? "—" : h.max_drawdown_R.toFixed(0) + "R";
-  const pLabel = pv == null ? "—" : pv.toFixed(4);
-  const nullLabel = p.null_z_mean == null ? "—" : p.null_z_mean.toFixed(2);
-  const bar1 = { left: Math.min(50, statPct) + "%", width: Math.abs(statPct - 50) + "%",
-                 background: pass1 ? "var(--good)" : "var(--bad)" };
-  const bar2 = { left: "0%", width: (pv == null ? 0 : Math.max(0, Math.min(1, pv)) * 100) + "%" };
-  const left196 = { left: at(1.96) + "%" }, leftZc = { left: at(zc) + "%" }, left05 = { left: "5%" };
-  return html`<div className="gate">
-    <h4>${r.symbol} <span className="badge">${r.strategy}</span>
-      <span className=${"badge " + (side === "short" ? "rej" : "pass")}>${side}</span>
-      <span className=${"badge " + (pass1 ? "pass" : "rej")}>gate 1 ${pass1 ? "PASS" : "REJECT"}</span>
-      <span className=${"badge " + (pass2 ? "pass" : "rej")}>gate 2 ${pass2 ? "PASS" : "REJECT"}</span></h4>
-    <div className="glegend"><span>${statLabel}</span><span>naive 1.96 · corrected ${zc}</span></div>
-    <div className="gauge"><span style=${bar1}></span><u style=${left196}></u><u style=${leftZc}></u></div>
-    <div className="glegend"><span>n=${h.n_decided ?? "—"} · win ${winLabel} · avgR ${avgLabel}</span>
-      <span>DD ${ddLabel}</span></div>
-    <div className="glegend"><span>permutation p ${pLabel}</span><span>null ${nullLabel}</span></div>
-    <div className="gauge"><span style=${bar2}></span><u style=${left05}></u></div>
-    <div className="glegend"><span>0</span><span>threshold 0.05</span><span>1</span></div>
-  </div>`;
-}
-
-function Tier3Panel({ x }) {
-  const r = (x.t3 && x.t3.results) || [];
-  if (!r.length) return html`<div className="insp"><div className="empty">
-    ${x.f ? "No survivor reached the deep test this scan — the funnel stopped at Tier 2." : "No deep-test results on disk."}</div></div>`;
-  return html`<div className="insp"><div className="gates">${r.slice(0, 8).map((c, k) => html`<${Gate} r=${c} key=${c.symbol + k} />`)}</div></div>`;
-}
-
-function VerdictPanel({ x, data }) {
-  const rows = (data && data.funnel) || [];
-  const tail = rows.slice(-12);
-  const dur = jsonLines(data && data.mcp).slice(-12);
-  const tested = tail.map(l => parseFunnel(l)?.tested ?? null);
-  const hits = tail.map(l => parseFunnel(l)?.triggering ?? 0);
-  const max = Math.max(1, ...tested.filter((v) => v != null));
-  return html`<div className="insp">
-    <div className="rules">
-      <div><b>Order path</b> — human types APPROVED, then the bridge issues a single-use token. No endpoint on this page can place, modify or close anything.</div>
-      <div><b>Caps</b> — 0.01 lot per trade · demo server required by pre-flight · AutoTrading stays off.</div>
-      <div><b>Verdict</b> — ${x.passed > 0 ? (x.t3 && x.t3.survivors || []).map((s) => s.symbol).join(", ") || "proposal pending" : "STAND DOWN — no candidate cleared both gates."}</div>
-      <div><b>Supervisor</b> — ${protectionLabel(data, data?.engine_age_s, data?.transport_live === true)}.</div>
-    </div>
-    <div className="telcap"><span>last ${tail.length} scans · bars = symbols tested · amber = triggering</span>
-      <span>${dur.length ? "dur " + fmtDur(dur[dur.length - 1].dur_s) : ""}</span></div>
-    <div className="tel">
-      ${tested.map((v, k) => html`<div key=${k} className=${hits[k] ? "hit" : ""}
-        style=${{ height: (v == null ? 0 : (v / max) * 100) + "%" }}
-        title=${v == null ? "unparsed" : v + " tested"}></div>`)}
-    </div>
-    <div className="telcap"><span>oldest</span><span>newest</span></div>
-  </div>`;
-}
-
-function Inspect({ i, x, data }) {
-  if (i < 2) return html`<${SessionPanel} x=${x} />`;
-  if (i === 2) return html`<${Tier2Panel} x=${x} />`;
-  if (i === 3) return html`<${Tier3Panel} x=${x} />`;
-  return html`<${VerdictPanel} x=${x} data=${data} />`;
-}
-
-function Pipe({ data, detail }) {
-  const [sel, setSel] = useState(3);
-  const [geom, setGeom] = useState(null);
-  const wrap = useRef(null);
-  const cells = useRef([]);
-  const x = pipeline(data);
-  const age = data && data.engine_age_s;
-  const hasEngine = Boolean(data && data.engine);
-  const stale = age != null && age > 30;
-  const n = (v, s) => (v == null ? "—" : v + (s || ""));
-  const nodes = [
-    { title: "Schedule & pre-flight", state: x.s.open ? "good" : "dim",
-      sub: x.s.open ? x.s.fams.length + "/3 families" : "off-window",
-      pills: [["session", x.s.open ? "open" : "closed"], ["fams", x.s.fams.length ? x.s.fams.join(" ") : "—"],
-              ["pin", data && data.server ? String(data.server).replace("PepperstoneUK-", "") : "—"]] },
-    { title: "Tier 1 · universe", state: x.fresh > 0 ? "good" : x.in > 0 ? "bad" : "dim",
-      sub: n(x.in, " symbols in"), bar: pct(x.fresh, x.in),
-      pills: [["fresh", n(x.fresh)], ["stale", n(x.stale)]] },
-    { title: "Tier 2 · matrix", state: x.trig > 0 ? "good" : x.tests > 0 ? "warn" : "dim",
-      sub: n(x.tests, " tests"), bar: pct(x.trig, x.tests),
-      pills: [["triggers", n(x.trig)], ["deduped", n(x.ded)], ["shortlist", n(x.short)]] },
-    { title: "Tier 3 · deep test", state: x.passed > 0 ? "good" : (x.t3 && x.t3.results && x.t3.results.length) || x.short > 0 ? "warn" : "dim",
-      sub: x.short == null && x.passed == null ? "no stage data"
-        : n(x.short, " in → ") + n(x.passed, " passed"), bar: pct(x.short, x.tests),
-      pills: [["gate", x.t3 && x.t3.results && x.t3.results[0] ? (x.t3.results[0].significance || {}).gate : "t"],
-              ["z_crit", x.zc == null ? "—" : x.zc.toFixed(3)], ["perm", n(x.perms)]] },
-    { title: "Verdict & consent", state: x.passed > 0 ? "good" : x.passed == null ? "dim" : "warn",
-      sub: x.passed > 0 ? "proposal" : x.passed == null ? "no scan data" : "STAND DOWN",
-      pills: [["lot cap", "0.01"], ["approval", "human"]] },
-    { title: "Supervisor", state: !hasEngine || data?.engine?.ok !== true ? "bad" : stale || !data?.transport_live ? "warn" : "good",
-      sub: protectionLabel(data, age, data?.transport_live === true),
-      pills: [["age", age == null ? "—" : fmtDur(age)], ["close", "17:00Z"]] },
-  ];
-  const flow = [x.s.open, x.fresh > 0, x.trig > 0, x.short > 0, x.passed > 0];
-
-  // Wires follow the nodes instead of an assumed pitch, so the canvas fits any
-  // width: the track is a grid and the geometry is measured, not multiplied out.
-  const measure = useCallback(() => {
-    const w = wrap.current;
-    if (!w) return;
-    const b = w.getBoundingClientRect();
-    const g = cells.current.map((e) => {
-      if (!e) return null;
-      const r = e.getBoundingClientRect();
-      return { x: Math.round(r.left - b.left), y: Math.round(r.top - b.top),
-               w: Math.round(r.width), h: Math.round(r.height) };
-    });
-    if (g.length !== 6 || g.some((v) => !v)) return;
-    const key = JSON.stringify(g);
-    setGeom((prev) => (prev && prev.key === key ? prev : { key, g }));
-  }, []);
-  useEffect(() => { measure(); }, [measure, data]);
-  useEffect(() => {
-    if (typeof ResizeObserver === "undefined") return;
-    const ro = new ResizeObserver(() => measure());
-    if (wrap.current) ro.observe(wrap.current);
-    cells.current.forEach((e) => { if (e) ro.observe(e); });
-    return () => ro.disconnect();
-  }, [measure]);
-
-  const label = (i) => i === 0 && !x.s.open ? "off-window" : i === 1 ? "0 fresh" : i === 2 ? "0 triggers"
-    : i === 3 ? "0 shortlist" : "0 passed";
-  const edges = geom ? flow.map((on, i) => {
-    const a = geom.g[i], b = geom.g[i + 1], sameRow = Math.abs(a.y - b.y) < 8;
-    if (sameRow) {
-      const x1 = a.x + a.w, y1 = a.y + a.h / 2, x2 = b.x, y2 = b.y + b.h / 2;
-      const d = Math.max(6, Math.min(26, (x2 - x1) / 2));
-      return { on, d: `M ${x1} ${y1} C ${x1 + d} ${y1}, ${x2 - d} ${y2}, ${x2} ${y2}`,
-               mx: (x1 + x2) / 2, my: y1, label: label(i) };
+/** One line of funnel_history.log -> the row the UI needs, or null. Kept as a
+ *  fallback for a server that predates the Rust ledger parser. */
+function parseFunnel(line) {
+  if (!line || typeof line !== "string") return null;
+  const m = line.trim().match(/^(\S+)\s*\|(.*)\|(.*)$/);
+  if (!m) return null;
+  const rec = {ts: m[1], verdict: null, winners: []};
+  (m[2] || "").trim().split(/\s+/).forEach((tok) => {
+    const i = tok.indexOf("=");
+    if (i > 0) {
+      const k = tok.slice(0, i), v = tok.slice(i + 1);
+      rec[k] = /^-?\d+$/.test(v) ? Number(v) : v;
     }
-    // wrapped row: leave the bottom edge, enter the next row's top edge
-    const x1 = a.x + a.w / 2, y1 = a.y + a.h, x2 = b.x + b.w / 2, y2 = b.y;
-    const d = Math.max(6, Math.min(24, (y2 - y1) / 2));
-    return { on, d: `M ${x1} ${y1} C ${x1} ${y1 + d}, ${x2} ${y2 - d}, ${x2} ${y2}`,
-             mx: (x1 + x2) / 2, my: (y1 + y2) / 2, label: label(i) };
-  }) : [];
+  });
+  const tail = (m[3] || "").trim();
+  rec.signed = /\bsig=\w+/.test(tail);
+  const head = tail.replace(/\s*sig=\w+/, "").trim();
+  const wi = head.indexOf("WINNER:");
+  if (wi === 0) {
+    rec.verdict = "WINNER";
+    rec.winners = head.slice(7).split(",").map((s) => s.trim()).filter(Boolean);
+  } else {
+    const w = head.split(/\s+/)[0] || "";
+    rec.verdict = ["STAND_DOWN", "FAILED", "REBUILT"].includes(w) ? w : "OTHER";
+    if (rec.verdict === "FAILED") rec.detail = head.slice(w.length).trim() || null;
+  }
+  return rec;
+}
 
+function lastFunnel(lines) {
+  if (!Array.isArray(lines) || !lines.length) return null;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    const r = parseFunnel(lines[i]);
+    if (r) return r;
+  }
+  return null;
+}
+
+/** Normalise the ledger: the Rust parser's rows, or the old tail if needed. */
+function ledgerRows(data) {
+  const rows = data && data.ledger && data.ledger.rows;
+  if (Array.isArray(rows) && rows.length) return rows;
+  const tail = (data && data.funnel) || [];
+  const out = [];
+  for (let i = tail.length - 1; i >= 0; i--) {
+    const r = parseFunnel(tail[i]);
+    if (r) out.push(r);
+  }
+  return out;
+}
+
+/** The six pipeline stages, from the artifacts alone. */
+function pipeline(d) {
+  const t2 = d && d.tier2;
+  const t3 = d && d.tier3;
+  const u = d && d.universe;
+  const rows = ledgerRows(d);
+  const last = rows[0] || null;
+  return {
+    in: u && u.present ? u.count : (t2 && t2.symbols_in != null ? t2.symbols_in : (last ? last.universe : null)),
+    tested: t2 ? t2.symbols_tested : (last ? last.tested : null),
+    tests: t2 ? t2.total_tests : (last ? last.total_tests : null),
+    triggering: t2 ? t2.triggering : (last ? last.triggering : null),
+    deduped: t2 ? (t2.deduped || []).length : (last ? last.deduped : null),
+    shortlist: t3 ? (t3.results || []).length : (last ? last.shortlist : null),
+    passed: t3 ? (t3.passed_both_gates || []).length : (last ? last.passed_both : null),
+    cumulative: t3 ? t3.trials_cumulative : (last ? last.cumulative : null),
+    bar: t3 ? t3.z_crit_corrected : null,
+    gate: t3 ? (t3.results && t3.results[0] && t3.results[0].significance
+      ? t3.results[0].significance.gate : null) : null,
+    corr: (t2 && t2.corr_max) != null ? t2.corr_max : (t3 ? t3.corr_max : null),
+    perFamily: (t2 && t2.per_family) || null,
+    stoodDown: t3 ? !!t3.stood_down : null,
+    last,
+  };
+}
+
+/** What each edge carried. `null` means unknown, and an unknown edge draws no
+ *  label — never a zero it did not see. */
+function edgeCounts(x, data) {
+  const cur = scanCurrent(data);
+  if (!cur) {
+    return {
+      "scheduler>preflight": "15 min",
+      "preflight>tier1": null,
+      "tier1>tier2": null,
+      "tier2>dedupe": null,
+      "dedupe>tier3": null,
+      "tier3>verdict": null,
+      "verdict>consent": null,
+      "consent>supervisor": "APPROVED + token",
+      "supervisor>verdict": "protects, never opens",
+    };
+  }
+  return {
+    "scheduler>preflight": "15 min",
+    "preflight>tier1": null,
+    "tier1>tier2": x.tested == null ? null : x.tested + " in",
+    "tier2>dedupe": x.triggering == null ? null : x.triggering + " fired",
+    "dedupe>tier3": x.shortlist == null ? null : x.shortlist + " short",
+    "tier3>verdict": x.passed == null ? null : x.passed + " passed",
+    "verdict>consent": x.stoodDown === true ? "stand down" : x.stoodDown === false ? "proposal" : null,
+    "consent>supervisor": "APPROVED + token",
+    "supervisor>verdict": "protects, never opens",
+  };
+}
+
+/** Which of the nine nodes is hot, and which edge shows flow. */
+function edgeStates(progress, data) {
+  const running = !!(progress && progress.status === "running");
+  const stage = progress ? progress.stage : null;
+  const cur = scanCurrent(data);
+  const x = pipeline(data);
+  // A scan in flight has no coherent artifacts yet; that is "running", not
+  // "historical". Only a scan that ended without coherence is historical.
+  const out = {running: running, stage: stage, hot: {}, blocked: {}, historical: !cur && !running};
+  const map = {preflight: "scheduler>preflight", universe: "preflight>tier1", tier2: "tier1>tier2",
+               tier3: "dedupe>tier3", verdict: "tier3>verdict"};
+  if (running && map[stage]) out.hot[map[stage]] = true;
+  if (cur && x.passed === 0) out.blocked["tier3>verdict"] = true;
+  return out;
+}
+
+/** Drawdown series from an equity series, as a percentage below the running peak. */
+function computeDrawdown(points) {
+  if (!Array.isArray(points) || !points.length) return [];
+  let peak = -Infinity;
+  return points.map(([ts, v]) => {
+    peak = Math.max(peak, v);
+    return [ts, peak > 0 ? ((v - peak) / peak) * 100 : 0];
+  });
+}
+
+/** Mirror of timemachine_mt5.bonferroni_z — Φ⁻¹(1 − 0.05/(2n)), two-sided, α=0.05.
+ *  Labelled as a mirror wherever it is shown: the authoritative bar is the one the
+ *  engine wrote into tier3. This exists to answer "what would N trials demand?" */
+function bonferroniMirror(n) {
+  if (!(n > 0)) return null;
+  const p = 1 - 0.05 / (2 * n);
+  // Acklam's inverse normal CDF, accurate to ~1e-9 over the useful range.
+  const a = [-3.969683028665376e+01, 2.209460984245205e+02, -2.759285104469687e+02,
+             1.383577518672690e+02, -3.066479806614716e+01, 2.506628277459239e+00];
+  const b = [-5.447609879822406e+01, 1.615858368580409e+02, -1.556989798598866e+02,
+             6.680131188771972e+01, -1.328068155288572e+01];
+  const c = [-7.784894002430293e-03, -3.223964580411365e-01, -2.400758277161838e+00,
+             -2.549732539343734e+00, 4.374664141464968e+00, 2.938163982698783e+00];
+  const dd = [7.784695709041462e-03, 3.224671290700398e-01, 2.445134137142996e+00,
+              3.754408661907416e+00];
+  const plow = 0.02425, phigh = 1 - plow;
+  let q, r, x;
+  if (p < plow) {
+    q = Math.sqrt(-2 * Math.log(p));
+    x = (((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5]) /
+        ((((dd[0]*q+dd[1])*q+dd[2])*q+dd[3])*q+1);
+  } else if (p <= phigh) {
+    q = p - 0.5; r = q * q;
+    x = (((((a[0]*r+a[1])*r+a[2])*r+a[3])*r+a[4])*r+a[5])*q /
+        (((((b[0]*r+b[1])*r+b[2])*r+b[3])*r+b[4])*r+1);
+  } else {
+    q = Math.sqrt(-2 * Math.log(1 - p));
+    x = -(((((c[0]*q+c[1])*q+c[2])*q+c[3])*q+c[4])*q+c[5]) /
+         ((((dd[0]*q+dd[1])*q+dd[2])*q+dd[3])*q+1);
+  }
+  return Math.round(x * 1000) / 1000;
+}
+
+/** Which session's family list is active at a UTC instant, and when the next
+ *  window opens. Mirrors run_funnel.session_strategies, for the countdown only. */
+function sessionState(nowUtcHours) {
+  const h = nowUtcHours;
+  if (h >= 5 && h < 8) return {open: true, families: ["donchian"], label: "05:00–08:00Z", next: null};
+  if (h >= 8 && h < 13) return {open: true, families: ["donchian", "bollinger"], label: "08:00–13:00Z", next: null};
+  if (h >= 13 && h < 17) return {open: true, families: ["donchian", "rsi", "bollinger"], label: "13:00–17:00Z", next: null};
+  const next = h < 5 ? 5 - h : 29 - h;
+  return {open: false, families: [], label: "off-window", next: next};
+}
+
+/** Everything a view needs, derived once so the honesty rules live in one place. */
+function derive(data, up, elapsed) {
+  const age = data && data.engine_age_s != null ? data.engine_age_s + (elapsed || 0) : null;
+  const cur = scanCurrent(data);
+  const x = pipeline(data);
+  const rows = ledgerRows(data);
+  const t3 = cur && data ? data.tier3 : null;
+  const survivors = t3 ? (t3.survivors || []).map((v) => (v && v.symbol) || v).filter(Boolean) : [];
+  return {
+    age: age,
+    live: !!up && age != null && age <= 30,
+    historical: !cur && (!!data && (!!data.tier2 || !!data.tier3)),
+    scanId: data && data.scan ? data.scan.scan_id : null,
+    current: cur,
+    verdict: t3 ? (t3.stood_down ? "STAND_DOWN" : "PROPOSAL") : null,
+    stoodDown: t3 ? !!t3.stood_down : null,
+    survivors: survivors,
+    cumulative: x.cumulative,
+    bar: x.bar,
+    rows: rows,
+    x: x,
+    edges: edgeCounts(x, data),
+    states: edgeStates(data && data.progress, data),
+    today: todayStats(rows, data && data.ts),
+    protection: protectionLabel(data, age, up),
+  };
+}
+
+/** Scans and tests that landed today (UTC), from the ledger alone. */
+function todayStats(rows, nowS) {
+  if (!Array.isArray(rows) || !rows.length) return {scans: null, tests: null, passed: null, verdicts: []};
+  const now = nowS ? new Date(nowS * 1000) : new Date();
+  const day = now.toISOString().slice(0, 10);
+  const mine = rows.filter((r) => (r.ts || "").slice(0, 10) === day);
+  if (!mine.length) return {scans: 0, tests: 0, passed: 0, verdicts: []};
+  return {
+    scans: mine.length,
+    tests: mine.reduce((a, r) => a + (r.total_tests || 0), 0),
+    passed: mine.reduce((a, r) => a + (r.passed_both || 0), 0),
+    verdicts: mine.slice(0, 14),
+  };
+}
+
+// END fixture-tested state helpers
+/* ====================================================================== */
+
+/* ---- tiny components ------------------------------------------------ */
+
+function Card({title, note, flush, children, className}) {
+  return html`<section className=${"card " + (className || "")}>
+    <header><h2>${title}</h2>${note ? html`<span className="note" title=${note}>${note}</span>` : null}</header>
+    <div className=${"body " + (flush ? "flush" : "")}>${children}</div>
+  </section>`;
+}
+const Badge = ({tone, children}) => html`<span className=${"badge " + (tone || "")}>${children}</span>`;
+const Dim = ({children}) => html`<span className="l-faint">${children}</span>`;
+
+function Empty({text, cmd}) {
+  return html`<div className="empty"><div>${text}</div>${cmd ? html`<code>${cmd}</code>` : null}</div>`;
+}
+
+function CopyBtn({which, label, onCopy}) {
+  const [state, setState] = useState("");
+  const go = async () => {
+    try { await onCopy(which); setState("done"); } catch (e) { setState("fail"); }
+    setTimeout(() => setState(""), 1500);
+  };
+  return html`<button className=${"copy " + state} onClick=${go} aria-live="polite">
+    ${state === "done" ? "copied ✓" : state === "fail" ? "copy failed" : (label || "copy " + which)}</button>`;
+}
+
+function LogPane({lines, missing, raw, onCopy, which}) {
+  if (missing) return html`<${Empty} text=${"no " + which + " on disk — the engine has not written it yet"} />`;
+  if (!lines || !lines.length) return html`<${Empty} text="the file exists and is empty" />`;
+  const errIdx = lines.findIndex((l) => /ERROR|FAILED|refus/i.test(l) && !/RECOVERED/.test(l));
   return html`<div>
-    <div className="pipewrap"><div className="track" ref=${wrap}>
-      ${geom ? html`<svg className="wires" aria-hidden="true">
-        ${edges.map((e, i) => html`<path key=${i} className=${"wire" + (e.on ? " on" : "")} d=${e.d} />`)}
-      </svg>` : null}
-      ${nodes.map((nd, i) => html`<button key=${i} ref=${(el) => { cells.current[i] = el; }}
-        className=${"node " + nd.state + (i === sel ? " sel" : "")} onClick=${() => setSel(i)}
-        aria-pressed=${String(i === sel)} title=${nd.title + " — click for detail"}>
-        <div className="nh"><span className="idx">${i + 1}</span><b>${nd.title}</b></div>
-        <div className="nsub">${nd.sub}</div>
-        ${nd.bar ? html`<div className="nbar"><span style=${{ width: nd.bar }}></span></div>` : null}
-        <div className="npills">${nd.pills.map(([k, v]) => html`<span className="np" key=${k}>${k}<b> ${v}</b></span>`)}</div>
-      </button>`)}
-      ${geom ? edges.map((e, i) => e.on ? null : html`<span className="stop" key=${"s" + i}
-        title=${e.label + " — the funnel stopped here"}
-        aria-label=${e.label}
-        style=${{ left: e.mx + "px", top: e.my + "px" }}>⊘</span>`) : null}
-    </div></div>
-    <${Analytics} x=${x} data=${data} />
-    ${detail === false ? null : x.empty
-      ? html`<div className="insp"><div className="empty">Current scan unverified — stage artifacts are missing, historical, incomplete or do not share a completed scan identity. Review the ledger below.</div></div>`
-      : html`<${Inspect} i=${sel} x=${x} data=${data} />`}
+    <pre className="log">${lines.map((l, i) => html`<div key=${i}
+      className=${errIdx >= 0 && i < errIdx ? "old" : errIdx === i ? "err" : ""}>${l}</div>`)}</pre>
+    <div className="trunc">newest first · showing ${lines.length} lines from a bounded tail${raw ? " · raw" : ""}
+      ${onCopy ? html` <${CopyBtn} which=${which} onCopy=${onCopy} label="copy" />` : null}</div>
   </div>`;
 }
 
-function Analytics({ x, data }) {
-  const rows = ((data && data.funnel) || []).map(parseFunnel).filter(Boolean).slice(-12)
-    .map(r => ({...r, tests: r.total_tests, trig: r.triggering}));
-  const steps = [["universe", x.in], ["fresh ≤45m", x.fresh], ["triggering", x.trig], ["shortlist", x.short], ["passed both", x.passed]];
-  const top = Math.max(1, ...steps.map(([, v]) => v || 0));
-  const maxT = Math.max(1, ...rows.map((r) => r.tests));
-  const results = ((x.t3 && x.t3.results) || []).slice(0, 4);
-  const zc = x.zc;
-  const span = Math.max(5, (zc || 4.5) * 1.6);
-  const at = (v) => Math.max(0, Math.min(100, ((v + span) / (2 * span)) * 100));
-  return html`<div className="analytics">
-    <div className="ana">
-      <h3>Funnel <b>${x.in == null ? "no scan" : x.in + " in universe"}</b></h3>
-      ${steps.map(([name, v], k) => {
-        const prev = k === 0 ? null : steps[k - 1][1];
-        const drop = prev != null && v != null && prev > v ? prev - v : null;
-        return html`<div key=${name}>
-          <div className=${"fstep" + (v === 0 ? " gone" : "")}>
-            <i>${name}</i><div className="fb"><span style=${{ width: pct(v, top) }}></span></div>
-            <b className="mono">${v == null ? "—" : v}</b>
-          </div>
-          ${drop ? html`<div className="drop">−${drop} dropped${prev ? " (" + Math.round((drop / prev) * 100) + "%)" : ""}</div>` : null}
+function Chart({option, height, empty}) {
+  // A callback ref, not an effect: the instance is created the moment the node
+  // attaches, which is the only moment echarts.init can trust. An effect with an
+  // empty dependency list ran before the node existed in this build and left an
+  // empty card with no error anywhere — the worst kind of failure.
+  const inst = useRef(null);
+  const attach = useCallback((node) => {
+    if (inst.current) { try { inst.current.dispose(); } catch (_) {} inst.current = null; }
+    if (!node || typeof echarts === "undefined") return;
+    inst.current = echarts.init(node, null, {renderer: "canvas"});
+    if (option) inst.current.setOption(option, {notMerge: true});
+    if (typeof ResizeObserver !== "undefined") {
+      const ro = new ResizeObserver(() => { if (inst.current) inst.current.resize(); });
+      ro.observe(node);
+    }
+  }, []);
+  useEffect(() => {
+    if (inst.current && option) inst.current.setOption(option, {notMerge: true});
+  }, [option]);
+  // The container is always a div: swapping it for an "empty" element and back
+  // meant the ref attached to a node React then discarded, and the chart drew
+  // nothing with no error anywhere. The message overlays the same box instead.
+  const h = height || 220;
+  return html`<div style=${{position: "relative", minHeight: h + "px"}}>
+    <div className="chart" ref=${attach} style=${{height: h + "px"}}></div>
+    ${empty || typeof echarts === "undefined"
+      ? html`<div style=${{position: "absolute", inset: 0, display: "grid", placeItems: "center"}}>
+          <${Empty} text=${empty || "charts unavailable — the vendored ECharts did not load"} />
+        </div>`
+      : null}
+  </div>`;
+}
+
+/* ---- chart helpers --------------------------------------------------- */
+
+const C = {neon: "#00ffa3", cyan: "#22d3ee", magenta: "#f472b6", amber: "#ffb454",
+           red: "#ff4d5e", dim: "#8b9bab", faint: "#5b6a79", line: "#1c2430"};
+
+/** Time-axis formatting that follows the span: seconds under an hour, clock
+ *  under a day, dates beyond. A flat 40-second capture must not read "19:25"
+ *  five times. */
+function timeAxis(points) {
+  const span = points && points.length > 1 ? (points[points.length - 1][0] - points[0][0]) : 0;
+  const mode = span < 3600 ? "time" : span < 86400 * 3 ? "daytime" : "date";
+  const fmt = (v) => {
+    const d = new Date(v);
+    if (mode === "time") return d.toLocaleTimeString(undefined, {hour: "2-digit", minute: "2-digit", second: "2-digit"});
+    if (mode === "daytime") return d.toLocaleTimeString(undefined, {hour: "2-digit", minute: "2-digit"});
+    return d.toLocaleDateString(undefined, {day: "2-digit", month: "short"});
+  };
+  const axis = {type: "time", axisLine: {lineStyle: {color: C.line}},
+                axisLabel: {color: C.faint, fontSize: 10, formatter: fmt}, splitNumber: 5};
+  // A single observation would otherwise stretch the axis over ±12 hours and look
+  // like a day of silence. One point means one minute of evidence.
+  if (points && points.length === 1) {
+    axis.min = points[0][0] * 1000 - 60000;
+    axis.max = points[0][0] * 1000 + 60000;
+  }
+  return axis;
+}
+
+function baseOption(extra) {
+  return Object.assign({
+    backgroundColor: "transparent",
+    textStyle: {fontFamily: "ui-monospace, monospace", color: C.dim, fontSize: 11},
+    grid: {left: 46, right: 14, top: 18, bottom: 26},
+    tooltip: {trigger: "axis", backgroundColor: "#0b0e12", borderColor: C.line,
+              textStyle: {color: "#e8f0f2", fontSize: 11}, axisPointer: {lineStyle: {color: C.line}}},
+    animation: false,
+  }, extra || {});
+}
+
+function equityOption(points, bar) {
+  if (!points || !points.length) return null;
+  const vals = points.map((p) => p[1]);
+  const lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+  // A constant series has no range of its own; give it one small enough that the
+  // line stays a line instead of filling the card.
+  const pad = hi === lo ? Math.max(0.5, Math.abs(hi) * 0.002) : (hi - lo) * 0.15;
+  const dd = computeDrawdown(points);
+  const ddLo = Math.min(0, Math.min.apply(null, dd.map((p) => p[1])));
+  return baseOption({
+    xAxis: timeAxis(points),
+    yAxis: [
+      {type: "value", min: lo - pad, max: hi + pad, splitLine: {lineStyle: {color: C.line}},
+       axisLabel: {color: C.faint, fontSize: 10}},
+      {type: "value", min: ddLo * 1.15, max: 0, position: "right", splitLine: {show: false},
+       axisLabel: {color: "rgba(255,77,94,.65)", fontSize: 10, formatter: "{value}%"}},
+    ],
+    series: [
+      {name: "equity", type: "line", showSymbol: points.length < 60, symbolSize: 3, data: points, yAxisIndex: 0,
+       lineStyle: {color: C.neon, width: 1.6},
+       areaStyle: {color: {type: "linear", x: 0, y: 0, x2: 0, y2: 1,
+         colorStops: [{offset: 0, color: "rgba(0,255,163,.18)"}, {offset: 1, color: "rgba(0,255,163,0)"}]}},
+       itemStyle: {color: C.neon}},
+      {name: "drawdown %", type: "line", showSymbol: false, data: dd, yAxisIndex: 1,
+       lineStyle: {color: "rgba(255,77,94,.6)", width: 1}, itemStyle: {color: C.red},
+       areaStyle: {color: "rgba(255,77,94,.07)"}},
+    ],
+    legend: {show: false},
+    tooltip: Object.assign({}, baseOption().tooltip, {
+      formatter: (ps) => {
+        if (!ps.length) return "";
+        const t = new Date(ps[0].value[0]).toLocaleString();
+        const eq = ps.find((p) => p.seriesName === "equity");
+        const dr = ps.find((p) => p.seriesName === "drawdown %");
+        return t + "<br/>equity " + num2(eq && eq.value[1]) +
+               (dr ? "<br/>drawdown " + num2(dr.value[1]) + "%" : "");
+      }}),
+  });
+}
+
+function burnupOption(rows) {
+  if (!rows || !rows.length) return null;
+  const pts = rows.slice().reverse().map((r) => [r.ts, r.cumulative]);
+  return baseOption({
+    xAxis: timeAxis(pts),
+    yAxis: {type: "value", splitLine: {lineStyle: {color: C.line}}, axisLabel: {color: C.faint, fontSize: 10}},
+    series: [{type: "line", step: "end", showSymbol: pts.length < 60, symbolSize: 3, data: pts,
+              lineStyle: {color: C.cyan, width: 1.8},
+              areaStyle: {color: {type: "linear", x: 0, y: 0, x2: 0, y2: 1,
+                colorStops: [{offset: 0, color: "rgba(34,211,238,.22)"}, {offset: 1, color: "rgba(34,211,238,0)"}]}},
+              itemStyle: {color: C.cyan}}],
+    tooltip: Object.assign({}, baseOption().tooltip, {
+      formatter: (ps) => ps.length ? new Date(ps[0].value[0]).toLocaleString() + "<br/>cumulative trials " +
+        num0(ps[0].value[1]) : ""}),
+  });
+}
+
+/* ======================================================================
+   Flow canvas — nine nodes, edge counts, replay, inspect
+   Appendix A of plan_ui.md: custom SVG, no second library, no bundler.
+   ====================================================================== */
+
+// 88 px between nodes: enough for an edge label ("0 passed", "16 fired") to sit
+// on the wire without touching either box.
+const NW = 180, NH = 78, GX = 46, GY = 44, COL = 268, ROW = 152;
+
+const NODES = [
+  {id: "scheduler", i: 1, title: "Scheduler", row: 0, col: 0},
+  {id: "preflight", i: 2, title: "Pre-flight", row: 0, col: 1},
+  {id: "tier1", i: 3, title: "Tier 1 · universe", row: 0, col: 2},
+  {id: "tier2", i: 4, title: "Tier 2 · matrix", row: 0, col: 3},
+  {id: "dedupe", i: 5, title: "Correlation", row: 1, col: 0},
+  {id: "tier3", i: 6, title: "Tier 3 · deep test", row: 1, col: 1},
+  {id: "verdict", i: 7, title: "Verdict", row: 1, col: 2},
+  {id: "consent", i: 8, title: "Human + bridge", row: 1, col: 3},
+  {id: "supervisor", i: 9, title: "Supervisor", row: 2, col: 2},
+];
+
+const EDGES = [
+  ["scheduler", "preflight"], ["preflight", "tier1"], ["tier1", "tier2"],
+  ["tier2", "dedupe"], ["dedupe", "tier3"], ["tier3", "verdict"],
+  ["verdict", "consent"], ["consent", "supervisor"],
+  ["supervisor", "verdict"],
+];
+
+const nodePos = (n) => ({x: GX + n.col * COL, y: GY + n.row * ROW, w: NW, h: NH});
+const byId = (id) => NODES.find((n) => n.id === id);
+
+/** Orthogonal path between two nodes. Same row runs straight; a row change goes
+ *  down (or up) into the gutter, across, then into the target's near side. */
+function edgePath(a, b) {
+  const A = nodePos(a), B = nodePos(b);
+  if (a.row === b.row && b.col > a.col) {
+    const y = A.y + A.h / 2;
+    return {d: `M ${A.x + A.w} ${y} L ${B.x} ${y}`, mx: (A.x + A.w + B.x) / 2, my: y - 8};
+  }
+  if (a.row === b.row && b.col < a.col) {
+    const y = A.y + A.h / 2;
+    return {d: `M ${A.x} ${y} L ${B.x + B.w} ${y}`, mx: (A.x + B.x + B.w) / 2, my: y - 8};
+  }
+  if (b.row > a.row) {
+    const sx = A.x + A.w / 2, sy = A.y + A.h;
+    const tx = B.x + B.w / 2, ty = B.y;
+    const midY = sy + (ty - sy) / 2;
+    return {d: `M ${sx} ${sy} L ${sx} ${midY} L ${tx} ${midY} L ${tx} ${ty}`,
+            mx: (sx + tx) / 2, my: midY - 8};
+  }
+  // upward (the supervisor's protective return)
+  const sx = A.x + A.w / 2, sy = A.y;
+  const tx = B.x + B.w / 2, ty = B.y + B.h;
+  const midY = ty + (sy - ty) / 2;
+  return {d: `M ${sx} ${sy} L ${sx} ${midY} L ${tx} ${midY} L ${tx} ${ty}`,
+          mx: (sx + tx) / 2, my: midY + 14};
+}
+
+function nodeStats(id, d, x) {
+  const u = d.universe || {};
+  const t2 = d.tier2, t3 = d.tier3, eng = d.engine;
+  switch (id) {
+    case "scheduler": {
+      const s = sessionState(new Date().getUTCHours() + new Date().getUTCMinutes() / 60);
+      return {s: s.open ? s.label : "off-window", c: s.open
+        ? s.families.join(" · ") + " · " + (x.tests == null ? "—" : x.tests) + " tests"
+        : "next window in " + fmtDur(Math.round(s.next * 3600)), tone: s.open ? "live" : ""};
+    }
+    case "preflight": {
+      const p = d.progress;
+      if (p && p.status === "failed") return {s: "refused", c: (p.error || "no reason given").slice(0, 60), tone: "bad"};
+      const last = x.last;
+      if (last && last.verdict === "FAILED") return {s: "FAILED", c: (last.detail || "unknown stage") + " · " + localize(last.ts), tone: "bad"};
+      return {s: "passed", c: "demo pin ok · lock free", tone: "live"};
+    }
+    case "tier1":
+      return {s: u.present ? num0(u.count) + " symbols" : "no universe",
+              c: u.present ? "top by M15 turnover · " + (u.generated_utc ? fmtDur(Math.max(0, (Date.now() - Date.parse(u.generated_utc)) / 1000)) + " old" : "—")
+                           : "run --rebuild",
+              tone: u.present ? "" : "bad"};
+    case "tier2":
+      return {s: x.tests == null ? "—" : x.tests + " tests",
+              c: x.tested == null ? "no scan yet" : x.tested + " tested · " + (x.triggering ?? "—") + " fired",
+              tone: (x.tests != null && x.triggering === 0) ? "warn" : ""};
+    case "dedupe":
+      return {s: x.deduped == null ? "—" : x.deduped + " dropped", c: x.corr == null ? "ρ unknown" : "ρ max " + num2(x.corr) + " · gate 0.70"};
+    case "tier3":
+      return {s: x.shortlist == null ? "—" : x.shortlist + " deep-tested",
+              c: "bar " + (x.bar == null ? "—" : num2(x.bar)) + " · gate " + (x.gate || "—") + " · 1000 perms"};
+    case "verdict":
+      return {s: x.stoodDown == null ? "—" : x.stoodDown ? "STAND DOWN" : "PROPOSAL",
+              c: x.cumulative == null ? "—" : num0(x.cumulative) + " cumulative trials",
+              tone: x.stoodDown === false ? "hot" : x.stoodDown === true ? "warn" : ""};
+    case "consent":
+      return {s: "human only", c: "types APPROVED · bridge holds the token"};
+    case "supervisor":
+      return {s: eng ? (eng.positions || []).length + " open" : "unknown",
+              c: d.engine_age_s == null ? "no engine state" : "state " + fmtDur(d.engine_age_s) + " old",
+              tone: d.engine_age_s == null ? "bad" : d.engine_age_s > 120 ? "warn" : "live"};
+    default: return {s: "", c: ""};
+  }
+}
+
+function FlowCanvas({d, sel, onSelect}) {
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({x: 0, y: 0});
+  const [drag, setDrag] = useState(null);
+  const [replay, setReplay] = useState(-1);
+  const wrap = useRef(null);
+  const x = pipeline(d);
+  const counts = edgeCounts(x, d);
+  const states = edgeStates(d.progress, d);
+  const W = GX * 2 + 3 * COL + NW, H = GY * 2 + 2 * ROW + NH;
+
+  useEffect(() => {
+    if (replay < 0) return;
+    const t = setTimeout(() => {
+      if (replay >= NODES.length) { setReplay(-1); return; }
+      setReplay(replay + 1);
+    }, 650);
+    return () => clearTimeout(t);
+  }, [replay]);
+
+  const onWheel = (e) => {
+    e.preventDefault();
+    setZoom((z) => Math.min(2, Math.max(0.5, z * (e.deltaY < 0 ? 1.08 : 0.93))));
+  };
+  const onDown = (e) => { setDrag({x: e.clientX, y: e.clientY, px: pan.x, py: pan.y}); };
+  const onMove = (e) => {
+    if (!drag) return;
+    setPan({x: drag.px + (e.clientX - drag.x), y: drag.py + (e.clientY - drag.y)});
+  };
+  const onUp = () => setDrag(null);
+  const fit = () => { setZoom(1); setPan({x: 0, y: 0}); };
+
+  const replayOn = replay >= 0;
+
+  return html`<div className=${"flowwrap" + (sel ? " withd" : "")}>
+    <div className="flowtop">
+      <span className="badge info">${d.progress && d.progress.scan_id ? "scan " + String(d.progress.scan_id).slice(0, 8) : "no scan id"}</span>
+      ${states.historical && !replayOn ? html`<span className="badge warn">historical — not the current scan</span>` : null}
+      ${states.running ? html`<span className="badge pass">running · ${states.stage}</span>` : null}
+      <button className="copy" onClick=${() => setReplay(replayOn ? -1 : 0)}>
+        ${replayOn ? "stop replay" : "▶ replay last scan"}</button>
+      <button className="copy" onClick=${fit}>fit view</button>
+      <button className="copy" onClick=${() => setZoom((z) => Math.min(2, z * 1.2))}>+</button>
+      <button className="copy" onClick=${() => setZoom((z) => Math.max(0.5, z / 1.2))}>−</button>
+      <span className="badge">${Math.round(zoom * 100)}%</span>
+      <span className="hint">${replayOn
+        ? "reconstruction from the ledger — not recorded telemetry"
+        : "edge labels are the counts that flowed · click a node to inspect"}</span>
+    </div>
+    <svg className=${"flowsvg" + (drag ? " dragging" : "")} viewBox=${`0 0 ${W} ${H}`}
+      onWheel=${onWheel} onMouseDown=${onDown} onMouseMove=${onMove}
+      onMouseUp=${onUp} onMouseLeave=${onUp} role="img"
+      aria-label="the scan pipeline: scheduler to verdict to supervisor">
+      <g transform=${`translate(${pan.x},${pan.y}) scale(${zoom})`}>
+        ${EDGES.map(([a, b]) => {
+          const A = byId(a), B = byId(b), p = edgePath(A, B);
+          const key = a + ">" + b;
+          const isReplay = replayOn && A.i <= replay && B.i <= replay;
+          const cls = ["edge", states.hot[key] ? "hot" : "", states.blocked[key] ? "blocked" : "",
+                       states.historical && !replayOn && !states.running ? "dim" : "",
+                       isReplay ? "replay" : ""].filter(Boolean).join(" ");
+          const label = counts[key];
+          return html`<g key=${key}>
+            <path className=${cls} d=${p.d} markerEnd="url(#arrow)"
+              aria-label=${`flow from ${A.title} to ${B.title}${label ? ", " + label : ""}`} />
+            ${label ? html`<g>
+              <rect className="elabel-bg" x=${p.mx - label.length * 3.1 - 5} y=${p.my - 8}
+                width=${label.length * 6.2 + 10} height=${15} rx=${4}></rect>
+              <text className=${"elabel" + (states.blocked[key] ? " bad" : "")}
+                x=${p.mx} y=${p.my + 3} textAnchor="middle">${label}</text>
+            </g>` : null}
+          </g>`;
+        })}
+        ${NODES.map((n) => {
+          const pos = nodePos(n);
+          const st = nodeStats(n.id, d, x);
+          const isSel = sel === n.id;
+          const done = replayOn && replay > NODES.indexOf(n);
+          const tone = replayOn ? (n.i <= replay ? "hot" : "") : (st.tone || "");
+          return html`<g key=${n.id} className=${"node " + tone + (isSel ? " sel" : "")}
+              transform=${`translate(${pos.x},${pos.y})`} role="button" tabIndex="0"
+              aria-pressed=${isSel ? "true" : "false"} aria-label=${n.title + ": " + st.s}
+              onClick=${(e) => { e.stopPropagation(); onSelect(isSel ? null : n.id); }}
+              onKeyDown=${(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); onSelect(isSel ? null : n.id); } }}>
+            <rect width=${pos.w} height=${pos.h}></rect>
+            <text className="t" x=${12} y=${18}>${n.i} · ${n.title}</text>
+            <circle cx=${pos.w - 12} cy=${13} r=${3.2} fill=${done ? C.neon : tone === "bad" ? C.red : tone === "warn" ? C.amber : tone === "hot" ? C.neon : C.faint}></circle>
+            <text className="s" x=${12} y=${42}>${st.s}</text>
+            <text className="c" x=${12} y=${61}>${String(st.c || "").slice(0, 34)}</text>
+          </g>`;
+        })}
+      </g>
+      <defs>
+        <marker id="arrow" viewBox="0 0 8 8" refX="7" refY="4" markerWidth="6" markerHeight="6" orient="auto">
+          <path d="M0,0 L8,4 L0,8 z" fill="#2b3646"></path>
+        </marker>
+      </defs>
+    </svg>
+    <svg className="minimap" width="150" height=${Math.round(150 * H / W)} viewBox=${`0 0 ${W} ${H}`}>
+      ${NODES.map((n) => { const p = nodePos(n);
+        return html`<rect key=${n.id} x=${p.x} y=${p.y} width=${p.w} height=${p.h} rx=${6}
+          fill=${sel === n.id ? "rgba(34,211,238,.35)" : "rgba(139,155,171,.22)"} />`; })}
+    </svg>
+  </div>`;
+}
+
+/* ---- inspector ------------------------------------------------------- */
+
+function Inspector({id, d, onClose}) {
+  if (!id) return null;
+  const n = byId(id);
+  const x = pipeline(d);
+  const st = nodeStats(id, d, x);
+  const rows = ledgerRows(d);
+  const t2 = d.tier2, t3 = d.tier3;
+  const body = () => {
+    switch (id) {
+      case "scheduler": {
+        const now = new Date().getUTCHours() + new Date().getUTCMinutes() / 60;
+        const s = sessionState(now);
+        return html`<div>
+          <p className="l-dim">Every family is another hypothesis the bar must pay for, so the
+          window decides how many are tested.</p>
+          <table><tbody>
+            <tr><td>05:00–08:00Z</td><td className="num">donchian</td><td className="num">${x.in ? x.in : "—"} tests</td></tr>
+            <tr><td>08:00–13:00Z</td><td className="num">donchian + bollinger</td><td className="num">${x.in ? x.in * 2 : "—"}</td></tr>
+            <tr><td>13:00–17:00Z</td><td className="num">all three</td><td className="num">${x.in ? x.in * 3 : "—"}</td></tr>
+          </tbody></table>
+          <p className="l-dim">Now: <b>${s.open ? s.label : "off-window"}</b>${s.next ? " · next window in " + fmtDur(Math.round(s.next * 3600)) : ""}</p>
         </div>`;
-      })}
-    </div>
-    <div className="ana">
-      <h3>Gate margin <b>${zc == null ? "bar unknown" : "bar " + zc.toFixed(3)}</b></h3>
-      ${results.length ? results.map((r, k) => {
-        const g = r.significance || {}, useT = g.gate === "t", stat = useT ? g.t_stat_R : g.z;
-        const margin = stat == null || zc == null ? null : stat - zc;
-        return html`<div className="gaterow" key=${(r.symbol || "") + k}>
-          <i>${r.symbol} · ${r.strategy}</i>
-          <div className="fb"><span style=${{ width: (stat == null ? 0 : Math.abs(at(stat) - at(zc))) + "%",
-            marginLeft: Math.min(at(stat), at(zc)) + "%",
-            background: margin != null && margin > 0 ? "var(--good)" : "var(--bad)" }}></span></div>
-          <b className="mono">${stat == null ? "—" : (useT ? "t " : "z ") + stat.toFixed(2)}<br/>
-            <span style=${{ color: "var(--faint)", fontSize: "10px", fontWeight: 400 }}>
-              ${margin == null ? "" : (margin > 0 ? "+" : "") + margin.toFixed(1) + " vs bar"}</span></b>
+      }
+      case "preflight":
+        return html`<div>
+          <table><tbody>
+            <tr><td>demo-only server</td><td className="num">${d.server || "—"}</td></tr>
+            <tr><td>account pin</td><td className="num">${d.alerts && d.alerts.some((a) => a.id === "engine_missing") ? "unverified" : "verified by pre-flight"}</td></tr>
+            <tr><td>last refusal</td><td className="num">${(rows.find((r) => r.verdict === "FAILED") || {}).ts || "none"}</td></tr>
+          </tbody></table>
+          <p className="l-dim">Anything that cannot be verified refuses the scan. A refusal is a fact
+          about the machine, not about the market.</p>
         </div>`;
-      }) : html`<div className="empty">No current coherent deep-test results — existing artifacts may be historical or incomplete.</div>`}
-    </div>
-    <div className="ana">
-      <h3>Last runs <b>${rows.length ? rows[rows.length - 1].tests + " tests, newest" : "no rows"}</b></h3>
-      ${rows.length ? html`<div className="runs">${rows.map((r, k) => html`<div key=${k}
-          className=${r.passed ? "hit" : r.trig ? "" : "none"}
-          style=${{ height: Math.max(10, Math.sqrt(r.tests / maxT) * 100) + "%" }}
-          title=${r.ts + " · " + r.tests + " tests · " + r.trig + " triggering · " + r.passed + " passed"}></div>`)}</div>
-        <div className="runlbl"><span>${rows[0].ts.slice(5, 16)}</span><span>${rows[rows.length - 1].ts.slice(5, 16)}</span></div>
-        <div className="runlbl"><span>bar = tests run (√ scale)</span><span>green = passed</span></div>`
-        : html`<div className="empty">No funnel rows in this tree.</div>`}
+      case "tier1":
+        return html`<div>
+          <p className="l-dim">${(d.universe || {}).present
+            ? num0(d.universe.count) + " symbols, rebuilt " + (d.universe.generated_utc ? localize(d.universe.generated_utc) : "—")
+            : "No universe file on disk."}</p>
+          ${(d.universe && d.universe.symbols || []).slice(0, 24).map((s) => html`
+            <div key=${s.symbol} className="rowline" style=${{display: "flex", gap: "8px", fontSize: "11.5px"}}>
+              <span className="mono" style=${{width: "110px"}}>${s.symbol}</span>
+              <span className="l-faint" style=${{width: "54px"}}>${s.class}</span>
+              <span className="mono l-dim">${num2(s.spread_pct_atr)}% of ATR</span>
+            </div>`)}
+        </div>`;
+      case "tier2":
+        return html`<div>
+          <p className="l-dim">${x.tested == null ? "No matrix artifact for the current scan." :
+            x.tested + " symbols tested · " + num0(x.tests) + " hypotheses · " + (x.triggering ?? "—") + " fired"}</p>
+          ${t2 && t2.per_family ? html`<div className="legend">${Object.entries(t2.per_family).map(([k, v]) =>
+            html`<span key=${k}><i style=${{background: C.cyan}}></i>${k} ${v}</span>`)}</div>` : null}
+          ${t2 && (t2.all_hits || []).length ? html`<table><thead><tr><th>symbol</th><th>family</th><th className="num">score</th></tr></thead>
+            <tbody>${t2.all_hits.slice(0, 20).map((h) => html`<tr key=${h.symbol + h.strategy}>
+              <td className="mono">${h.symbol}</td><td>${h.strategy}</td><td className="num">${num2(h.score)}</td></tr>`)}</tbody></table>`
+            : html`<${Empty} text="no hits in the current artifact" />`}
+        </div>`;
+      case "dedupe":
+        return html`<div>
+          ${t2 && (t2.deduped || []).length ? t2.deduped.map((drow, i) => html`<div key=${i} style=${{marginBottom: "8px"}}>
+            <div className="mono">${drow.symbol} → kept ${drow.kept_instead}</div>
+            <div className="l-faint">ρ ${num2(drow.correlation)} · ${drow.reason || "correlated with a stronger hit"}</div>
+          </div>`) : html`<${Empty} text="nothing was deduped in the current scan" />`}
+        </div>`;
+      case "tier3":
+        return html`<div>
+          ${(t3 && t3.results || []).map((r) => html`<div key=${r.symbol + r.strategy} style=${{borderTop: "1px solid #1c2430", paddingTop: "6px", marginTop: "6px"}}>
+            <div className="mono">${r.symbol} · ${r.strategy}</div>
+            <div className="l-dim">${r.significance ? ("avg R " + signed(r.significance.mean_net_R) + " · t " + num2(r.significance.t_stat_R)) : ""}
+              ${r.permutation ? (" · p " + num2(r.permutation.p_value)) : ""}</div>
+          </div>`)}
+        </div>`;
+      case "verdict":
+        return html`<div>
+          <p className="l-dim">${x.cumulative == null ? "" : num0(x.cumulative) + " cumulative trials set the bar at " +
+            (x.bar == null ? "—" : num2(x.bar)) + "."}</p>
+          ${x.stoodDown ? html`<p className="l-dim">Standing down is the system working: no candidate cleared both gates.</p>` : null}
+        </div>`;
+      case "consent":
+        return html`<div>
+          <p className="l-dim">A human types APPROVED in the terminal; the bridge issues a single-use
+          token with an idempotency key. Nothing on this screen can approve, size or place anything.</p>
+          ${(d.mcp || []).slice(0, 8).map((l, i) => html`<div key=${i} className="mono l-faint" style=${{fontSize: "10.5px"}}>${l}</div>`)}
+        </div>`;
+      case "supervisor":
+        return html`<div>
+          <p className="l-dim">${protectionLabel(d, d.engine_age_s, true)}</p>
+          <p className="l-faint">Trails stops, moves to break-even, closes at session end. It cannot open,
+          enlarge or reverse a position.</p>
+          ${(d.actions || []).slice(0, 10).map((l, i) => html`<div key=${i} className="mono l-faint" style=${{fontSize: "10.5px"}}>${l}</div>`)}
+        </div>`;
+      default:
+        return null;
+    }
+  };
+  return html`<div>
+    <div className="scrim" onClick=${onClose}></div>
+    <aside className="drawer" role="dialog" aria-label=${n.title}>
+      <header><h3>${n.i} · ${n.title}</h3><button className="x" onClick=${onClose} aria-label="close">×</button></header>
+      <div className="inner">
+        <div className="kpi"><span className="k">${st.s}</span><span className="h">${st.c}</span></div>
+        ${body()}
+      </div>
+    </aside>
+  </div>`;
+}
+
+/* ======================================================================
+   Pages
+   ====================================================================== */
+
+function VerdictHero({d}) {
+  const tone = d.stoodDown === false ? "up" : d.stoodDown === true ? "" : "pending";
+  const title = d.stoodDown === false ? "PROPOSAL — " + (d.survivors.join(", ") || "unnamed survivor")
+    : d.stoodDown === true ? "STANDING DOWN — no edge found"
+    : "SCAN UNVERIFIED — no current verdict";
+  const sub = d.stoodDown === false ? "cleared both gates; a human still has to approve it"
+    : d.stoodDown === true ? "Standing down is the system working: nothing cleared both gates."
+    : "The artifacts on disk do not belong to an unexpired, coherent scan.";
+  return html`<div className=${"hero " + tone} aria-live="polite">
+    <span className="tag">${d.stoodDown === false ? "edge" : d.stoodDown === true ? "verdict" : "pending"}</span>
+    <div><h2>${title}</h2><div className="sub">${sub}</div></div>
+    <div className="stats">
+      <div><span>trials</span><b className="mono">${num0(d.cumulative)}</b></div>
+      <div><span>bar</span><b className="mono">${d.bar == null ? "—" : num2(d.bar)}</b></div>
+      <div><span>today</span><b className="mono">${d.today.scans == null ? "—" : d.today.scans + " scans"}</b></div>
     </div>
   </div>`;
 }
 
-function Desk({ agent }) {
-  // Absence is stated, never filled in: no notes file means the desk never ran,
-  // not that the desk had nothing to say.
-  if (!agent) return html`<div className="empty">
-    No desk notes yet — run <code>python agent_brief.py</code>. The agents write
-    <code>agent_notes.json</code> and cannot place, size or cancel anything.</div>`;
-
-  const r = agent.roles || {};
-  const tone = (v) => !v ? "" : (v.status === "rejected" || v.status === "error") ? "rej" : "pass";
-  const skipped = (v) => (v && v.status) || "";
-  const jury = r.jury || {};
-  const verdict = jury.verdict || null;
-  const vTone = verdict === "propose" ? "pass" : verdict === "escalate" ? "warn" : verdict ? "rej" : "";
-  const chain = ["scout", "skeptic", "chief", "jury"].filter((k) => r[k]).length;
-  // A headline that matches no symbol in the universe is not a lead. Show the
-  // ones that do first, and say how many of how many, rather than listing the
-  // three newest and letting them look like dead ends.
-  const scoutItems = (r.scout && r.scout.items) || [];
-  const mapped = scoutItems.filter((it) => (it.symbols || []).length);
-
-  return html`<div className="insp">
-    <div className="inshead">
-      <b>${verdict ? "desk verdict" : "desk"}</b>
-      ${verdict ? html`<span className=${"badge " + vTone}>${verdict}</span>` : null}
-      <span className=${"badge " + (agent.status === "ok" ? "pass" : agent.status === "no key" ? "" : "rej")}>
-        ${agent.status}</span>
-      <span className="mono">${agent.model || ""}</span>
-      <span className="mono">${agent.generated_utc || ""}</span>
-      <span>${chain}/4 agents answered</span>
-      ${agent.usage ? html`<span className="badge">${agent.usage.prompt_tokens} in / ${agent.usage.completion_tokens} out</span>` : null}
-      ${agent.model_drift ? html`<span className="badge rej"
-        title="the provider served a different model than the one pinned">drift: ${agent.model_drift.served}</span>` : null}
-    </div>
-
-    <div className="chain">
-      <div className=${"step " + tone(r.scout)}>
-        <div className="role">1 · veilleur — headlines → symbols</div>
-        <div className="out">${mapped.length
-          ? html`<div><b>${mapped.length}</b> of ${scoutItems.length} headline${scoutItems.length === 1 ? "" : "s"} mapped to a symbol
-              ${mapped.slice(0, 3).map((it, i) => html`<div className="l-dim" key=${"h" + i}>
-                <span className="badge">${it.symbols.join(" ")}</span> ${it.headline}</div>`)}
-              ${r.scout.caveat ? html`<div className="l-dim">${r.scout.caveat}</div>` : null}</div>`
-          : html`<span className="l-dim">${scoutItems.length
-              ? scoutItems.length + " headlines read, none of them names a symbol in the universe"
-              : (r.scout && (r.scout.reason || r.scout.status)) || "not run"}</span>`}</div>
-      </div>
-
-      <div className=${"step " + tone(r.skeptic)}>
-        <div className="role">2 · risk officer — may only argue noise</div>
-        <div className="out">${r.skeptic && r.skeptic.verdict
-          ? html`<div><b>${r.skeptic.symbol || "—"}</b> · ${r.skeptic.verdict}
-              ${(r.skeptic.reasons || []).slice(0, 2).map((x, i) => html`<div className="l-dim" key=${"s" + i}>· ${x}</div>`)}</div>`
-          : html`<span className="l-dim">${r.skeptic ? (r.skeptic.reason || r.skeptic.status) : "not run"}</span>`}</div>
-      </div>
-
-      <div className=${"step " + tone(r.chief)}>
-        <div className="role">3 · chief of staff — synthesis</div>
-        <div className="out">${r.chief && r.chief.summary
-          ? html`<div>${r.chief.summary}
-              ${(r.chief.contradictions || []).map((c, i) => html`<div className="l-bad" key=${"c" + i}>
-                contradiction — ${c}</div>`)}</div>`
-          : html`<span className="l-dim">${r.chief ? (r.chief.reason || r.chief.status) : "not run"}</span>`}</div>
-      </div>
-
-      <div className=${"step " + tone(r.jury)}>
-        <div className="role">4 · jury — final verdict, never an order</div>
-        <div className="out">${jury.verdict
-          ? html`<div><span className=${"badge " + vTone}>${jury.verdict}</span> ${jury.why || ""}
-              ${(jury.conditions || []).slice(0, 3).map((c, i) => html`<div className="l-dim" key=${"j" + i}>· ${c}</div>`)}
-              <div className="l-dim">size is policy: ${jury.size_lots == null ? "0.01" : jury.size_lots} lots ·
-                a human types APPROVED · no agent holds a token</div></div>`
-          : html`<span className="l-dim">${jury.reason || jury.status || "not run"}</span>`}</div>
-      </div>
-    </div>
-
-    ${Object.entries(r).filter(([, v]) => v && v.status === "rejected").map(([k, v]) => html`
-      <div className="rules" key=${"x" + k}><div><b>${k} rejected</b> — ${v.reason}</div></div>`)}
-  </div>`;
+function Positions({data}) {
+  const rows = (data && data.engine && data.engine.positions) || null;
+  if (rows == null) return html`<${Empty} text="no engine state — positions unknown" cmd="python status.py" />`;
+  if (!rows.length) return html`<${Empty} text="confirmed flat — no open position, and the engine says so" />`;
+  return html`<table><thead><tr><th>ticket</th><th>symbol</th><th>side</th><th className="num">lots</th>
+    <th className="num">entry</th><th className="num">stop</th><th className="num">price</th><th className="num">P&amp;L</th></tr></thead>
+    <tbody>${rows.map((p) => html`<tr key=${p.ticket}>
+      <td className="mono">${p.ticket}</td><td className="mono">${p.symbol}</td><td>${p.side}</td>
+      <td className="num">${num2(p.volume)}</td><td className="num">${num2(p.entry)}</td>
+      <td className="num">${num2(p.sl)}</td><td className="num">${num2(p.price)}</td>
+      <td className=${"num " + ((p.profit || 0) >= 0 ? "l-good" : "l-bad")}>${num2(p.profit)}</td></tr>`)}</tbody></table>`;
 }
 
-
-function History({ h }) {
-  // agent_notes.json is the last word; this is the record of every word before
-  // it, read back from desk_history.sqlite through desk_store.export().
-  // Wrapped rows, not a five-column table: the last column was the one that got
-  // clipped at 768px, and a history you have to scroll sideways is not a record.
-  if (!h || !(h.runs || []).length) return html`<div className="empty">
-    No stored answers yet. <code>agent_brief.py</code> writes one row per run into
-    <code>desk_history.sqlite</code>; run it once and they appear here.</div>`;
-  const roles = ["scout", "skeptic", "chief", "jury"];
-  return html`<div className="hist">${h.runs.map((run) => html`<div className="run" key=${run.generated_utc}>
-    <div className="when mono">${run.generated_utc} · ${run.status || "—"}${
-      run.usage && run.usage.prompt_tokens ? " · " + run.usage.prompt_tokens + " in / " + run.usage.completion_tokens + " out" : ""}</div>
-    <div className="cells">${roles.map((r) => {
-      const v = (run.roles || {})[r];
-      const bad = v && (v.status === "rejected" || v.status === "error");
-      return html`<span className="cell" key=${r} title=${v ? (v.headline || "") : "no answer stored"}>
-        <b>${r}</b><span className=${bad ? "l-bad" : ""}>${v
-          ? (v.headline || v.status || "ok").slice(0, 180) + ((v.headline || "").length > 180 ? "…" : "")
-          : "—"}</span></span>`;
+function Desk({agent, compact}) {
+  if (!agent) return html`<${Empty} text="the desk has not run on this tree" cmd="python agent_brief.py" />`;
+  const roles = agent.roles || {};
+  const order = [["scout", "scout"], ["skeptic", "skeptic"], ["chief", "chief"], ["jury", "jury"]];
+  const tone = (r) => (r.status === "ok" ? "ok" : r.status === "rejected" ? "warn" : "bad");
+  return html`<div>
+    <div className="chain">${order.map(([key, label]) => {
+      const r = roles[key] || {};
+      const say = r.headline || r.summary || r.verdict || r.why || (r.status === "no key" ? "no model key — nothing called" : "");
+      return html`<div key=${key} className=${"step " + tone(r)}>
+        <div className="who"><span className="dot"></span>${label}
+          ${r.status && r.status !== "ok" ? html`<${Badge} tone="warn">${r.status}</${Badge}>` : null}</div>
+        <div className="say" title=${String(say)}>${String(say || "—").slice(0, compact ? 90 : 200)}</div>
+      </div>`;
     })}</div>
+    <div className="legend" style=${{marginTop: "8px"}}>
+      <span>${agent.model || "no model"}</span>
+      <span>${agent.status || "—"}</span>
+      ${agent.model_drift ? html`<span className="l-warn">drift: served ${agent.model_drift.served}</span>` : null}
+      <span>${localize(agent.generated_utc)}</span>
+    </div>
+  </div>`;
+}
+
+function History({h}) {
+  if (!h || !h.runs || !h.runs.length) return html`<${Empty} text="no stored desk runs yet" cmd="python desk_store.py --history 20" />`;
+  return html`<div>${h.runs.map((r, i) => html`<div key=${i} style=${{borderTop: i ? "1px solid #1c2430" : "0", paddingTop: "6px", marginTop: "6px"}}>
+    <div className="l-faint mono" style=${{fontSize: "10.5px"}}>${localize(r.generated_utc)} · ${r.status}</div>
+    <div style=${{display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: "6px", marginTop: "4px"}}>
+      ${Object.keys(r.roles || {}).map((k) => html`<div key=${k} style=${{fontSize: "11px"}}>
+        <div className="l-faint" style=${{fontSize: "9.5px", textTransform: "uppercase", letterSpacing: ".06em"}}>${k}</div>
+        <div title=${String(r.roles[k].headline || "")}>${String(r.roles[k].headline || "—").slice(0, 70)}</div>
+      </div>`)}
+    </div>
   </div>`)}</div>`;
 }
 
+/* ---- Overview -------------------------------------------------------- */
 
-function ScanBar({ progress, onRun, running }) {
-  // run_funnel.progress() writes this at each stage boundary. Absence is stated
-  // as absence: no file means no scan has run on this tree, not "stage 0".
-  const stages = [["preflight", "pre-flight"], ["universe", "universe"],
-                  ["tier2", "tier 2"], ["tier3", "tier 3"], ["verdict", "verdict"]];
-  const idx = progress ? stages.findIndex(([k]) => k === progress.stage) : -1;
-  const ageS = progress && progress.updated_utc
-    ? Math.max(0, Math.round((Date.now() - Date.parse(progress.updated_utc)) / 1000)) : null;
-  const done = progress && progress.status === "done";
-  return html`<div className="progress">
-    <button className=${"runbtn" + (running ? " armed" : "")} disabled=${running}
-      onClick=${onRun} title="runs exactly what the scheduler runs; it takes the same lock">
-      ${running ? "starting…" : "▶ Run scan now"}</button>
-    ${!progress ? html`<span className="l-dim">no scan progress recorded on this tree yet</span>`
-      : html`${stages.map(([k, label], i) => html`
-          <span key=${k} className=${"stage " + (i < idx || done ? "done" : i === idx ? "now" : "todo")}>
-            ${(i < idx || done ? "✓ " : "")}${label}</span>`)}
-        ${progress.scan_id ? html`<span className="mono l-dim">${progress.scan_id.slice(0, 8)}</span>` : null}
-        ${progress.tests != null ? html`<span className="l-dim">${progress.tests} tests</span>` : null}
-        ${progress.verdict ? html`<span className=${"badge " + (progress.verdict === "PROPOSAL" ? "pass" : "")}>${progress.verdict}</span>` : null}
-        ${ageS != null ? html`<span className=${"l-dim" + (ageS > 600 && !done ? " l-bad" : "")}>
-          ${done ? "finished" : "updated"} ${fmtDur(ageS)} ago</span>` : null}`}
-    <span className="spacer"></span>
-    <span className="l-dim">the button cannot place an order — see §9 of AGENTS.md</span>
+function Overview({d, data, range, setRange}) {
+  const series = (data && data.series) || null;
+  const points = series && series.equity ? series.equity[range] : null;
+  const opt = useMemo(() => equityOption(points), [points, range]);
+  const acct = (data && data.engine && data.engine.account) || {};
+  const dayDelta = points && points.length > 1 ? points[points.length - 1][1] - points[0][1] : null;
+  return html`<div className="contents">
+    <${VerdictHero} d=${d} />
+    <div className="grid g21">
+      <${Card} title=${"Equity · " + range} note=${series && series.since_ts
+          ? "in-memory since " + localize(new Date(series.since_ts * 1000).toISOString()) + " — the collector keeps no files"
+          : "no observations yet"}>
+        <div className="legend" style=${{marginBottom: "6px"}}>
+          ${["2h", "48h", "14d"].map((r) => html`<button key=${r}
+            className=${"copy " + (range === r ? "done" : "")} onClick=${() => setRange(r)}>${r}</button>`)}
+          <span style=${{marginLeft: "auto"}}>drawdown underlay · % from peak</span>
+        </div>
+        <${Chart} option=${opt} height=${220} empty=${points && points.length ? null : "no equity observations yet — open the supervisor or wait for a tick"} />
+      <//>
+      <${Card} title="Account">
+        <div className="grid g2" style=${{gap: "12px"}}>
+          <div className="kpi"><span className="k">balance</span><span className="v">${money(data && data.balance, data && data.currency)}</span></div>
+          <div className="kpi"><span className="k">equity</span><span className="v">${money(data && data.equity, data && data.currency)}</span></div>
+          <div className="kpi"><span className="k">Δ observed</span><span className=${"v " + (dayDelta == null ? "" : dayDelta >= 0 ? "l-good" : "l-bad")}>
+            ${dayDelta == null ? "—" : signed(dayDelta)}</span><span className="h">${range} window</span></div>
+          <div className="kpi"><span className="k">positions</span><span className="v">${data && data.positions == null ? "—" : num0(data && data.positions)}</span></div>
+          <div className="kpi"><span className="k">heartbeat</span><span className="v">${fmtDur(d.age)}</span></div>
+          <div className="kpi"><span className="k">mode</span><span className="h" style=${{fontSize: "13px"}}>${d.protection}</span></div>
+        </div>
+        <div className="l-faint" style=${{marginTop: "10px", fontSize: "11px"}}>
+          ${acct.server || "no server"} · ${acct.leverage ? "1:" + acct.leverage : "leverage unknown"} ·
+          AutoTrading is off in the terminal and no code path here enables it
+        </div>
+      <//>
+    </div>
+    <div className="grid g21">
+      <${Card} title="Desk · the four-agent chain" note=${"advisory only — no path to the terminal"}>
+        <${Desk} agent=${data && data.agent} compact=${true} />
+      <//>
+      <${Card} title="Today">
+        <div className="kpi" style=${{marginBottom: "8px"}}>
+          <span className="k">${d.today.scans == null ? "no ledger" : d.today.scans + " scans · " + num0(d.today.tests) + " tests · " + d.today.passed + " passed"}</span>
+          <span className="h">${d.today.verdicts.length ? "recent verdicts" : "nothing yet today"}</span>
+        </div>
+        <div style=${{display: "flex", gap: "4px", flexWrap: "wrap"}}>
+          ${d.today.verdicts.map((r, i) => html`<span key=${i}
+            className=${"badge " + (r.verdict === "WINNER" ? "pass" : r.verdict === "FAILED" ? "bad" : "info")}
+            title=${localize(r.ts) + " · " + num0(r.total_tests) + " tests"}>
+            ${(r.ts || "").slice(11, 16)} ${r.verdict === "STAND_DOWN" ? "SD" : r.verdict}</span>`)}
+        </div>
+      <//>
+    </div>
+    <${Card} title="Positions">
+      <${Positions} data=${data} />
+    <//>
   </div>`;
 }
 
+/* ---- Research -------------------------------------------------------- */
+
+function Research({d, data}) {
+  const t3 = d.current && data ? data.tier3 : null;
+  const results = (t3 && t3.results) || [];
+  const u = (data && data.universe) || {};
+
+  const gateRows = results.map((r) => {
+    const s = r.significance || {}, p = r.permutation || {};
+    return {
+      key: r.symbol + "/" + r.strategy,
+      symbol: r.symbol, strategy: r.strategy, side: r.side,
+      naive: s.z != null ? s.z : null,
+      corrected: (s.z != null && s.z_crit_bonferroni != null) ? s.z - s.z_crit_bonferroni : null,
+      perm: p.p_value != null ? 0.05 - p.p_value : null,
+      passesNaive: !!s.passes_naive, passesCorrected: !!s.passes_corrected, passesPerm: !!p.passes,
+      avgR: s.mean_net_R, t: s.t_stat_R,
+    };
+  });
+
+  const cells = (v, pass) => {
+    if (v == null) return html`<div className="cell" title="no value"></div>`;
+    const mag = Math.min(1, Math.abs(v) / 5);
+    const col = pass ? `rgba(0,255,163,${0.12 + mag * 0.5})` : `rgba(255,77,94,${0.10 + mag * 0.45})`;
+    return html`<div className="cell" style=${{background: col}} title=${num2(v)}></div>`;
+  };
+
+  // weekday x hour activity, built only from rows that exist
+  const act = useMemo(() => {
+    const grid = Array.from({length: 7}, () => Array(24).fill(null));
+    for (const r of d.rows) {
+      const t = new Date(r.ts);
+      if (isNaN(t)) continue;
+      const day = (t.getUTCDay() + 6) % 7, hr = t.getUTCHours();
+      const cur = grid[day][hr] || {tests: 0, scans: 0, verdicts: []};
+      cur.tests += r.total_tests || 0;
+      cur.scans += 1;
+      cur.verdicts.push(r.verdict);
+      grid[day][hr] = cur;
+    }
+    return grid;
+  }, [d.rows]);
+
+  const tiles = (u.symbols || []).slice(0, 260);
+  const tileCol = (v) => {
+    if (v == null) return "rgba(139,155,171,.15)";
+    const f = Math.min(1, v / 15);
+    return `rgba(${Math.round(0 + f * 255)},${Math.round(255 - f * 190)},${Math.round(163 - f * 140)},.75)`;
+  };
+
+  return html`<div className="contents">
+    <div className="grid g21">
+      <${Card} title="Gate margin — why it was refused"
+        note=${x2(d) ? "bar " + num2(d.bar) + " · gate " + (d.x.gate || "—") : "no current scan"}>
+        ${gateRows.length ? html`<table>
+          <thead><tr><th>candidate</th><th>naive 1.96</th><th>corrected</th><th>permutation</th><th className="num">avg R</th></tr></thead>
+          <tbody>${gateRows.map((g) => html`<tr key=${g.key}>
+            <td className="mono">${g.symbol}<span className="l-faint"> · ${g.strategy}</span></td>
+            <td>${cells(g.naive, g.passesNaive)}</td>
+            <td>${cells(g.corrected, g.passesCorrected)}</td>
+            <td>${cells(g.perm, g.passesPerm)}</td>
+            <td className=${"num " + ((g.avgR || 0) >= 0 ? "l-good" : "l-bad")}>${signed(g.avgR, 3)}</td></tr>`)}
+          </tbody></table>` : html`<${Empty} text="no candidate was deep-tested in the current scan" />`}
+        <div className="l-faint" style=${{fontSize: "11px", marginTop: "8px"}}>
+          Cleared a naive 1.96 and failed the corrected bar? That is exactly what the best of N draws
+          produces by luck — saying so is the product's voice.
+        </div>
+      <//>
+      <${Card} title="Universe health" note=${u.present ? num0(u.count) + " symbols · " + (u.generated_utc ? localize(u.generated_utc) : "age unknown") : "no universe file"}>
+        ${u.present ? html`<div className="tiles">${tiles.map((s) => html`<div key=${s.symbol} className="tile"
+          style=${{background: tileCol(s.spread_pct_atr)}}
+          title=${`${s.symbol} · ${s.class} · spread ${num2(s.spread_pct_atr)}% of ATR`}></div>`)}</div>`
+          : html`<${Empty} text="no universe on disk — run the rebuild" cmd="python make_liquid.py --top 120" />`}
+        <div className="legend" style=${{marginTop: "8px"}}>
+          <span><i style=${{background: "rgba(0,255,163,.75)"}}></i>tight spread</span>
+          <span><i style=${{background: "rgba(255,77,94,.75)"}}></i>at the 15% veto</span>
+        </div>
+      <//>
+    </div>
+
+    <${Card} title="Trials activity — weekday × hour UTC" note="intensity = tests · ring = verdict">
+      <div className="heat" style=${{gridTemplateColumns: "34px repeat(24, minmax(0,1fr))"}}>
+        <div></div>
+        ${Array.from({length: 24}, (_, h) => html`<div key=${h} className="cellw" style=${{textAlign: "center"}}>${h}</div>`)}
+        ${["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"].map((dn, day) => html`<${React.Fragment} key=${dn}>
+          <div className="cellw">${dn}</div>
+          ${Array.from({length: 24}, (_, h) => {
+            const c = act[day][h];
+            if (!c) return html`<div key=${h} className="cell" style=${{background: "transparent"}} title="no scan"></div>`;
+            const mag = Math.min(1, Math.sqrt(c.tests) / 22);
+            const bad = c.verdicts.some((v) => v === "FAILED");
+            const good = c.verdicts.some((v) => v === "WINNER");
+            const border = good ? C.magenta : bad ? C.red : C.line2;
+            return html`<div key=${h} className="cell"
+              style=${{background: `rgba(34,211,238,${0.08 + mag * 0.55})`, borderColor: border}}
+              title=${`${dn} ${String(h).padStart(2, "0")}:00Z · ${c.scans} scans · ${num0(c.tests)} tests`}></div>`;
+          })}
+        <//>`)}
+      </div>
+      <div className="l-faint" style=${{fontSize: "11px", marginTop: "6px"}}>
+        Empty cells are hours with no scan. They are not zero-test hours — the ledger has no row for them.
+      </div>
+    <//>
+
+    <${Card} title="Candidate cards" note=${results.length ? results.length + " deep-tested" : "nothing to show"}>
+      ${results.length ? results.map((r) => {
+        const s = r.significance || {}, p = r.permutation || {}, h = r.history || {}, mc = r.mc || {};
+        const buckets = [["target", h.target], ["stop", h.stop], ["session", h.session], ["horizon", h.horizon], ["neither", h.neither]];
+        const total = buckets.reduce((a, b) => a + (b[1] || 0), 0) || 1;
+        return html`<div key=${r.symbol + r.strategy} style=${{borderTop: "1px solid #1c2430", padding: "10px 0"}}>
+          <div style=${{display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap"}}>
+            <b className="mono">${r.symbol}</b><span className="l-dim">${r.strategy}</span>
+            <span className="badge">${r.side}</span>
+            <span className=${"badge " + (s.passes_corrected ? "pass" : "bad")}>t ${num2(s.t_stat_R)} vs ${num2(s.z_crit_bonferroni)}</span>
+            <span className=${"badge " + (p.passes ? "pass" : "bad")}>p ${num2(p.p_value)}</span>
+            <span className=${"badge " + ((h.win_rate || 0) > 0 ? "info" : "")}>win ${pct(h.win_rate)}</span>
+            <span className="badge">avg R ${signed(s.mean_net_R, 3)}</span>
+          </div>
+          <div style=${{display: "flex", height: "8px", borderRadius: "4px", overflow: "hidden", margin: "7px 0 4px"}}>
+            ${buckets.map(([k, v]) => html`<div key=${k} title=${k + ": " + (v || 0)}
+              style=${{width: ((v || 0) / total * 100) + "%", background:
+                k === "target" ? C.neon : k === "stop" ? C.red : k === "session" ? C.cyan :
+                k === "horizon" ? C.amber : "#2a313b"}}></div>`)}
+          </div>
+          <div className="l-faint" style=${{fontSize: "10.5px"}}>
+            ${buckets.map(([k, v]) => k + " " + (v || 0)).join(" · ")} = ${num0(h.occurrences)}
+            ${mc.p_target != null ? " · MC p_target " + pct(mc.p_target) + " p_stop " + pct(mc.p_stop) : ""}
+          </div>
+          ${mc.limitations ? html`<div className="l-warn" style=${{fontSize: "10.5px"}}>${mc.limitations}</div>` : null}
+          ${r.current ? html`<div className="mono l-dim" style=${{fontSize: "10.5px", marginTop: "3px"}}>
+            entry ${num2(r.current.proposed_entry)} · stop ${num2(r.current.proposed_stop)} · target ${num2(r.current.proposed_target)}</div>` : null}
+        </div>`;
+      }) : html`<${Empty} text="no deep test for the current scan — the funnel stood down before tier 3" />`}
+    <//>
+
+    <div className="legend">
+      <a className="sidelink" href="/api/report/latest" target="_blank" rel="noopener">open the full per-scan report ↗</a>
+    </div>
+  </div>`;
+}
+const x2 = (d) => d.current;
+
+/* ---- Performance ----------------------------------------------------- */
+
+function Performance({d, data}) {
+  const series = (data && data.series) || {};
+  const pts = (series.equity && (series.equity["14d"] || series.equity["48h"] || series.equity["2h"])) || [];
+  const opt = useMemo(() => equityOption(pts), [pts]);
+  const results = (d.current && data && data.tier3 && data.tier3.results) || [];
+  const fams = {};
+  (data && data.tier2 && data.tier2.per_family ? Object.entries(data.tier2.per_family) : []).forEach(([k, v]) => {
+    fams[k] = fams[k] || {triggers: v, deep: 0, passed: 0, stat: []};
+  });
+  results.forEach((r) => {
+    const k = r.strategy;
+    fams[k] = fams[k] || {triggers: 0, deep: 0, passed: 0, stat: []};
+    fams[k].deep++;
+    if (r.significance && r.significance.passes_corrected) fams[k].passed++;
+    if (r.significance && r.significance.t_stat_R != null) fams[k].stat.push(Math.abs(r.significance.t_stat_R));
+  });
+  const cadence = d.rows.slice(0, 400).map((r) => [r.ts, r.total_tests]);
+  const cadOpt = cadence.length ? baseOption({
+    xAxis: timeAxis(cadence),
+    yAxis: {type: "value", splitLine: {lineStyle: {color: C.line}}, axisLabel: {color: C.faint, fontSize: 10}},
+    series: [{type: "scatter", symbolSize: 7,
+      data: cadence.map(([ts, v], i) => ({value: [ts, v],
+        itemStyle: {color: d.rows[i].verdict === "WINNER" ? C.magenta : d.rows[i].verdict === "FAILED" ? C.red : C.cyan}}))}],
+    tooltip: {trigger: "item", backgroundColor: "#0b0e12", borderColor: C.line,
+      formatter: (p) => new Date(p.value[0]).toLocaleString() + "<br/>" + num0(p.value[1]) + " tests"},
+  }) : null;
+  return html`<div className="contents">
+    <${Card} title="Equity and drawdown" note=${series.since_ts ? "in-memory since " + localize(new Date(series.since_ts * 1000).toISOString()) : "no observations"}>
+      <${Chart} option=${opt} height=${280} empty=${pts.length ? null : "no equity observations yet"} />
+    <//>
+    <div className="grid g2">
+      <${Card} title="Outcome mix" note="target / stop / session / horizon / neither">
+        ${results.length ? results.map((r) => {
+          const h = r.history || {};
+          const b = [["target", h.target, C.neon], ["stop", h.stop, C.red], ["session", h.session, C.cyan],
+                     ["horizon", h.horizon, C.amber], ["neither", h.neither, "#2a313b"]];
+          const tot = b.reduce((a, x) => a + (x[1] || 0), 0) || 1;
+          return html`<div key=${r.symbol + r.strategy} style=${{marginBottom: "9px"}}>
+            <div className="mono" style=${{fontSize: "11.5px"}}>${r.symbol} <span className="l-faint">${r.strategy}</span></div>
+            <div style=${{display: "flex", height: "9px", borderRadius: "4px", overflow: "hidden", marginTop: "3px"}}>
+              ${b.map(([k, v, c]) => html`<div key=${k} title=${k + " " + (v || 0)} style=${{width: ((v || 0) / tot * 100) + "%", background: c}}></div>`)}
+            </div>
+          </div>`;
+        }) : html`<${Empty} text="no candidate history in the current scan" />`}
+      <//>
+      <${Card} title="Family leaderboard" note="families must add a different bet, not duplicate exposure">
+        <table><thead><tr><th>family</th><th className="num">fired</th><th className="num">deep</th><th className="num">avg |t|</th></tr></thead>
+          <tbody>${Object.entries(fams).map(([k, v]) => html`<tr key=${k}>
+            <td>${k}</td><td className="num">${num0(v.triggers)}</td><td className="num">${v.deep}</td>
+            <td className="num">${v.stat.length ? num2(v.stat.reduce((a, b) => a + b, 0) / v.stat.length) : "—"}</td></tr>`)}
+          </tbody></table>
+      <//>
+    </div>
+    <${Card} title="Scan cadence" note="one dot per ledger row · gaps mean no scan, never interpolated">
+      <${Chart} option=${cadOpt} height=${180} empty=${cadOpt ? null : "no ledger rows"} />
+    <//>
+    <${Card} title="Positions"><${Positions} data=${data} /><//>
+  </div>`;
+}
+
+/* ---- Trials ---------------------------------------------------------- */
+
+function Trials({d, data}) {
+  const burn = useMemo(() => burnupOption(d.rows), [d.rows]);
+  const best = (d.current && data && data.tier3 && data.tier3.results || [])
+    .map((r) => ({k: r.symbol + "/" + r.strategy, t: r.significance && r.significance.t_stat_R}))
+    .filter((r) => r.t != null)
+    .sort((a, b) => Math.abs(b.t) - Math.abs(a.t))[0];
+  const whatIf = [1, 150, 525, 1791, 5388, 9081, 40388, 155388];
+  return html`<div className="contents">
+    <${Card} title="Cumulative trials" note="each row is a hypothesis the bar must pay for">
+      <${Chart} option=${burn} height=${200} empty=${burn ? null : "no ledger rows on this tree"} />
+    <//>
+    <div className="grid g21">
+      <${Card} title="The bar" note="set by every hypothesis ever tested — not by this scan">
+        <div style=${{display: "flex", gap: "24px", alignItems: "baseline", flexWrap: "wrap"}}>
+          <div className="kpi"><span className="k">corrected bar</span><span className="v">${d.bar == null ? "—" : num2(d.bar)}</span></div>
+          <div className="kpi"><span className="k">cumulative</span><span className="v">${num0(d.cumulative)}</span></div>
+          <div className="kpi"><span className="k">best today</span><span className="v">${best ? num2(best.t) : "—"}</span>
+            <span className="h">${best ? best.k : "nothing deep-tested"}</span></div>
+          <div className="kpi"><span className="k">margin</span>
+            <span className=${"v " + (best && d.bar != null && Math.abs(best.t) > d.bar ? "l-good" : "l-bad")}>
+              ${best && d.bar != null ? signed(Math.abs(best.t) - d.bar) : "—"}</span></div>
+        </div>
+      <//>
+      <${Card} title="What-if · mirror" note="mirror of timemachine_mt5.bonferroni_z — exploration only">
+        <table><tbody>${whatIf.map((n) => html`<tr key=${n}>
+          <td className="num mono">${num0(n)}</td><td className="num mono l-dim">${num2(bonferroniMirror(n))}</td></tr>`)}</tbody></table>
+        <div className="l-faint" style=${{fontSize: "10.5px", marginTop: "6px"}}>
+          The authoritative bar is the one the engine wrote into the ledger and tier 3.
+        </div>
+      <//>
+    </div>
+    <${Card} title="Ledger" note=${data && data.ledger && data.ledger.truncated
+      ? "newest " + d.rows.length + " rows · window " + Math.round((data.ledger.window_bytes || 0) / 1024) + " KiB of " + Math.round((data.ledger.total_bytes || 0) / 1024) + " KiB"
+      : d.rows.length + " rows"} flush=${true}>
+      ${d.rows.length ? html`<table>
+        <thead><tr><th>when</th><th className="num">universe</th><th className="num">tested</th><th className="num">tests</th>
+          <th className="num">fired</th><th className="num">short</th><th className="num">passed</th>
+          <th className="num">cumulative</th><th>verdict</th></tr></thead>
+        <tbody>${d.rows.slice(0, 120).map((r, i) => html`<tr key=${i}>
+          <td className="mono" title=${r.ts}>${localize(r.ts)}</td>
+          <td className="num">${num0(r.universe)}</td><td className="num">${num0(r.tested)}</td>
+          <td className="num">${num0(r.total_tests)}</td><td className="num">${num0(r.triggering)}</td>
+          <td className="num">${num0(r.shortlist)}</td><td className="num">${num0(r.passed_both)}</td>
+          <td className="num">${num0(r.cumulative)}</td>
+          <td><span className=${"badge " + (r.verdict === "WINNER" ? "pass" : r.verdict === "FAILED" ? "bad" : "info")}>
+            ${r.verdict === "STAND_DOWN" ? "STAND DOWN" : r.verdict}${r.signed ? "" : " !"}</span></td>
+        </tr>`)}</tbody></table>` : html`<${Empty} text="no scan has run on this tree yet" cmd="python run_funnel.py" />`}
+      <div className="l-faint" style=${{fontSize: "10.5px", padding: "6px 12px"}}>
+        A <b>!</b> means the row carries no sig= segment. This page reports presence only — verification
+        happens in status.py.
+      </div>
+    <//>
+  </div>`;
+}
+
+/* ---- Ops ------------------------------------------------------------- */
+
+function Ops({d, data}) {
+  const alerts = (data && data.alerts) || [];
+  const health = (data && data.health) || {files: {}, maintenance: {}};
+  if (!data) return html`<${Empty} text="waiting for the first snapshot" />`;
+  return html`<div className="contents">
+    <${Card} title="Alerts" note=${alerts.length + " derived by the server"}>
+      ${alerts.length ? html`<div style=${{display: "flex", flexDirection: "column", gap: "6px"}}>
+        ${alerts.map((a) => html`<div key=${a.id} className="rowline" style=${{display: "flex", gap: "8px", alignItems: "baseline"}}>
+          <span className=${"badge " + (a.severity === "error" ? "bad" : a.severity === "warn" ? "warn" : "info")}>${a.severity}</span>
+          <span>${a.message}</span><span className="l-faint mono" style=${{marginLeft: "auto", fontSize: "10.5px"}}>${a.id}</span>
+        </div>`)}</div>` : html`<${Empty} text="nothing to report — every tracked file is present and fresh" />`}
+    <//>
+    <${Card} title="Files" note="age is mtime; absent is not zero">
+      <table><tbody>${Object.entries(health.files || {}).map(([k, v]) => html`<tr key=${k}>
+        <td className="mono">${k}</td>
+        <td className=${"num " + (v.exists ? "" : "l-faint")}>${v.exists ? fmtDur(v.age_s) + " old" : "absent"}</td></tr>`)}
+        <tr><td className="mono">.ztt-maintenance</td>
+          <td className="num">${health.maintenance && health.maintenance.active
+            ? "ACTIVE " + fmtDur((health.maintenance.age_min || 0) * 60) + " — " + (health.maintenance.note || "no note")
+            : "none"}</td></tr>
+      </tbody></table>
+    <//>
+    <div className="grid g2">
+      <${Card} title="Supervisor actions" note="newest first">
+        <${LogPane} lines=${data.actions} missing=${!data.actions} which="position_manager.log" />
+      <//>
+      <${Card} title="Funnel history" note="the raw lines the parser reads">
+        <${LogPane} lines=${data.funnel} missing=${!data.funnel} which="funnel_history.log" />
+      <//>
+      <${Card} title="Audit stream" note="tool and gate events">
+        <${LogPane} lines=${data.mcp} missing=${!data.mcp} which="audit.jsonl" />
+      <//>
+      <${Card} title="Desk status" note="advisory — cannot place, size or veto anything">
+        <${Desk} agent=${data.agent} />
+      <//>
+    </div>
+    <${Card} title="Desk history" note="the last runs, from the tracked database">
+      <${History} h=${data.desk_history} />
+    <//>
+    <div className="l-faint" style=${{fontSize: "11px"}}>
+      What this page cannot see: policy values, Task Scheduler state and the terminal itself.
+      <code>python status.py</code> is the authoritative read for those.
+    </div>
+  </div>`;
+}
+
+/* ---- Flow page ------------------------------------------------------- */
+
+function FlowPage({d, data}) {
+  const [sel, setSel] = useState(null);
+  return html`<div className="contents">
+    <${FlowCanvas} d=${data || {}} sel=${sel} onSelect=${setSel} />
+    <div className="grid g2">
+      <${Card} title="Verdict" note=${d.scanId ? "scan " + String(d.scanId).slice(0, 8) : "no scan"}>
+        <div className="kpi"><span className="k">${d.verdict || "no current verdict"}</span>
+          <span className="h">${d.stoodDown === true ? "standing down is the system working" :
+            d.stoodDown === false ? "survivors: " + d.survivors.join(", ") : "the artifacts on disk are not a coherent scan"}</span></div>
+        <div className="grid g3" style=${{marginTop: "12px"}}>
+          <div className="kpi"><span className="k">tests</span><span className="v">${num0(d.x.tests)}</span></div>
+          <div className="kpi"><span className="k">fires</span><span className="v">${num0(d.x.triggering)}</span></div>
+          <div className="kpi"><span className="k">passed</span><span className="v">${num0(d.x.passed)}</span></div>
+        </div>
+      <//>
+      <${Card} title="Live stage" note="written by run_funnel.progress()">
+        ${data && data.progress ? html`<div>
+          <div className="kpi"><span className="k">${data.progress.stage} · ${data.progress.status}</span>
+            <span className="h">${data.progress.updated_utc ? "updated " + localize(data.progress.updated_utc) : ""}</span></div>
+          ${data.progress.error ? html`<div className="l-bad" style=${{marginTop: "6px"}}>${data.progress.error}</div>` : null}
+          ${data.progress.tests != null ? html`<div className="l-dim" style=${{marginTop: "6px"}}>
+            ${num0(data.progress.tests)} tests · cumulative ${num0(data.progress.cumulative)}</div>` : null}
+        </div>` : html`<${Empty} text="no scan progress recorded on this tree yet" cmd="python run_funnel.py --window-utc 05:00-17:00" />`}
+      <//>
+    </div>
+    ${sel ? html`<${Inspector} id=${sel} d=${data || {}} onClose=${() => setSel(null)} />` : null}
+  </div>`;
+}
+
+/* ======================================================================
+   App
+   ====================================================================== */
+
+const ROUTES = [
+  ["flow", "Flow", "1"], ["overview", "Overview", "2"], ["research", "Research", "3"],
+  ["performance", "Performance", "4"], ["trials", "Trials", "5"], ["ops", "Ops", "6"],
+];
+const SUBS = {
+  flow: "nine stages, and where the funnel stopped",
+  overview: "is it alive, what did it decide, what do I hold",
+  research: "what was tested, and why it was refused",
+  performance: "what the account and the candidates did",
+  trials: "every hypothesis ever tested, and the bar it set",
+  ops: "health, alerts, and the raw files",
+};
+
 const ICONS = {
-  overview: "M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z",
-  pipeline: "M3 12h4l3-7 4 14 3-7h4",
-  trials: "M4 20V10M10 20V4M16 20v-6M22 20v-9",
-  logs: "M4 6h16M4 12h16M4 18h10",
+  flow: "M4 6h6v4H4zM14 6h6v4h-6zM9 12h6v4H9zM4 18h6v2H4zM14 18h6v2h-6",
+  overview: "M4 13h6V4H4zM14 20h6v-9h-6zM4 20h6v-4H4zM14 8h6V4h-6",
+  research: "M4 19V5m0 14h16M8 15l3-4 3 2 5-6",
+  performance: "M4 16l5-6 4 3 7-9",
+  trials: "M4 18V9m4 9V6m4 12v-7m4 7V4m4 14v-5",
+  ops: "M12 8a4 4 0 100 8 4 4 0 000-8zM12 2v3M12 19v3M2 12h3M19 12h3",
 };
 
 function useRoute() {
-  const read = () => (location.hash.replace(/^#\/?/, "") || "overview");
-  const [r, setR] = useState(read);
+  const read = () => (location.hash.replace(/^#\/?/, "") || "flow");
+  const [route, setRoute] = useState(read);
   useEffect(() => {
-    const on = () => setR(read());
+    const on = () => setRoute(read());
     window.addEventListener("hashchange", on);
     return () => window.removeEventListener("hashchange", on);
   }, []);
-  return r;
-}
-
-function Trials({ data, x }) {
-  const rows = ((data && data.funnel) || []).map(parseFunnel).filter(Boolean).slice(-14)
-    .map(r => ({...r, tests: r.total_tests, trig: r.triggering, short: r.shortlist, perms: r.permutations})).reverse();
-  const cum = x.cum, zc = x.zc;
-  const maxCum = Math.max(1, ...rows.map((r) => r.cumulative));
-  const first = rows.length ? rows[rows.length - 1].cumulative : null;
-  return html`<div className="insp">
-    <div className="conv" style=${{ maxWidth: "520px" }}>
-      <div className="convrow"><i>cumulative trials</i>
-        <div className="convbar"><span style=${{ width: "100%" }}></span></div>
-        <b className="mono">${cum == null ? "—" : cum.toLocaleString()}</b></div>
-      <div className="convrow"><i>bar this scan</i>
-        <div className="convbar"><span style=${{ width: Math.min(100, ((zc ?? 0) / 6) * 100) + "%", background: "var(--good)" }}></span></div>
-        <b className="mono">${zc == null ? "—" : "z " + zc.toFixed(3)}</b></div>
-      <div className="convrow"><i>added by these rows</i>
-        <div className="convbar"><span style=${{ width: pct(cum - first, cum) }}></span></div>
-        <b className="mono">${cum == null || first == null ? "—" : "+" + (cum - first).toLocaleString()}</b></div>
-    </div>
-    ${rows.length ? html`<div className="scrollx"><table>
-      <thead><tr><th>when (UTC)</th><th>universe</th><th>tested</th><th>tests</th>
-        <th>triggered</th><th>shortlist</th><th>passed</th><th>cumulative</th><th>verdict</th></tr></thead>
-      <tbody>${rows.map((r) => html`<tr key=${r.ts}>
-        <td className="mono">${r.ts.slice(5, 16)}</td>
-        <td className="mono">${r.universe}</td>
-        <td className="mono">${r.tested}</td>
-        <td className="mono">${r.tests}</td>
-        <td className="mono">${r.trig}</td>
-        <td className="mono">${r.short}</td>
-        <td className=${"mono " + (r.passed ? "pos" : "")}>${r.passed}</td>
-        <td className="mono">${r.cumulative.toLocaleString()}</td>
-        <td className=${r.verdict === "PROPOSAL" ? "pos" : ""}>${r.verdict.replace(/_/g, " ")}</td>
-      </tr>`)}</tbody></table></div>` : html`<div className="empty">
-        No funnel rows yet — the ledger is written by tier3_deep.py at the end of a scan.</div>`}
-    <div className="runlbl"><span>${rows.length} rows shown, newest first</span>
-      <span>cumulative counts every hypothesis ever tested</span></div>
-  </div>`;
+  return route;
 }
 
 function App() {
   const [data, setData] = useState(null);
   const [up, setUp] = useState(false);
   const [err, setErr] = useState(null);
-  const [allState, setAllState] = useState("");
   const [elapsed, setElapsed] = useState(0);
+  const [range, setRange] = useState("2h");
+  const [allState, setAllState] = useState("");
+  const [running, setRunning] = useState(false);
   const receivedAt = useRef(null);
   const route = useRoute();
 
@@ -983,7 +1612,7 @@ function App() {
       ws.onopen = () => { if (alive) { receivedAt.current = null; setUp(false); setErr("waiting for heartbeat"); } };
       ws.onclose = () => { if (!alive) return; setUp(false); retry = setTimeout(connect, 1500); };
       ws.onerror = () => { if (alive) setErr("websocket error"); };
-      ws.onmessage = e => {
+      ws.onmessage = (e) => {
         if (!alive) return;
         try {
           const next = JSON.parse(e.data);
@@ -998,14 +1627,28 @@ function App() {
       setElapsed(Math.max(0, Math.floor((Date.now() - receivedAt.current) / 1000)));
       if (!transportFresh(receivedAt.current)) { setUp(false); setErr("heartbeat stale"); }
     }, 1000);
-    return () => { alive = false; clearInterval(watchdog); clearTimeout(retry); try { ws.close(); } catch(_){} };
+    return () => { alive = false; clearInterval(watchdog); clearTimeout(retry); try { ws.close(); } catch (_) {} };
+  }, []);
+
+  // A tab that was in the background catches up on the first second back.
+  useEffect(() => {
+    const on = () => {
+      if (document.visibilityState !== "visible") return;
+      fetch("/api/snapshot").then((r) => r.json()).then((j) => {
+        if (j && typeof j.ts === "number") { setData(j); receivedAt.current = Date.now(); setElapsed(0); setUp(true); }
+      }).catch(() => {});
+    };
+    document.addEventListener("visibilitychange", on);
+    return () => document.removeEventListener("visibilitychange", on);
   }, []);
 
   const copyAll = useCallback(async () => {
     try {
       const names = ["audit", "funnel", "actions"];
-      const parts = await Promise.all(names.map(async n => {
-        return `# ${n}  (${new Date().toISOString()})\n` + await fetchLog(n);
+      const parts = await Promise.all(names.map(async (n) => {
+        const r = await fetch("/api/logs/" + n);
+        if (!r.ok) throw new Error("log " + n + " unavailable");
+        return `# ${n}  (${new Date().toISOString()})\n` + await r.text();
       }));
       await navigator.clipboard.writeText(parts.join("\n\n"));
       setAllState("done");
@@ -1013,227 +1656,125 @@ function App() {
     setTimeout(() => setAllState(""), 1600);
   }, []);
 
-  // The only button that writes anything: it POSTs /api/scan, the server spawns
-  // the same run_funnel.py the scheduler runs, and the funnel's own lock makes a
-  // double click free. Nothing on this path is an order path.
-  const [running, setRunning] = useState(false);
+  // The only button that writes anything: POST /api/scan → run_funnel.py, the same
+  // entry the scheduler runs. Nothing on this path is an order path.
   const runScan = useCallback(async () => {
     setRunning(true);
     try {
       const r = await fetch("/api/scan", {method: "POST"});
       if (!r.ok) setErr("scan refused (" + r.status + ")");
     } catch (e) { setErr("scan request failed"); }
-    // A request, not a completion: the progress strip reports the truth, so the
-    // button releases early and the strip carries the run.
     setTimeout(() => setRunning(false), 6000);
   }, []);
 
-  const age = data?.engine_age_s == null ? null : data.engine_age_s + elapsed;
-  const hasEngine = Boolean(data?.engine);
-  const viewData = data ? {...data, engine_age_s: age, transport_live: up} : null;
-  const t3 = scanCurrent(viewData) ? data?.tier3 : null;
-  const fRow = lastFunnel(data?.funnel);
-  const cum = t3?.trials_cumulative ?? fRow?.cumulative ?? null;
-  const zc = t3?.z_crit_corrected ?? null;
-  const stoodDown = t3 ? Boolean(t3.stood_down) : null;
-  const survivors = (t3?.survivors || []).map(v => (v && v.symbol) || v).filter(Boolean);
-  const wasUp = useRef(false);
-  if (up) wasUp.current = true;
-  const stale = age !== null && age !== undefined && age > 30;
-  const positions = data?.engine?.positions || [];
-  const account = data?.engine?.account || {};
-  const engineErr = data?.engine && data.engine.ok === false ? data.engine.error : null;
-  const x = pipeline(viewData);
-  const supervision = protectionLabel(data, age, up);
-  const title = { overview: "Overview", pipeline: "Pipeline", trials: "Trials", logs: "Logs" }[route] || "Overview";
+  const d = derive(data, up, elapsed);
+  const alerts = (data && data.alerts) || [];
+  const version = data ? data.ts : 0;
 
-  const nav = [["overview", "Overview", "1"], ["pipeline", "Pipeline", "2"],
-               ["trials", "Trials", "3"], ["logs", "Logs", "4"]];
-
-  return html`
-  <div className="app">
+  return html`<div className="app">
     <aside className="side">
       <div className="brand">
         <div className="mark">ZT</div>
-        <div><h1>Zero-Trust</h1><div className="sub">demo · read-only</div></div>
+        <div><h1>Zero-Trust</h1><div className="sub">demo · monitor</div></div>
       </div>
       <nav className="nav" aria-label="pages">
-        ${nav.map(([k, label, key]) => html`<a key=${k} href=${"#/" + k}
-          className=${"navitem" + (route === k ? " on" : "")} aria-label=${label} title=${label} aria-current=${route === k ? "page" : "false"}>
+        ${ROUTES.map(([k, label, key]) => html`<a key=${k} href=${"#/" + k}
+          className=${"navitem" + (route === k ? " on" : "")} aria-current=${route === k ? "page" : "false"}>
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
             strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d=${ICONS[k]} /></svg>
-          <span>${label}</span><span className="kbd">${key}</span>
+          <span className="lbl">${label}</span><span className="kbd">${key}</span>
         </a>`)}
       </nav>
       <div className="grow"></div>
       <div className="sidenote">
-        <b>${fRow ? "last scan " + fRow.ts.slice(11, 16) + "Z" : "no scan yet"}</b>
-        ${x.in == null ? "no universe on disk" : x.in + " symbols · " + (x.tests ?? 0) + " tests"}
+        <b>${d.x.last ? "last scan " + (d.x.last.ts || "").slice(11, 16) + "Z" : "no scan yet"}</b>
+        ${d.x.in == null ? "no universe on disk" : d.x.in + " symbols · " + (d.x.tests ?? 0) + " tests"}
       </div>
-      <a className="sidelink" href="/architecture" target="_blank" rel="noopener" aria-label="Architecture" title="Architecture">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
-          strokeWidth="1.8" aria-hidden="true"><path d="M4 20V8l8-4 8 4v12M4 20h16" /></svg>
-        <span>Architecture ↗</span></a>
-      <a className="sidelink" href="/api/report/latest" target="_blank" rel="noopener" aria-label="Last report" title="Last report">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor"
-          strokeWidth="1.8" aria-hidden="true"><path d="M6 3h9l4 4v14H6z" /><path d="M9 12h7M9 16h5" /></svg>
-        <span>Last report ↗</span></a>
+      <a className="sidelink" href="/architecture" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+          <path d="M4 20V8l8-4 8 4v12M4 20h16" /></svg><span>Architecture ↗</span></a>
+      <a className="sidelink" href="/api/report/latest" target="_blank" rel="noopener">
+        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+          <path d="M6 3h9l4 4v14H6z" /><path d="M9 12h7M9 16h5" /></svg><span>Last report ↗</span></a>
     </aside>
 
     <div className="main">
       <div className="topbar">
         <div>
-          <div className="pagetitle">${title}</div>
-          <div className="pagesub">${route === "overview" ? "what the desk knows right now"
-            : route === "pipeline" ? "six stages, and where the funnel stopped"
-            : route === "trials" ? "every hypothesis ever tested, and the bar it set"
-            : "the raw files the engine writes — nothing here can change them"}</div>
+          <div className="pagetitle">${(ROUTES.find((r) => r[0] === route) || ROUTES[0])[1]}</div>
+          <div className="pagesub">${SUBS[route] || SUBS.flow}</div>
         </div>
         <span className="spacer"></span>
-        <span className=${`pill ${up ? "live" : "down"}`} aria-live="polite"><span className="dot"></span>${up ? "live" : "disconnected / stale"}</span>
-        ${stale ? html`<span className="pill stale" title="the supervisor has not written engine_state recently">${fmtDur(age)} stale</span>` : null}
-        ${data && !hasEngine ? html`<span className="pill down">engine state missing</span>` : null}
-        ${engineErr ? html`<span className="pill down" title=${engineErr}>engine refusing</span>` : null}
+        <button className=${"pill bell" + (alerts.length ? " has" : "")} onClick=${() => { location.hash = "#/ops"; }}
+          aria-label=${alerts.length + " alerts"}>◔ ${alerts.length}</button>
+        <span className=${"pill " + (up ? "live" : "down")} aria-live="polite"
+          title="the browser socket to this dashboard — not the engine heartbeat"><span className="dot"></span>${up ? "socket live" : "socket down"}</span>
+        ${d.age != null && d.age > 30 ? html`<span className="pill stale">${fmtDur(d.age)} stale</span>` : null}
+        ${data && !data.engine ? html`<span className="pill down">engine state missing</span>` : null}
+        ${data && data.engine && data.engine.ok === false ? html`<span className="pill down" title=${data.engine.error || ""}>engine refusing</span>` : null}
         ${err ? html`<span className="pill down">${err}</span>` : null}
-        <span className="pill tz" title="Logs are stored in UTC; times are shown in your own zone">${TZ}</span>
-        <button className=${`copy ${allState}`} onClick=${copyAll} aria-live="polite">${allState === "done" ? "copied ✓" : allState === "fail" ? "copy failed" : "copy recent logs"}</button>
-        <div className="equity mono"><b>${money(data?.equity, data?.currency)}</b><span>equity</span></div>
+        <span className="pill tz" title="Files are UTC; times are shown in your zone">${TZ}</span>
+        <button className=${"copy " + allState} onClick=${copyAll} aria-live="polite">
+          ${allState === "done" ? "copied ✓" : allState === "fail" ? "copy failed" : "copy recent logs"}</button>
+        <div className="equity mono"><b>${money(data && data.equity, data && data.currency)}</b><span>equity</span></div>
       </div>
 
-      <${ScanBar} progress=${data?.progress} onRun=${runScan} running=${running} />
+      <div className="progress">
+        <button className=${"runbtn" + (running ? " armed" : "")} disabled=${running} onClick=${runScan}
+          title="runs exactly what the scheduler runs; it takes the same lock">
+          ${running ? "starting…" : "▶ Run scan now"}</button>
+        ${!data || !data.progress ? html`<span className="l-faint">no scan progress recorded on this tree yet</span>`
+          : html`${["preflight", "universe", "tier2", "tier3", "verdict"].map((k, i) => {
+              const idx = ["preflight", "universe", "tier2", "tier3", "verdict"].indexOf(data.progress.stage);
+              const done = data.progress.status === "done" || i < idx;
+              return html`<span key=${k} className=${"stage " + (done ? "done" : i === idx ? "now" : "todo")}>
+                ${done ? "✓ " : ""}${k}</span>`;
+            })}
+            ${data.progress.verdict ? html`<span className=${"badge " + (data.progress.verdict === "PROPOSAL" ? "pass" : "")}>${data.progress.verdict}</span>` : null}
+            <span className="l-faint">${data.progress.tests != null ? num0(data.progress.tests) + " tests" : ""}</span>`}
+        <span className="spacer"></span>
+        <span className="l-faint">the button cannot place an order — see §9 of AGENTS.md</span>
+      </div>
 
       <main className="page">
-        ${route === "overview" ? html`<div className="contents">
-          ${data == null ? null : html`
-          <div className=${"verdict " + (stoodDown === false ? "up" : "down")}>
-            <span className="tag">${stoodDown === false ? "edge" : stoodDown === true ? "verdict" : "pending"}</span>
-            <b>${stoodDown === false ? "EDGE CANDIDATE: " + (survivors.join(", ") || "unnamed")
-              : stoodDown === true ? "STANDING DOWN — no edge found"
-              : "SCAN UNVERIFIED — historical or incomplete artifacts"}</b>
-            <small>${stoodDown == null ? data?.scan?.reason || "waiting for a coherent completed scan"
-              : cum == null ? "" : cum.toLocaleString() + " cumulative trials · bar z̄ " + (zc == null ? "—" : zc.toFixed(3))}</small>
-          </div>`}
-
-          <section className="card tap3"><div className="tile">
-            <div className="label">Balance</div>
-            <div className="value mono">${money(data?.balance, data?.currency)}</div>
-            <div className="note">server ${data?.server ?? "—"}</div>
-          </div></section>
-
-          <section className="card tap3"><div className="tile">
-            <div className="label">Open positions</div>
-            <div className="value mono">${data?.positions ?? "—"}</div>
-            <div className="note">${supervision}</div>
-          </div></section>
-
-          <section className="card tap3"><div className="tile">
-            <div className="label">Engine heartbeat</div>
-            <div className="value mono small"
-              style=${{ color: age == null ? "var(--bad)" : stale ? "var(--warn)" : "var(--good)" }}>
-              ${age === null || age === undefined ? "no engine state" : fmtDur(age) + " ago"}</div>
-            <div className="note">${!hasEngine ? "engine state missing" : accountLabel(account)}</div>
-          </div></section>
-
-          <section className="card tap3"><div className="tile">
-            <div className="label">Mode</div>
-            <div className="value small">${!hasEngine || data?.engine?.ok !== true || stale || !up ? "unverified" : data.engine.applied ? "apply enabled" : "dry run"}</div>
-            <div className="note">read-only monitor · ${supervision}</div>
-          </div></section>
-
-          <${Card} title="Pipeline workflow" wide="tap12"
-            count=${data?.tier3?.generated_utc ? (scanCurrent(viewData) ? "tier3 · " : "historical tier3 · ") + data.tier3.generated_utc
-              : data?.tier2?.generated_utc ? (scanCurrent(viewData) ? "tier2 · " : "historical tier2 · ") + data.tier2.generated_utc : null}>
-            <${Pipe} data=${viewData} detail=${false} />
-          <//>
-
-          <${Card} title="Desk · the agent chain" wide="tap12"
-            count=${data?.agent?.generated_utc ? data.agent.model + " · " + data.agent.generated_utc : null}>
-            <${Desk} agent=${data?.agent} />
-          <//>
-
-          <${Card} title="Positions" wide="tap12">
-            ${positions.length
-              ? html`<div className="scrollx"><table>
-                  <thead><tr><th>Symbol</th><th>Side</th><th>Lots</th><th>Entry</th><th>Price</th><th>Stop</th><th>P&amp;L</th></tr></thead>
-                  <tbody>${positions.map((p, i) => html`
-                    <tr key=${p.symbol + ":" + i}>
-                      <td className="mono">${p.symbol}</td>
-                      <td style=${{color: p.side > 0 ? "var(--good)" : "var(--bad)"}}>${p.side > 0 ? "LONG" : "SHORT"}</td>
-                      <td className="mono">${num(p.volume, 2)}</td>
-                      <td className="mono">${num(p.entry)}</td>
-                      <td className="mono">${num(p.price)}</td>
-                      <td className="mono">${p.sl ? num(p.sl) : "none"}</td>
-                      <td className=${"mono " + ((p.profit ?? 0) >= 0 ? "pos" : "neg")}>${money(p.profit, data?.currency)}</td>
-                    </tr>`)}</tbody>
-                </table></div>`
-              : html`<div className="empty">${supervision}</div>`}
-          <//>
-        </div>` : null}
-
-        ${route === "pipeline" ? html`<div className="contents">
-          <${Card} title="Pipeline workflow" wide="tap12"
-            count=${data?.tier3?.generated_utc ? (scanCurrent(viewData) ? "tier3 · " : "historical tier3 · ") + data.tier3.generated_utc
-              : data?.tier2?.generated_utc ? (scanCurrent(viewData) ? "tier2 · " : "historical tier2 · ") + data.tier2.generated_utc : null}>
-            <${Pipe} data=${viewData} detail=${true} />
-          <//>
-        </div>` : null}
-
-        ${route === "trials" ? html`<div className="contents">
-          <${Card} title="Trial ledger" wide="tap12"
-            count=${data?.funnel?.length ? data.funnel.length + " lines in the ledger tail" : null}>
-            <${Trials} data=${data} x=${x} />
-          <//>
-          <${Card} title="Desk history · every answer kept" wide="tap12"
-            count=${data?.desk_history?.count ? data.desk_history.count + " runs in desk_history.sqlite" : null}>
-            <${History} h=${data?.desk_history} />
-          <//>
-        </div>` : null}
-
-        ${route === "logs" ? html`<div className="contents">
-          <${Card} title="Audit trail" which="audit" wide="tap12"
-            count=${data?.mcp?.length ? data.mcp.length + " shown" : null}>
-            <${LogPane} lines=${data?.mcp} raw
-              empty="No audit records yet — audit.jsonl fills on the next run" />
-          <//>
-          <${Card} title="Funnel history" which="funnel" wide="tap6"
-            count=${data?.funnel?.length ? data.funnel.length + " shown" : null}>
-            <${LogPane} lines=${data?.funnel} empty="No funnel runs logged yet" />
-          <//>
-          <${Card} title="Supervisor" which="actions" wide="tap6"
-            count=${data?.actions?.length ? data.actions.length + " shown" : null}>
-            <${LogPane} lines=${data?.actions} empty="No stop changes yet (position_manager.py)" />
-          <//>
-        </div>` : null}
-
-        ${!["overview", "pipeline", "trials", "logs"].includes(route) ? html`
-          <div className="card tap12"><div className="empty">
-            Unknown page “${route}”. Pick one from the sidebar.</div></div>` : null}
+        ${route === "flow" ? html`<${FlowPage} d=${d} data=${data} />` : null}
+        ${route === "overview" ? html`<${Overview} d=${d} data=${data} range=${range} setRange=${setRange} />` : null}
+        ${route === "research" ? html`<${Research} d=${d} data=${data} />` : null}
+        ${route === "performance" ? html`<${Performance} d=${d} data=${data} />` : null}
+        ${route === "trials" ? html`<${Trials} d=${d} data=${data} />` : null}
+        ${route === "ops" ? html`<${Ops} d=${d} data=${data} />` : null}
       </main>
-
-      ${!up && wasUp.current ? html`<div className="toast" role="status">
-        <b>disconnected</b>reconnecting — the numbers on screen are frozen, not fresh</div>` : null}
     </div>
   </div>`;
 }
 
-// A monitor that paints nothing is worse than one that paints an error.
+// Keyboard 1–6, ignored while typing in a field.
+document.addEventListener("keydown", (e) => {
+  if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+  if (e.metaKey || e.ctrlKey || e.altKey) return;
+  const hit = ROUTES.find((r) => r[2] === e.key);
+  if (hit) location.hash = "#/" + hit[0];
+});
+
+/* If a render throws, the page says so instead of going blank. A monitor that
+   silently shows nothing is the failure mode this project exists to avoid. */
 class Boundary extends React.Component {
-  constructor(p) { super(p); this.state = { err: null }; }
-  static getDerivedStateFromError(err) { return { err }; }
-  componentDidCatch(err) { console.error("render failed", err); }
+  constructor(props) { super(props); this.state = {err: null}; }
+  static getDerivedStateFromError(err) { return {err: err}; }
   render() {
-    if (this.state.err) {
-      return React.createElement("div", { className: "empty", style: { padding: "24px", color: "var(--bad)" } },
-        React.createElement("b", null, "render failed"),
-        React.createElement("pre", { style: { whiteSpace: "pre-wrap", color: "var(--dim)", marginTop: "8px" } },
-          String(this.state.err && this.state.err.stack || this.state.err)));
-    }
-    return this.props.children;
+    if (!this.state.err) return this.props.children;
+    return html`<div style=${{padding: "24px", color: "#ff4d5e", fontFamily: "ui-monospace, monospace"}}>
+      <b>the dashboard failed to render</b>
+      <pre style=${{whiteSpace: "pre-wrap", color: "#e8f0f2", marginTop: "8px"}}>${String(this.state.err && this.state.err.stack || this.state.err)}</pre>
+      <div style=${{color: "#8b9bab", marginTop: "8px"}}>The engine is unaffected — this is the viewer only.</div>
+    </div>`;
   }
 }
 
 ReactDOM.createRoot(document.getElementById("root"))
-  .render(React.createElement(Boundary, null, React.createElement(App)));
+  .render(html`<${Boundary}><${App} /><//>`);
+})();
+
 </script>
 </body>
 </html>

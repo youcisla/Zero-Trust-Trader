@@ -33,6 +33,8 @@ a user-authentication boundary; the same user must protect the producer files.
 | `/vendor/react.production.min.js` | Embedded JavaScript | No runtime CDN |
 | `/vendor/react-dom.production.min.js` | Embedded JavaScript | No runtime CDN |
 | `/vendor/htm.umd.js` | Embedded JavaScript | No runtime CDN |
+| `/vendor/echarts.min.js` | Embedded chart library, sha256 in `web/vendor/PROVENANCE.json` | No runtime CDN |
+| `POST /api/scan` | **The only write in this process.** Spawns `run_funnel.py --window-utc 05:00-17:00 --t-gate` with no other argument | 503 if the script is missing; the funnel's own lock, window and demo pre-flight still decide whether anything runs |
 
 Unknown log names return 404. Routes support only read methods; there are no
 order, settings, file-write or command messages. Axum provides normal HEAD
@@ -100,3 +102,57 @@ they never read the production tree. Node's built-in test runner checks the
 embedded state helpers and script syntax without a frontend build system.
 Browser rendering, assistive technology, actual browser local-network policies
 and load profiling require separate synthetic-fixture checks.
+
+## Snapshot v2 (additive)
+
+Every field that existed before is unchanged, including its null semantics. v2
+adds five keys. A missing artifact is `null` or `present:false` — never `0`.
+
+```jsonc
+{
+  "universe": {
+    "present": true,                 // false when liquid_universe.json is absent
+    "count": 120,                    // null when absent
+    "generated_utc": "2026-11-10T09:41:00Z",
+    "by_class": {"FX": 19, "SHARES": 83, ...},
+    "symbols": [{"symbol": "EURUSD", "class": "FX", "spread_pct_atr": 1.81, "mean_tick_volume": 1314.5}]
+  },
+  "ledger": {
+    "present": true,
+    "rows": [                        // newest first, cap 400
+      {"ts": "2026-11-10T10:29:41Z", "universe": 120, "tested": 119, "total_tests": 238,
+       "triggering": 15, "deduped": 1, "shortlist": 4, "passed_both": 0,
+       "cumulative": 11080, "scan_id": "3844a179...", "permutations": 1000,
+       "verdict": "STAND_DOWN", "winners": [], "signed": true, "detail": null}
+    ],
+    "window_bytes": 524288,          // the parser reads a bounded tail
+    "truncated": true,
+    "total_bytes": 90112,
+    "malformed": 0
+  },
+  "series": {                        // in memory only; nothing is written to disk
+    "since_ts": 1762776360,          // null on a cold start
+    "equity":  {"2h": [[1762776360, 199.92]], "48h": [], "14d": []},
+    "balance": {"2h": [...], "48h": [], "14d": []},
+    "events":  [{"ts": 1762776360, "kind": "verdict", "label": "STAND_DOWN", "scan_id": "..."}]
+  },
+  "alerts": [
+    {"id": "engine_stale", "severity": "warn", "message": "engine state 12h 38m stale", "since_ts": 1762776360}
+  ],
+  "health": {
+    "files": {"engine_state.json": {"exists": true, "age_s": 3},
+              "liquid_universe.json": {"exists": true, "age_s": 3700}},
+    "maintenance": {"active": false, "age_min": null, "note": null}
+  }
+}
+```
+
+Notes that matter for a client:
+
+- `series` is a cold-start-honest capture: `since_ts` says when observation began,
+  and a range that nobody observed is an empty array, not a flat line.
+- `alerts` is derived server-side so two clients cannot disagree about whether the
+  engine is stale. `since_ts` is when the alert was *computed*, not when the
+  condition started; the message carries the age.
+- `signed` reports only the presence of a `sig=` segment. This process holds no
+  key and cannot verify the chain; `status.py` does that.

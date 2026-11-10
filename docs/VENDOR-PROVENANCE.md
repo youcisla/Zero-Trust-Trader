@@ -10,6 +10,7 @@ are recorded in `dashboard/web/vendor/PROVENANCE.json` and tested locally.
 | `react.production.min.js` | [react 18.3.1](https://registry.npmjs.org/react/-/react-18.3.1.tgz) | `LICENSE.react.txt` — MIT |
 | `react-dom.production.min.js` | [react-dom 18.3.1](https://registry.npmjs.org/react-dom/-/react-dom-18.3.1.tgz) | `LICENSE.react-dom.txt` — MIT |
 | `htm.umd.js` | [htm 3.1.1](https://registry.npmjs.org/htm/-/htm-3.1.1.tgz) | `LICENSE.htm.txt` — Apache 2.0 |
+| `echarts.min.js` | [echarts 5.6.0](https://registry.npmjs.org/echarts/-/echarts-5.6.0.tgz) | `LICENSE.echarts.txt` — Apache 2.0 |
 
 The React DOM embedded version text includes a prerelease build identifier; byte
 comparison establishes its match to the named published package rather than
@@ -28,3 +29,9 @@ Regenerate through the documented Archify workflow, review the source and output
 together, then rebuild the embedded Rust binary. Its full generated bundle and
 third-party internals were not independently audited here; no generated artifact
 was hand-edited during these fixes.
+
+ECharts was added on 10 November 2026: `dist/echarts.min.js` was extracted from the
+pinned 5.6.0 tarball, byte-compared with the copy written to `web/vendor/`, and
+its sha256 (`bf4a2235…`) recorded in `PROVENANCE.json` alongside the Apache-2.0
+licence text shipped in the package. It is served from `/vendor/echarts.min.js`
+by the same binary; there is no CDN fallback and no build step.

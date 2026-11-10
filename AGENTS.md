@@ -83,6 +83,27 @@ Rules that follow from this:
 - **The launchers are local-only.** `run_funnel.local.cmd` and
   `run_rebuild.local.cmd` pin `MT5_EXPECTED_LOGIN` and are excluded through
   `.git/info/exclude`; the tracked `run_funnel.cmd` stays portable and sanitised.
+- **The six pages answer six questions.** `#/flow` (default) is the nine-stage canvas
+  — scheduler, pre-flight, tier 1, tier 2, correlation dedupe, tier 3, verdict,
+  consent, supervisor — with per-edge counts and a click-to-inspect drawer.
+  `#/overview` is "is it alive, what did it decide, what do I hold";
+  `#/research` is the gate-margin and trials-activity evidence; `#/performance` is
+  equity, drawdown and outcomes; `#/trials` is the accounting that sets the bar;
+  `#/ops` is health, alerts and the raw files. Keys `1`–`6` switch between them.
+- **The equity series is memory, not history.** `collector.rs` samples the resolved
+  engine state once per second into three ring buffers (2 h @ 1 s, 48 h @ 30 s,
+  14 d @ 5 min) and downsamples with LTTB on the way out. Nothing is persisted and
+  no file is created: a restart starts the record over, and the chart says
+  `in-memory since <time>`. Do not "fix" this by writing a series to disk — that
+  would make the monitor a writer in the engine's tree.
+- **Alerts are derived on the server** (`health.rs`), so two clients cannot disagree
+  about whether the engine is stale. The client renders `alerts[]` verbatim.
+- **The ledger parser is bounded** (`ledger.rs`, 512 KiB tail, newest 400 rows). It
+  reports `signed` as the *presence* of a `sig=` segment; it holds no key and must
+  never claim a row is verified.
+- **Charts cannot invent a point.** A range with no observations renders an empty
+  state, never a flat line; a one-point series pins the axis to a minute so it
+  cannot read as a day of silence.
 - **Progress is a file, not a channel.** `run_funnel.progress()` writes
   `scan_progress.json` at each stage boundary (atomically, and never failing the
   scan if it cannot). The UI reads it to show which stage is running, and stays
@@ -284,6 +305,7 @@ when launched from either the repo root or `dashboard/`.
 | `GET /ws` | read | updates on change, plus a 1 Hz heartbeat so `engine_age_s` keeps ticking |
 | `GET /architecture` | read | the stage map, embedded from `dashboard/web/architecture.html` |
 | `POST /api/scan` | **write** | starts `run_funnel.py` — the *research* pipeline. The only write in this process |
+| `/vendor/echarts.min.js` | read | the chart library, embedded from a pinned npm tarball |
 
 `POST /api/scan` is the one exception and it is narrow. It takes no argument, so
 the button runs exactly what the scheduler runs: the funnel's own lock (a double

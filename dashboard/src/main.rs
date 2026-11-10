@@ -34,6 +34,10 @@ use std::{
 };
 use tokio::sync::{broadcast, Mutex};
 
+mod collector;
+mod health;
+mod ledger;
+
 const TAIL: usize = 12;
 const LOG_WINDOW: u64 = 4_000_000;
 const JSON_LIMIT: u64 = 2_000_000;
@@ -45,6 +49,10 @@ struct AppState {
     current: Arc<Mutex<String>>,
     root: PathBuf,
     port: u16,
+    /// Equity/balance history. In memory only: the engine keeps no time series,
+    /// and a monitor that wrote its own state files into the engine's tree would
+    /// be a second writer. Nothing here survives a restart, and the UI says so.
+    series: Arc<Mutex<collector::Collector>>,
 }
 
 fn tail(path: &Path, n: usize) -> Option<Vec<String>> {
@@ -233,7 +241,7 @@ fn scan_state(root: &Path, tier2: &Value, tier3: &Value, funnel: Option<&Vec<Str
            "scan_id": ledger_id, "reason": reason})
 }
 
-fn build(root: &Path) -> Value {
+fn build(root: &Path, series: &mut collector::Collector) -> Value {
     let engine_path = newest_state(root);
     let engine = display_engine(read_json(&engine_path));
 
@@ -272,6 +280,46 @@ fn build(root: &Path) -> Value {
     let funnel = tail(&root.join("funnel_history.log"), TAIL);
     let scan = scan_state(root, &tier2, &tier3, funnel.as_ref());
 
+    // One observation per build. This is the only place the dashboard gains
+    // memory; it writes nothing.
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as i64)
+        .unwrap_or(0);
+    series.sample(now, equity.as_ref().and_then(Value::as_f64),
+                  balance.as_ref().and_then(Value::as_f64));
+
+    let ledger_doc = ledger::snapshot(&root.join("funnel_history.log"));
+    if let Some(row) = ledger_doc.get("rows").and_then(Value::as_array).and_then(|r| r.first()) {
+        let verdict = row.get("verdict").and_then(Value::as_str).unwrap_or("");
+        if !verdict.is_empty() {
+            series.event(now, "verdict", verdict,
+                         row.get("scan_id").and_then(Value::as_str));
+        }
+    }
+
+    let engine_age_secs = age_secs(&engine_path);
+    let maintenance = health::maintenance(root);
+    // The engine publishes generation-suffixed state files, so a plain-name check
+    // reports "absent" while the supervisor is running. Report what was resolved.
+    let mut health_files = health::files(root);
+    if let Some(map) = health_files.as_object_mut() {
+        map.insert(
+            "engine_state.json".to_string(),
+            json!({"exists": engine_age_secs.is_some(), "age_s": engine_age_secs}),
+        );
+    }
+    let alerts = health::alerts(
+        engine_age_secs.is_some(),
+        engine_age_secs.map(|a| a as i64),
+        engine.get("ok").and_then(Value::as_bool).unwrap_or(true),
+        engine.get("error").and_then(Value::as_str),
+        ledger_doc.get("rows").and_then(Value::as_array).and_then(|r| r.first()),
+        Some(&agent),
+        &maintenance,
+        ledger_doc.get("present").and_then(Value::as_bool).unwrap_or(false),
+    );
+
     json!({
         "ts": SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),
         "engine": engine,
@@ -290,6 +338,44 @@ fn build(root: &Path) -> Value {
         "funnel": funnel,
         "actions": tail(&root.join("position_manager.log"), TAIL),
         "mcp": mcp,
+        "universe": universe(root),
+        "ledger": ledger_doc,
+        "series": series.snapshot(),
+        "health": json!({
+            "files": health_files,
+            "maintenance": maintenance,
+        }),
+        "alerts": alerts,
+    })
+}
+
+/// The liquid universe, trimmed to what the tiles need. Bounded read: the file is
+/// ~100 KB, but the reader is the same bounded one every other artifact uses.
+fn universe(root: &Path) -> Value {
+    let doc = read_json(&root.join("liquid_universe.json"));
+    let symbols = doc.get("symbols").and_then(Value::as_array);
+    let Some(symbols) = symbols else {
+        // Absent is absent. A universe of [] is a rebuild that failed, and the
+        // UI must be able to tell those apart, so it is passed through as-is.
+        return json!({"present": false, "count": null, "generated_utc": null, "symbols": []});
+    };
+    let rows: Vec<Value> = symbols
+        .iter()
+        .map(|s| {
+            json!({
+                "symbol": s.get("symbol").cloned().unwrap_or(Value::Null),
+                "class": s.get("class").cloned().unwrap_or(Value::Null),
+                "spread_pct_atr": s.get("spread_pct_atr").cloned().unwrap_or(Value::Null),
+                "mean_tick_volume": s.get("mean_tick_volume").cloned().unwrap_or(Value::Null),
+            })
+        })
+        .collect();
+    json!({
+        "present": true,
+        "count": doc.get("count").cloned().unwrap_or(json!(rows.len())),
+        "generated_utc": doc.get("generated_utc").cloned().unwrap_or(Value::Null),
+        "by_class": doc.get("by_class").cloned().unwrap_or(Value::Null),
+        "symbols": rows,
     })
 }
 
@@ -299,8 +385,13 @@ async fn watch(state: AppState) {
     loop {
         tick.tick().await;
         let root = state.root.clone();
-        let body =
-            match tokio::task::spawn_blocking(move || serde_json::to_string(&build(&root))).await {
+        let series = state.series.clone();
+        let body = match tokio::task::spawn_blocking(move || {
+            let mut guard = series.blocking_lock();
+            serde_json::to_string(&build(&root, &mut guard))
+        })
+        .await
+        {
                 Ok(Ok(body)) => body,
                 _ => {
                     eprintln!("dashboard snapshot watcher failed");
@@ -587,11 +678,13 @@ async fn main() {
     }
 
     let (tx, _) = broadcast::channel::<String>(32);
+    let mut series = collector::Collector::new();
     let state = AppState {
         tx,
-        current: Arc::new(Mutex::new(build(&root).to_string())),
+        current: Arc::new(Mutex::new(build(&root, &mut series).to_string())),
         root: root.clone(),
         port,
+        series: Arc::new(Mutex::new(series)),
     };
     tokio::spawn(watch(state.clone()));
 
@@ -630,6 +723,16 @@ fn router(state: AppState) -> Router {
             get(|| js("react-dom")),
         )
         .route("/vendor/htm.umd.js", get(|| js("htm")))
+        // Charts. Pinned tarball, sha256 in vendor/PROVENANCE.json, never a CDN.
+        .route(
+            "/vendor/echarts.min.js",
+            get(|| async {
+                (
+                    [(header::CONTENT_TYPE, "application/javascript; charset=utf-8")],
+                    include_str!("../web/vendor/echarts.min.js"),
+                )
+            }),
+        )
         .layer(middleware::from_fn_with_state(state.clone(), local_request))
         .with_state(state)
 }
@@ -836,11 +939,13 @@ mod tests {
             .unwrap();
         let port = listener.local_addr().unwrap().port();
         let (tx, _) = broadcast::channel(2);
+        let mut series = collector::Collector::new();
         let st = AppState {
             tx,
-            current: Arc::new(Mutex::new(build(&root).to_string())),
+            current: Arc::new(Mutex::new(build(&root, &mut series).to_string())),
             root: root.clone(),
             port,
+            series: Arc::new(Mutex::new(series)),
         };
         let server = tokio::spawn(async move {
             axum::serve(listener, router(st)).await.unwrap();
