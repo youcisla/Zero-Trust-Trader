@@ -45,6 +45,9 @@ impl Collector {
         let (Some(equity), Some(balance)) = (equity, balance) else {
             return; // no engine state: a gap, not a zero
         };
+        if !equity.is_finite() || !balance.is_finite() {
+            return; // 1e999 parses to inf; LTTB would turn it into NaN, silently
+        }
         if ts <= self.last_raw_ts {
             return;
         }
@@ -62,11 +65,17 @@ impl Collector {
         push_bucketed(&mut self.s300, s, 300, 14 * 86400);
     }
 
-    /// Append an event to the rail. Deduplicated on (kind, label, ts) so a 1 Hz
-    /// rebuild of the same ledger row does not fill the list.
+    /// Append an event to the rail, deduplicated on identity.
+    ///
+    /// Not on `ts`: the caller passes a fresh wall-clock second on every 1 Hz
+    /// rebuild, so a timestamp comparison never matches and the rail filled with
+    /// per-second copies of the same ledger row until EVENT_CAP. The identity of
+    /// an event is what it says, not when it was last seen.
     pub fn event(&mut self, ts: i64, kind: &str, label: &str, scan_id: Option<&str>) {
-        let dup = self.events.iter().rev().take(4).any(|e| {
-            e["ts"] == json!(ts) && e["kind"] == json!(kind) && e["label"] == json!(label)
+        let dup = self.events.back().is_some_and(|e| {
+            e["kind"] == json!(kind)
+                && e["label"] == json!(label)
+                && e["scan_id"] == json!(scan_id)
         });
         if dup {
             return;
@@ -254,6 +263,28 @@ mod tests {
         c.sample(2 * 3600 + 10, Some(2.0), Some(2.0));
         let e = c.snapshot()["equity"]["2h"].as_array().unwrap().len();
         assert_eq!(e, 1);
+    }
+
+    #[test]
+    fn a_non_finite_sample_is_a_gap_not_a_point() {
+        let mut c = Collector::new();
+        c.sample(1000, Some(f64::INFINITY), Some(100.0));
+        c.sample(1000, Some(100.0), Some(f64::NAN));
+        assert_eq!(c.snapshot()["equity"]["2h"].as_array().unwrap().len(), 0);
+        c.sample(1001, Some(100.0), Some(100.0));
+        assert_eq!(c.snapshot()["equity"]["2h"].as_array().unwrap().len(), 1);
+    }
+
+    #[test]
+    fn a_repeated_verdict_across_ticks_is_one_event() {
+        // The regression the old dedup pretended to cover: production passes a new
+        // ts every tick, so comparing ts kept every copy.
+        let mut c = Collector::new();
+        c.event(100, "verdict", "STAND_DOWN", Some("a"));
+        c.event(101, "verdict", "STAND_DOWN", Some("a"));
+        c.event(102, "verdict", "STAND_DOWN", Some("a"));
+        c.event(103, "verdict", "PROPOSAL", Some("b"));
+        assert_eq!(c.snapshot()["events"].as_array().unwrap().len(), 2);
     }
 
     #[test]

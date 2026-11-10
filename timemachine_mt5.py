@@ -644,6 +644,22 @@ def _outcome_counts(trades: list[dict]) -> dict:
     return c
 
 
+def entry_start_hour(strategy: str) -> int:
+    """The hour the session matrix opens this family's entry window.
+
+    Derived, never restated: a hardcoded map here would silently backtest a
+    different entry window than the scan proposes the day the matrix changes.
+    `run_funnel` imports no terminal at module level, so the import is safe.
+    """
+    import run_funnel
+
+    hours = [int(start[:2]) for start, _end, fams in run_funnel.SESSION_MATRIX
+             if strategy in fams]
+    if not hours:
+        raise ValueError(f"strategy {strategy!r} is in no session window")
+    return min(hours)
+
+
 def analyse(symbol, tf="H1", strategy="donchian", don_n=20, ema_fast=50, ema_slow=200,
             atr_k=1.5, rr=1.5, horizon=None, sides="both", bars_n=5000,
             replays=10000, seed=19, window=2, pool_bars=1500, n_tests=1,
@@ -660,7 +676,7 @@ def analyse(symbol, tf="H1", strategy="donchian", don_n=20, ema_fast=50, ema_slo
         hour, minute = (int(x) for x in close_utc.split(":"))
         if not (0 <= hour < 24 and 0 <= minute < 60):
             raise ValueError("invalid UTC session close")
-        start_hour = {"donchian": 5, "bollinger": 8, "rsi": 13}.get(strategy, 5)
+        start_hour = entry_start_hour(strategy)
         bars["entry_window_utc"] = (start_hour * 60, hour * 60 + minute)
     tick = md.mt5.symbol_info_tick(symbol)
     # One spread per round trip, in price units. Tier 1 already refuses symbols
@@ -787,8 +803,10 @@ def main() -> int:
     ap.add_argument("--strategy", default="donchian",
                     choices=["donchian", "pullback", "rsi", "bollinger", "macd"])
     ap.add_argument("--donchian", type=int, default=20)
-    ap.add_argument("--ema-fast", type=int, default=20)
-    ap.add_argument("--ema-slow", type=int, default=50)
+    # These match the funnel's rule (EMA50/EMA200). They used to be 20/50, so a
+    # manual run graded a different strategy than the pipeline and said nothing.
+    ap.add_argument("--ema-fast", type=int, default=50)
+    ap.add_argument("--ema-slow", type=int, default=200)
     ap.add_argument("--atr-k", type=float, default=1.5)
     ap.add_argument("--rr", type=float, default=1.5)
     ap.add_argument("--horizon", type=int, default=None)

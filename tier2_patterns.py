@@ -163,6 +163,10 @@ def _main() -> int:
     ap.add_argument("--ema-slow", type=int, default=200)
     ap.add_argument("--top", type=int, default=5)
     ap.add_argument("--corr-max", type=float, default=0.7)
+    ap.add_argument("--dedupe-pool", type=int, default=30,
+                    help="how many top hits get correlation-checked")
+    ap.add_argument("--dedupe-bars", type=int, default=3000,
+                    help="bars used for the correlation estimate")
     ap.add_argument("--no-dedupe", action="store_true")
     ap.add_argument("--strategies", default=",".join(STRATEGIES),
                     help="comma-separated subset of the matrix (session-dependent)")
@@ -215,7 +219,7 @@ def _main() -> int:
     if a.no_dedupe:
         top, dropped = hits[: a.top], []
     else:
-        kept, dropped = dedupe(hits, a.corr_max, a.tf)
+        kept, dropped = dedupe(hits, a.corr_max, a.tf, a.dedupe_bars, a.dedupe_pool)
         top = kept[: a.top]
 
     total_tests = tested * len(fams)

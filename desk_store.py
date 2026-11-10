@@ -58,7 +58,11 @@ CREATE INDEX IF NOT EXISTS answers_role ON answers(role, run_id);
 
 # The one secret this file could ever carry: the broker login, if an artifact
 # ever echoed it. The database is committed, so the check runs before the write.
-_PATH = re.compile(r"[A-Za-z]:\\[^\s\"']+|/[a-z]/Users/[^\s\"']+")
+# Shapes that have actually appeared: a Windows drive path, an MSYS /c/Users path,
+# a POSIX /Users path and a UNC share.
+_PATH = re.compile(r"[A-Za-z]:\\[^\s\"']+|/[A-Za-z]/Users/[^\s\"']+|/Users/[^\s\"']+|\\\\[^\s\"']+")
+# Any account-shaped 8-digit token. Over-redaction is the safe direction for a
+# committed artifact: a price or a token count can be lost, a login cannot.
 _LOGIN = re.compile(r"\b\d{8}\b")
 
 
@@ -67,7 +71,9 @@ def _redact(text: str, secrets: list[str]) -> str:
     for secret in secrets:
         if secret and secret in text:
             text = text.replace(secret, "•••")
-    return _PATH.sub("[path]", text)
+    text = _PATH.sub("[path]", text)
+    text = _LOGIN.sub("[login]", text)
+    return text
 
 
 def _secrets(root: Path) -> list[str]:

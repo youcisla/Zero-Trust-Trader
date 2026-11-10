@@ -346,16 +346,24 @@ def _main() -> int:
 
     if a.rebuild:
         # min-days 160 => ~15,400 M15 bars available, the deep-test window.
-        t1 = run(["tier1_universe.py", "--min-days", "160", "--h1-bars", "6000",
-                  "--lock-held"])
+        try:
+            t1 = run(["tier1_universe.py", "--min-days", "160", "--h1-bars", "6000",
+                      "--lock-held"])
+        except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
+            log(f"FAILED tier1 {type(exc).__name__} | {exc}")
+            return 1
         if t1.returncode != 0:
             log(f"FAILED tier1 rc={t1.returncode} | {tail(t1.stderr, 3)}")
             return 1
         print(tail(t1.stdout, 6))
         # Pass both caps. Leaving `--pool` out meant "everything" rebuilt 150
         # candidates and kept 93 — fewer symbols than the 120 cap it replaced.
-        t1b = run(["make_liquid.py", "--top", str(a.top), "--pool", str(a.pool),
-                   "--tf", a.tf, "--lock-held"])
+        try:
+            t1b = run(["make_liquid.py", "--top", str(a.top), "--pool", str(a.pool),
+                       "--tf", a.tf, "--lock-held"])
+        except (OSError, subprocess.SubprocessError, RuntimeError) as exc:
+            log(f"FAILED make_liquid {type(exc).__name__} | {exc}")
+            return 1
         if t1b.returncode != 0:
             log(f"FAILED make_liquid rc={t1b.returncode} | {tail(t1b.stderr, 3)}")
             return 1

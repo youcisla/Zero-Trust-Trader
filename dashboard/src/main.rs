@@ -58,6 +58,16 @@ struct AppState {
     /// and a monitor that wrote its own state files into the engine's tree would
     /// be a second writer. Nothing here survives a restart, and the UI says so.
     series: Arc<Mutex<collector::Collector>>,
+    /// When POST /api/scan last started a scan. The button has a client-side
+    /// guard; a local process does not, and every extra POST spawns another
+    /// interpreter that fights the funnel lock and churns the terminal.
+    last_scan: Arc<std::sync::Mutex<std::time::Instant>>,
+}
+
+fn idle_since() -> std::time::Instant {
+    std::time::Instant::now()
+        .checked_sub(Duration::from_secs(3600))
+        .unwrap_or_else(std::time::Instant::now)
 }
 
 fn tail(path: &Path, n: usize) -> Option<Vec<String>> {
@@ -436,19 +446,32 @@ async fn latest_report(State(st): State<AppState>) -> impl IntoResponse {
     match read {
         Ok(Ok(Some(body))) => (
             StatusCode::OK,
-            [(header::CONTENT_TYPE, "text/html; charset=utf-8")],
+            [
+                (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+                // The report is a producer artifact. If it ever grew a <script>,
+                // it would run in the dashboard's origin with access to the
+                // snapshot and the scan trigger. `report.py` emits inline styles
+                // only, so this policy never bites - and forbids the day it does.
+                (
+                    header::CONTENT_SECURITY_POLICY,
+                    "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+                ),
+            ],
             body,
-        ),
+        )
+            .into_response(),
         Ok(Ok(None)) => (
             StatusCode::NOT_FOUND,
             [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
             String::from("no reports yet - the next scan writes one"),
-        ),
+        )
+            .into_response(),
         _ => (
             StatusCode::SERVICE_UNAVAILABLE,
             [(header::CONTENT_TYPE, "text/plain; charset=utf-8")],
             String::from("latest report is unreadable or exceeds the 8 MB limit"),
-        ),
+        )
+            .into_response(),
     }
 }
 
@@ -618,6 +641,15 @@ async fn trigger_scan(State(st): State<AppState>) -> Response {
     if override_python.is_none() && cfg!(windows) {
         interpreter.arg("-3");
     }
+    {
+        let mut last = st.last_scan.lock().unwrap_or_else(|e| e.into_inner());
+        if last.elapsed() < Duration::from_secs(5) {
+            return (StatusCode::TOO_MANY_REQUESTS,
+                    Json(json!({"started": false, "error": "scan already starting"})))
+                .into_response();
+        }
+        *last = std::time::Instant::now();
+    }
     let script = st.root.join("run_funnel.py");
     if !script.exists() {
         return (StatusCode::SERVICE_UNAVAILABLE,
@@ -631,15 +663,26 @@ async fn trigger_scan(State(st): State<AppState>) -> Response {
         .stdin(std::process::Stdio::null())
         .spawn()
     {
-        Ok(child) => (StatusCode::ACCEPTED,
-                      Json(json!({"started": true, "pid": child.id()}))).into_response(),
+        Ok(mut child) => {
+            let pid = child.id();
+            // Without wait() every finished scan is a zombie on Unix, and the
+            // exit status - the only honest "it ran" signal - is discarded.
+            std::thread::spawn(move || {
+                let _ = child.wait();
+            });
+            (StatusCode::ACCEPTED,
+             Json(json!({"started": true, "pid": pid}))).into_response()
+        }
         Err(e) => (StatusCode::INTERNAL_SERVER_ERROR,
                    Json(json!({"started": false, "error": e.to_string()}))).into_response(),
     }
 }
 
 async fn ws(ws: WebSocketUpgrade, State(st): State<AppState>) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| client(socket, st))
+    // This socket carries snapshots server->client. Inbound frames are ignored,
+    // so their only possible use is to allocate memory: 64 KiB is generous.
+    ws.max_message_size(64 * 1024)
+        .on_upgrade(move |socket| client(socket, st))
 }
 
 async fn client(mut socket: WebSocket, st: AppState) {
@@ -676,7 +719,7 @@ async fn client(mut socket: WebSocket, st: AppState) {
                 // Read-only dashboard: client messages are ignored, but a
                 // closed socket must end the task.
                 match incoming {
-                    None | Some(Err(_)) => break,
+                    None | Some(Err(_)) | Some(Ok(Message::Close(_))) => break,
                     Some(Ok(_)) => {}
                 }
             }
@@ -721,6 +764,7 @@ async fn main() {
         root: root.clone(),
         port,
         series: Arc::new(Mutex::new(series)),
+        last_scan: Arc::new(std::sync::Mutex::new(idle_since())),
     };
     tokio::spawn(watch(state.clone()));
 
@@ -982,6 +1026,7 @@ mod tests {
             root: root.clone(),
             port,
             series: Arc::new(Mutex::new(series)),
+            last_scan: Arc::new(std::sync::Mutex::new(idle_since())),
         };
         let server = tokio::spawn(async move {
             axum::serve(listener, router(st)).await.unwrap();

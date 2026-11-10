@@ -76,11 +76,15 @@ def fetch(symbol: str, tf: str = "H1", bars: int = 3000, offset: int | None = No
     if tf not in TIMEFRAMES:
         raise ValueError(f"timeframe {tf!r} not in {sorted(TIMEFRAMES)}")
     inf = mt5.symbol_info(symbol)
-    if inf is not None and not inf.visible:
-        _AUTO_SELECTED.add(symbol)
+    was_visible = bool(inf and getattr(inf, "visible", False))
     if not mt5.symbol_select(symbol, True):
         _AUTO_SELECTED.discard(symbol)
         return None
+    if not was_visible:
+        # Track on the successful select. Tracking the pre-read missed the case
+        # where symbol_info() returns None (transient IPC) but the select worked:
+        # the symbol then leaked into Market Watch with no record of it.
+        _AUTO_SELECTED.add(symbol)
     rates = mt5.copy_rates_from_pos(symbol, TIMEFRAMES[tf], 0, bars)
     if rates is None or len(rates) == 0:
         return None

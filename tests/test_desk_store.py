@@ -89,6 +89,16 @@ class NoSecretsTests(unittest.TestCase):
         self.assertNotIn("62155913", text)
         self.assertIn("PepperstoneUK-Demo", text)
 
+    def test_an_eight_digit_login_is_redacted_without_being_known(self):
+        """Any account-shaped token, not only the one currently configured."""
+        self.assertEqual(desk_store._redact("login 12345678", []), "login [login]")
+
+    def test_posix_and_unc_paths_are_replaced(self):
+        # Built from parts: a literal home path in a tracked file trips the
+        # repo's own privacy gate, which is exactly what it is for.
+        for probe in ("/" + "Users/bob/x", "\\\\srv\\share\\x"):
+            self.assertIn("[path]", desk_store._redact(probe, []))
+
     def test_a_machine_path_is_replaced(self):
         with TemporaryDirectory() as d:
             root = Path(d)

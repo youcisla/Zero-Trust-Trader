@@ -72,6 +72,12 @@ class TestPreflight(unittest.TestCase):
             problems = rf.preflight_check(T(), A())
         self.assertTrue(any("MT5_EXPECTED_LOGIN" in p for p in problems), problems)
 
+    def test_a_malformed_pin_refuses_by_name(self):
+        """`MT5_EXPECTED_LOGIN=abc` must refuse, not raise inside pre-flight."""
+        with mock.patch.dict(os.environ, {"MT5_EXPECTED_LOGIN": "abc"}):
+            problems = rf.preflight_check(T(), A())
+        self.assertTrue(any("not a numeric account id" in p for p in problems), problems)
+
     def test_a_wrong_pin_refuses(self):
         """A set pin for a different account is a mismatch, not a pass."""
         with mock.patch.dict(os.environ, {"MT5_EXPECTED_LOGIN": "99999999"}):

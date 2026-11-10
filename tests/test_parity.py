@@ -24,6 +24,36 @@ import timemachine_mt5 as tm  # noqa: E402
 MIN_BARS = 260  # tier2.scan_symbol needs max(don_n, ema_slow) + 40
 
 
+class EntryWindowComesFromTheMatrix(unittest.TestCase):
+    """The backtest's entry window must be derived from SESSION_MATRIX.
+
+    It used to be a second, hand-typed map (donchian 5, bollinger 8, rsi 13). The
+    day the matrix moved, the backtest would silently grade a different entry
+    window than the scan proposes. The test calls the function; it does not
+    re-implement the arithmetic, which is the mistake that let a copy pass.
+    """
+
+    def test_every_family_starts_where_the_matrix_says(self):
+        import run_funnel
+        for family in t2.STRATEGIES:
+            want = min(int(start[:2]) for start, _end, fams in run_funnel.SESSION_MATRIX
+                       if family in fams)
+            self.assertEqual(tm.entry_start_hour(family), want)
+
+    def test_todays_matrix_values_are_pinned(self):
+        self.assertEqual(tm.entry_start_hour("donchian"), 5)
+        self.assertEqual(tm.entry_start_hour("bollinger"), 8)
+        self.assertEqual(tm.entry_start_hour("rsi"), 13)
+
+    def test_a_family_outside_the_matrix_raises(self):
+        with self.assertRaises(ValueError):
+            tm.entry_start_hour("no-such-family")
+
+    def test_the_old_hand_typed_map_is_gone(self):
+        src = (ROOT / "timemachine_mt5.py").read_text(encoding="utf-8")
+        self.assertNotIn('{"donchian": 5, "bollinger": 8, "rsi": 13}', src)
+
+
 def synth(n: int = 900, seed: int = 7) -> dict:
     """Trend up, then down, so both sides can trigger."""
     rng = np.random.default_rng(seed)

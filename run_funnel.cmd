@@ -8,5 +8,8 @@ if not exist ".venv\Scripts\python.exe" (
     echo Missing project interpreter. Run: py -3.14 -m venv .venv
     exit /b 2
 )
-".venv\Scripts\python.exe" run_funnel.py --window-utc 05:00-17:00 >> funnel_scheduler.out 2>&1
+REM --t-gate, same as the dashboard button: the live exit policy has no fixed
+REM target, so a binomial z benchmarks a phantom break-even. One scan, one
+REM statistic - two runners disagreeing about the gate was the bug.
+".venv\Scripts\python.exe" run_funnel.py --window-utc 05:00-17:00 --t-gate >> funnel_scheduler.out 2>&1
 exit /b %errorlevel%

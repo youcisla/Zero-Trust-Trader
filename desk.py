@@ -71,6 +71,13 @@ def api_key(root: Path | None = None) -> str | None:
     return None
 
 
+class _NoRedirect(urllib.request.HTTPRedirectHandler):
+    """A redirect is how a trusted URL becomes an untrusted one on the next hop."""
+
+    def redirect_request(self, *args, **kwargs):
+        raise DeskError("redirect refused")
+
+
 def _post(payload: dict, key: str, url: str = DEFAULT_URL, timeout: int = 90) -> dict:
     parsed = urlsplit(url)
     if parsed.username or parsed.password or not parsed.hostname:
@@ -85,12 +92,10 @@ def _post(payload: dict, key: str, url: str = DEFAULT_URL, timeout: int = 90) ->
         headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"},
         method="POST",
     )
-    class NoRedirect(urllib.request.HTTPRedirectHandler):
-        def redirect_request(self, *args, **kwargs):
-            raise DeskError("model endpoint redirect refused")
-
     try:
-        with urllib.request.build_opener(NoRedirect()).open(req, timeout=min(timeout, 30)) as r:
+        # Hard cap: a desk role must not hold the run for 90 s. The cap is in the
+        # call, not in a silent min() the caller cannot see.
+        with urllib.request.build_opener(_NoRedirect()).open(req, timeout=min(timeout, 30)) as r:
             raw = r.read(MAX_RESPONSE + 1)
             if len(raw) > MAX_RESPONSE:
                 raise DeskError("model endpoint response exceeds the size limit")
@@ -464,7 +469,7 @@ def headlines(feeds: list[str], limit: int = 20) -> list[dict]:
             break
         try:
             req = urllib.request.Request(url, headers={"User-Agent": "zero-trust-trader/1.0"})
-            with urllib.request.urlopen(req, timeout=20) as r:
+            with urllib.request.build_opener(_NoRedirect()).open(req, timeout=20) as r:
                 raw = r.read(MAX_FEED + 1)
             if len(raw) > MAX_FEED:
                 raise ValueError("feed exceeds size limit")
@@ -552,9 +557,13 @@ def run(root: Path, feeds: list[str] | None = None, model: str | None = None) ->
         notes["roles"]["jury"] = {"agent": "jury", "status": "error", "reason": str(e)}
     role_meta["jury"] = dict(meta)
 
-    served = meta.get("model")
+    # `meta` after the loop is the jury's call, or {} if the jury errored - so
+    # "what model actually served" used to be empty or last-caller-biased even
+    # when three roles answered. Derive it from every role's metadata instead.
+    served = next((item.get("model") for item in role_meta.values() if item.get("model")), None)
     notes["model_returned"] = served
-    notes["usage"] = meta.get("usage")
+    notes["usage"] = next((item.get("usage") for item in role_meta.values()
+                           if item.get("usage")), None)
     notes["role_metadata"] = role_meta
     notes["usage_total"] = {
         field: sum(value for item in role_meta.values()
