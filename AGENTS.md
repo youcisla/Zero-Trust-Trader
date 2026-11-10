@@ -139,13 +139,13 @@ Two documents describe this system to people outside it, and both are part of
 | Document | Lives | Update when |
 | --- | --- | --- |
 | `README.md` | this repo | any change a reader can see: endpoints, pages, tools, test counts, the bar |
-| the EISI mémoire | `..\..\MemoireIPSSI\TradeBot_Memoire\` | any change to the thesis, the gates, the numbers or the operational surface |
+| the EISI mémoire | `../MemoireIPSSI/TradeBot_Memoire/` (beside this repo, never inside it) | any change to the thesis, the gates, the numbers or the operational surface |
 
 The mémoire is a `.docx` built from `05_memoire_long.md`; never edit the docx by
 hand, and never renumber the table of contents:
 
 ```bash
-cd "C:\Users\Y.CHEHBOUB\PERSONAL__DO_NOT_TOUCH\MemoireIPSSI\TradeBot_Memoire"
+cd ../MemoireIPSSI/TradeBot_Memoire          # from this repo's root
 uv run --quiet --with python-docx python build_docx.py
 python sync_toc.py            # ToC page numbers are hand-typed text, not a field
 python sync_toc.py --check    # exit 1 if stale
