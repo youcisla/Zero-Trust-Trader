@@ -202,6 +202,10 @@ that clears the bar here still has to survive a full scan. The artifact
 
 ### On TradingView
 
+We looked at the alternatives people actually recommend — Quantower, NinjaTrader,
+TrendSpider, GoCharting, LuxAlgo Vela, OpenCharts — and wrote down what each one
+is and why none of it changes the data source: [`docs/ALTERNATIVES.md`](docs/ALTERNATIVES.md).
+
 TradingView's terms are explicit that their data is display-only: they forbid
 automated access, scraping, and any non-display use — including building a dataset
 through their MCP server — and they ban accounts for it. This project decides with
