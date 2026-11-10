@@ -71,6 +71,18 @@ impl Row {
 /// Parse one ledger line. Returns `None` for anything that is not a ledger row —
 /// a blank line, a comment, or a half-written tail — so a malformed line can
 /// never become a fabricated scan.
+/// The canonical verdict word if `s` starts with one.
+fn verdict_word(s: &str) -> Option<&'static str> {
+    let first = s.trim_start().split(|c: char| c.is_whitespace() || c == ':').next()?;
+    match first {
+        "STAND_DOWN" => Some("STAND_DOWN"),
+        "WINNER" => Some("WINNER"),
+        "FAILED" => Some("FAILED"),
+        "REBUILT" => Some("REBUILT"),
+        _ => None,
+    }
+}
+
 pub fn parse_line(line: &str) -> Option<Row> {
     let line = line.trim_end_matches(['\r', '\n']).trim();
     if line.is_empty() {
@@ -83,6 +95,18 @@ pub fn parse_line(line: &str) -> Option<Row> {
     }
     let body = parts.next()?;
     let tail = parts.next().unwrap_or("");
+
+    // Some early rows put the verdict in the *second* field ("| FAILED tier1 rc=1 |"),
+    // because there was no counts section yet. Read both shapes: a row that says
+    // FAILED must never be displayed as "OTHER" — the whole point of the ledger is
+    // that a failure is visible.
+    let body_is_verdict = verdict_word(body).is_some();
+    let tail_is_verdict = verdict_word(tail).is_some();
+    let (verdict_src, detail_src) = if tail_is_verdict || !body_is_verdict {
+        (tail, "")
+    } else {
+        (body, tail)
+    };
 
     let mut fields: Map<String, Value> = Map::new();
     for token in body.split_whitespace() {
@@ -105,11 +129,15 @@ pub fn parse_line(line: &str) -> Option<Row> {
 
     // The verdict segment: a word, optional ":" payload, optional " sig=..." suffix.
     let signed = tail.split_whitespace().any(|t| t.starts_with("sig="));
-    let head: Vec<&str> = tail
+    let head: Vec<&str> = verdict_src
         .split_whitespace()
         .filter(|t| !t.starts_with("sig="))
         .collect();
-    let head = head.join(" ");
+    let mut head = head.join(" ");
+    // A legacy FAILED row keeps its reason in the body, not the verdict word.
+    if !detail_src.trim().is_empty() {
+        head = format!("{} {}", head, detail_src.trim()).trim().to_string();
+    }
     let (word, rest) = match head.split_once(':') {
         Some((w, r)) => (w.to_string(), Some(r.trim().to_string())),
         None => (
@@ -289,6 +317,18 @@ fn tmpdir(tag: &str) -> std::path::PathBuf {
         assert_eq!(r.verdict, "FAILED");
         assert_eq!(r.detail.as_deref(), Some("preflight"));
         assert_eq!(r.total_tests, Some(0));
+    }
+
+    #[test]
+    fn a_legacy_failed_row_keeps_its_verdict_and_its_reason() {
+        // The old writer put FAILED in the second field, with the traceback in the
+        // third. Reading only the third displayed these as "OTHER" and hid the fact
+        // that a scan had crashed.
+        let line = "2026-11-05T14:33:29Z | FAILED tier1 rc=1 | NameError in the tier1 write path";
+        let r = parse_line(line).expect("row");
+        assert_eq!(r.verdict, "FAILED");
+        assert!(r.detail.as_deref().unwrap_or("").contains("tier1"));
+        assert_eq!(r.total_tests, None, "no counts section, and that is honest");
     }
 
     #[test]

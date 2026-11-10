@@ -57,7 +57,7 @@ dashboard/                   read-only viewer (Rust), tails files, never writes
 | `trials_total.py` | cumulative trial count (feeds the significance bar) |
 | `status.py` | read-only diagnostic: terminal, policy, tasks, universe |
 | `dashboard/` | Rust read-only viewer; tails files, never mutates state |
-| `tools/` | read-only diagnostics: broker arithmetic, sizing dispersion, ruin simulation. They answer feasibility questions and never place an order |
+| `tools/` | read-only diagnostics: broker arithmetic, sizing dispersion, ruin simulation, and `batch_backtest.py` — a pre-screen of every symbol on our own bars. They answer feasibility questions and never place an order |
 
 ### One tree
 
@@ -104,6 +104,18 @@ Rules that follow from this:
 - **Charts cannot invent a point.** A range with no observations renders an empty
   state, never a flat line; a one-point series pins the axis to a minute so it
   cannot read as a day of silence.
+- **The socket must prove it is alive.** The server sends the snapshot on change and
+  once every five seconds regardless, and pings every 15 s; the watch loop logs a
+  failed build and continues instead of ending (it used to `return`, which left every
+  client holding an open socket that would never speak again). The client closes and
+  reconnects itself when messages stop, with 0.5→5 s backoff, and retries at once on
+  `online` or when the tab becomes visible. A half-open socket is the failure this
+  prevents: it never fires `onclose`, so nothing recovers without the watchdog.
+- **Long lists are paginated, not dumped.** The ledger (400 rows) and the candidate
+  cards are filtered, sorted and paged in the browser — the data is already in the
+  snapshot, so a filter is not a request. The canvas has a freeze control: a live
+  graph is unreadable while a scan runs, and freezing holds the snapshot without
+  touching what the engine is doing.
 - **Progress is a file, not a channel.** `run_funnel.progress()` writes
   `scan_progress.json` at each stage boundary (atomically, and never failing the
   scan if it cannot). The UI reads it to show which stage is running, and stays

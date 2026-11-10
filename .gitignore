@@ -65,3 +65,6 @@ liquid_universe.backup*.json
 # Archify receipts: they record absolute machine paths and file hashes.
 # The diagram itself (architecture.html) and its source JSON are tracked.
 dashboard/web/architecture.*.json
+
+# tools/batch_backtest.py writes a ranked artifact per run
+sweep_*.json

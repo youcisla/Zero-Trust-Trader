@@ -382,23 +382,41 @@ fn universe(root: &Path) -> Value {
 async fn watch(state: AppState) {
     let mut last = String::new();
     let mut tick = tokio::time::interval(Duration::from_secs(1));
+    tick.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    let mut beats: u64 = 0;
     loop {
         tick.tick().await;
+        beats += 1;
         let root = state.root.clone();
         let series = state.series.clone();
-        let body = match tokio::task::spawn_blocking(move || {
+        let built = tokio::task::spawn_blocking(move || {
             let mut guard = series.blocking_lock();
             serde_json::to_string(&build(&root, &mut guard))
         })
-        .await
-        {
-                Ok(Ok(body)) => body,
-                _ => {
-                    eprintln!("dashboard snapshot watcher failed");
-                    return;
-                }
-            };
-        if body != last {
+        .await;
+
+        let body = match built {
+            Ok(Ok(body)) => body,
+            // A failed build used to end this task, which silently stopped the
+            // feed: every client then sat on an open socket that would never
+            // speak again. One bad read is not a reason to go dark — keep the
+            // last good snapshot and try again on the next tick.
+            Ok(Err(e)) => {
+                eprintln!("snapshot serialisation failed: {e}");
+                continue;
+            }
+            Err(e) => {
+                eprintln!("snapshot task failed: {e}");
+                continue;
+            }
+        };
+
+        // Send when the body changed, and once every five seconds regardless.
+        // A static tree must still produce traffic, or a client cannot tell
+        // "nothing changed" from "the feed died" — and the 5 s freshness
+        // watchdog would call a healthy socket stale.
+        let changed = body != last;
+        if changed || beats.is_multiple_of(5) {
             last = body.clone();
             *state.current.lock().await = body.clone();
             let _ = state.tx.send(body);
@@ -625,6 +643,14 @@ async fn client(mut socket: WebSocket, st: AppState) {
     if socket.send(Message::Text(first)).await.is_err() {
         return;
     }
+    // A browser cannot send a WebSocket ping itself, and a socket that carries
+    // nothing for minutes is the one an idle NAT or a laptop sleep silently
+    // kills — leaving a half-open connection that never fires `onclose`, so the
+    // page sat "connected" while the feed was gone. The server pings; a failed
+    // ping ends the task and the client reconnects.
+    let mut ping = tokio::time::interval(Duration::from_secs(15));
+    ping.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+    ping.tick().await; // the first tick is immediate; skip it
     loop {
         tokio::select! {
             msg = rx.recv() => match msg {
@@ -636,6 +662,11 @@ async fn client(mut socket: WebSocket, st: AppState) {
                 Err(broadcast::error::RecvError::Lagged(_)) => continue,
                 Err(_) => break,
             },
+            _ = ping.tick() => {
+                if socket.send(Message::Ping(Vec::new())).await.is_err() {
+                    break;
+                }
+            }
             incoming = socket.recv() => {
                 // Read-only dashboard: client messages are ignored, but a
                 // closed socket must end the task.

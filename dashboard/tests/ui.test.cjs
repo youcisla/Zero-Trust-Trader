@@ -16,7 +16,7 @@ const helpers = source.split('// BEGIN fixture-tested state helpers')[1]
 
 const EXPORTS = ['scanCurrent', 'transportFresh', 'protectionLabel', 'parseFunnel', 'lastFunnel',
   'ledgerRows', 'pipeline', 'edgeCounts', 'edgeStates', 'computeDrawdown', 'bonferroniMirror',
-  'sessionState', 'derive', 'fmtDur', 'todayStats', 'num2', 'signed'];
+  'sessionState', 'derive', 'fmtDur', 'todayStats', 'num2', 'signed', 'backoffMs'];
 
 function load() {
   return vm.runInNewContext(helpers + '\n({' + EXPORTS.join(',') + '})', {});
@@ -48,6 +48,16 @@ test('the six routes exist and are reachable by hash', () => {
 });
 
 /* ---- transport & honesty -------------------------------------------- */
+
+test('reconnect backoff grows then caps', () => {
+  assert.equal(h.backoffMs(1), 500);
+  assert.equal(h.backoffMs(2), 1000);
+  assert.equal(h.backoffMs(3), 2000);
+  assert.equal(h.backoffMs(4), 4000);
+  assert.equal(h.backoffMs(5), 5000);
+  assert.equal(h.backoffMs(99), 5000);
+  assert.equal(h.backoffMs(0), 500);
+});
 
 test('an open connection becomes stale without another message', () => {
   assert.equal(h.transportFresh(null, 10000), false);

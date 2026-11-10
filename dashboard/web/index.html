@@ -162,6 +162,26 @@
   .empty code{font-family:var(--font-mono);font-size:11px;color:var(--cyan);
     background:var(--surface3);border:1px solid var(--line2);border-radius:5px;padding:1px 6px}
 
+  /* ---- controls ------------------------------------------------------- */
+  .toolbar{display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap;padding:8px var(--s3);
+    border-bottom:1px solid var(--line);background:var(--surface2)}
+  .toolbar .spacer{flex:1}
+  .chip{font-size:11px;padding:3px 10px;border-radius:99px;border:1px solid var(--line2);
+    color:var(--dim);background:var(--surface3);white-space:nowrap}
+  .chip:hover{color:var(--ink);border-color:var(--neon)}
+  .chip.on{color:#c8ffe8;border-color:#155a44;background:var(--neon-dim)}
+  .chip.on.bad{color:#ffd9dd;border-color:#5c2026;background:var(--red-dim)}
+  .chip.on.warn{color:#ffe6c2;border-color:#5a4218;background:var(--amber-dim)}
+  .srch{font:inherit;font-size:12px;padding:5px 9px;min-width:180px;border-radius:var(--r-sm);
+    border:1px solid var(--line2);background:var(--bg);color:var(--ink)}
+  .srch:focus{outline:none;border-color:var(--cyan)}
+  .srch::placeholder{color:var(--faint)}
+  select{font:inherit;font-size:11.5px;padding:4px 6px;border-radius:var(--r-sm);
+    border:1px solid var(--line2);background:var(--surface3);color:var(--dim)}
+  .pager{display:flex;align-items:center;gap:var(--s2);font-size:11.5px;color:var(--dim)}
+  .pager .copy{padding:2px 9px}
+  .pager .copy:disabled{opacity:.35;cursor:default}
+
   /* ---- tables --------------------------------------------------------- */
   table{width:100%;border-collapse:collapse;font-size:12px}
   th{text-align:left;font-weight:500;color:var(--faint);font-size:10px;letter-spacing:.07em;
@@ -358,6 +378,14 @@ const clockLocal = (unixS) => new Date(unixS * 1000)
 function scanCurrent(data) {
   if (!data || !data.scan) return false;
   return data.scan.current === true;
+}
+
+/** Reconnect delay: 0.5 s, 1 s, 2 s, 4 s, then every 5 s. Bounded on purpose —
+ *  a busy server gets room, a dead one is still probed often enough to recover
+ *  without a stampede. */
+function backoffMs(attempt) {
+  const n = Math.max(1, Number(attempt) || 1);
+  return Math.min(500 * Math.pow(2, n - 1), 5000);
 }
 
 function transportFresh(receivedAt, now = Date.now()) {
@@ -638,6 +666,21 @@ function LogPane({lines, missing, raw, onCopy, which}) {
   </div>`;
 }
 
+function Pager({page, pages, onPage, total, size, onSize, sizes}) {
+  return html`<div className="pager">
+    <span className="l-faint mono">${num0(total)} rows</span>
+    <select value=${String(size)} onChange=${(e) => onSize(Number(e.target.value))}
+      aria-label="rows per page">
+      ${(sizes || [25, 50, 100]).map((n) => html`<option key=${n} value=${String(n)}>${n}/page</option>`)}
+    </select>
+    <button className="copy" disabled=${page <= 0} onClick=${() => onPage(page - 1)}
+      aria-label="previous page">‹</button>
+    <span className="mono">${page + 1}/${pages}</span>
+    <button className="copy" disabled=${page >= pages - 1} onClick=${() => onPage(page + 1)}
+      aria-label="next page">›</button>
+  </div>`;
+}
+
 function Chart({option, height, empty}) {
   // A callback ref, not an effect: the instance is created the moment the node
   // attaches, which is the only moment echarts.init can trust. An effect with an
@@ -692,9 +735,10 @@ function timeAxis(points) {
                 axisLabel: {color: C.faint, fontSize: 10, formatter: fmt}, splitNumber: 5};
   // A single observation would otherwise stretch the axis over ±12 hours and look
   // like a day of silence. One point means one minute of evidence.
+  // Callers hand this milliseconds; one point means one minute of evidence.
   if (points && points.length === 1) {
-    axis.min = points[0][0] * 1000 - 60000;
-    axis.max = points[0][0] * 1000 + 60000;
+    axis.min = points[0][0] - 60000;
+    axis.max = points[0][0] + 60000;
   }
   return axis;
 }
@@ -755,12 +799,17 @@ function equityOption(points, bar) {
 
 function burnupOption(rows) {
   if (!rows || !rows.length) return null;
-  const pts = rows.slice().reverse().map((r) => [r.ts, r.cumulative]);
+  // The ledger's ts is an ISO string. Parse it here, once: multiplying a string
+  // by 1000 is NaN, and a series of nulls on a time axis renders as nothing at
+  // all — which is how this chart came back blank.
+  const pts = rows.slice().reverse()
+    .map((r) => [Date.parse(r.ts), r.cumulative])
+    .filter((p) => Number.isFinite(p[0]));
   return baseOption({
     xAxis: timeAxis(pts),
     yAxis: {type: "value", splitLine: {lineStyle: {color: C.line}}, axisLabel: {color: C.faint, fontSize: 10}},
     series: [{type: "line", step: "end", showSymbol: pts.length < 60, symbolSize: 3,
-              data: pts.map((p) => [p[0] * 1000, p[1]]),
+              data: pts,
               lineStyle: {color: C.cyan, width: 1.8},
               areaStyle: {color: {type: "linear", x: 0, y: 0, x2: 0, y2: 1,
                 colorStops: [{offset: 0, color: "rgba(34,211,238,.22)"}, {offset: 1, color: "rgba(34,211,238,0)"}]}},
@@ -874,7 +923,7 @@ function nodeStats(id, d, x) {
   }
 }
 
-function FlowCanvas({d, sel, onSelect}) {
+function FlowCanvas({d, sel, onSelect, frozen, onFreeze}) {
   const [zoom, setZoom] = useState(1);
   const [pan, setPan] = useState({x: 0, y: 0});
   const [drag, setDrag] = useState(null);
@@ -915,6 +964,9 @@ function FlowCanvas({d, sel, onSelect}) {
       ${states.running ? html`<span className="badge pass">running · ${states.stage}</span>` : null}
       <button className="copy" onClick=${() => setReplay(replayOn ? -1 : 0)}>
         ${replayOn ? "stop replay" : "▶ replay last scan"}</button>
+      <button className=${"copy" + (frozen ? " done" : "")} onClick=${onFreeze}
+        title="stop redrawing the canvas so you can read it during a scan">
+        ${frozen ? "● frozen — resume" : "pause live"}</button>
       <button className="copy" onClick=${fit}>fit view</button>
       <button className="copy" onClick=${() => setZoom((z) => Math.min(2, z * 1.2))}>+</button>
       <button className="copy" onClick=${() => setZoom((z) => Math.max(0.5, z / 1.2))}>−</button>
@@ -1228,6 +1280,26 @@ function Research({d, data}) {
   const results = (t3 && t3.results) || [];
   const u = (data && data.universe) || {};
 
+  // Candidate controls: a filter on the family, a search on the symbol, and a
+  // sort that puts the closest thing to a signal first. All client-side; the
+  // artifact is already in the snapshot.
+  const [fam, setFam] = useState("all");
+  const [q, setQ] = useState("");
+  const [sortBy, setSortBy] = useState("t");
+  const families = useMemo(() => Array.from(new Set(results.map((r) => r.strategy))).sort(), [results]);
+  const cards = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    const out = results.filter((r) =>
+      (fam === "all" || r.strategy === fam) &&
+      (!needle || String(r.symbol).toLowerCase().includes(needle)));
+    const t = (r) => Math.abs((r.significance && r.significance.t_stat_R) || 0);
+    const rr = (r) => (r.significance && r.significance.mean_net_R) || -99;
+    if (sortBy === "t") out.sort((x, y) => t(y) - t(x));
+    if (sortBy === "r") out.sort((x, y) => rr(y) - rr(x));
+    if (sortBy === "sym") out.sort((x, y) => String(x.symbol).localeCompare(String(y.symbol)));
+    return out;
+  }, [results, fam, q, sortBy]);
+
   const gateRows = results.map((r) => {
     const s = r.significance || {}, p = r.permutation || {};
     return {
@@ -1325,8 +1397,22 @@ function Research({d, data}) {
       </div>
     <//>
 
-    <${Card} title="Candidate cards" note=${results.length ? results.length + " deep-tested" : "nothing to show"}>
-      ${results.length ? results.map((r) => {
+    <${Card} title="Candidate cards"
+      note=${results.length ? cards.length + " of " + results.length + " deep-tested" : "nothing to show"}>
+      ${results.length ? html`<div className="toolbar" style=${{margin: "-12px -12px 10px"}}>
+        <input className="srch" type="search" placeholder="symbol…" value=${q}
+          onInput=${(e) => setQ(e.target.value)} aria-label="filter candidates by symbol" />
+        <button className=${"chip" + (fam === "all" ? " on" : "")} onClick=${() => setFam("all")}>all</button>
+        ${families.map((f) => html`<button key=${f}
+          className=${"chip" + (fam === f ? " on" : "")} onClick=${() => setFam(f)}>${f}</button>`)}
+        <span className="spacer"></span>
+        <select value=${sortBy} onChange=${(e) => setSortBy(e.target.value)} aria-label="sort candidates">
+          <option value="t">sort: |t|</option>
+          <option value="r">sort: avg R</option>
+          <option value="sym">sort: symbol</option>
+        </select>
+      </div>` : null}
+      ${cards.length ? cards.map((r) => {
         const s = r.significance || {}, p = r.permutation || {}, h = r.history || {}, mc = r.mc || {};
         const buckets = [["target", h.target], ["stop", h.stop], ["session", h.session], ["horizon", h.horizon], ["neither", h.neither]];
         const total = buckets.reduce((a, b) => a + (b[1] || 0), 0) || 1;
@@ -1353,7 +1439,9 @@ function Research({d, data}) {
           ${r.current ? html`<div className="mono l-dim" style=${{fontSize: "10.5px", marginTop: "3px"}}>
             entry ${num2(r.current.proposed_entry)} · stop ${num2(r.current.proposed_stop)} · target ${num2(r.current.proposed_target)}</div>` : null}
         </div>`;
-      }) : html`<${Empty} text="no deep test for the current scan — the funnel stood down before tier 3" />`}
+      }) : html`<${Empty} text=${results.length
+        ? "no candidate matches that filter"
+        : "no deep test for the current scan — the funnel stood down before tier 3"} />`}
     <//>
 
     <div className="legend">
@@ -1381,12 +1469,14 @@ function Performance({d, data}) {
     if (r.significance && r.significance.passes_corrected) fams[k].passed++;
     if (r.significance && r.significance.t_stat_R != null) fams[k].stat.push(Math.abs(r.significance.t_stat_R));
   });
-  const cadence = d.rows.slice(0, 400).map((r) => [r.ts, r.total_tests]);
+  const cadence = d.rows.slice(0, 400)
+    .map((r) => [Date.parse(r.ts), r.total_tests])
+    .filter((p) => Number.isFinite(p[0]));
   const cadOpt = cadence.length ? baseOption({
     xAxis: timeAxis(cadence),
     yAxis: {type: "value", splitLine: {lineStyle: {color: C.line}}, axisLabel: {color: C.faint, fontSize: 10}},
     series: [{type: "scatter", symbolSize: 7,
-      data: cadence.map(([ts, v], i) => ({value: [ts * 1000, v],
+      data: cadence.map(([ts, v], i) => ({value: [ts, v],
         itemStyle: {color: d.rows[i].verdict === "WINNER" ? C.magenta : d.rows[i].verdict === "FAILED" ? C.red : C.cyan}}))}],
     tooltip: {trigger: "item", backgroundColor: "#0b0e12", borderColor: C.line,
       formatter: (p) => new Date(p.value[0]).toLocaleString() + "<br/>" + num0(p.value[1]) + " tests"},
@@ -1434,6 +1524,37 @@ function Trials({d, data}) {
     .filter((r) => r.t != null)
     .sort((a, b) => Math.abs(b.t) - Math.abs(a.t))[0];
   const whatIf = [1, 150, 525, 1791, 5388, 9081, 40388, 155388];
+
+  // Filters and paging live here, not in the server: 400 rows is a screenful
+  // problem, not a query problem, and the ledger is already in the snapshot.
+  const [q, setQ] = useState("");
+  const [verdict, setVerdict] = useState("all");
+  const [page, setPage] = useState(0);
+  const [size, setSize] = useState(25);
+
+  const filtered = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return d.rows.filter((r) => {
+      if (verdict !== "all" && r.verdict !== verdict) return false;
+      if (!needle) return true;
+      return (r.scan_id || "").toLowerCase().includes(needle)
+        || (r.ts || "").toLowerCase().includes(needle)
+        || String(r.cumulative || "").includes(needle)
+        || (r.verdict || "").toLowerCase().includes(needle);
+    });
+  }, [d.rows, q, verdict]);
+
+  const pages = Math.max(1, Math.ceil(filtered.length / size));
+  const safePage = Math.min(page, pages - 1);
+  const pageRows = filtered.slice(safePage * size, safePage * size + size);
+  useEffect(() => { setPage(0); }, [q, verdict, size]);
+
+  const counts = useMemo(() => {
+    const c = {all: d.rows.length, STAND_DOWN: 0, WINNER: 0, FAILED: 0};
+    for (const r of d.rows) if (c[r.verdict] != null) c[r.verdict] += 1;
+    return c;
+  }, [d.rows]);
+
   return html`<div className="contents">
     <${Card} title="Cumulative trials" note="each row is a hypothesis the bar must pay for">
       <${Chart} option=${burn} height=${200} empty=${burn ? null : "no ledger rows on this tree"} />
@@ -1458,14 +1579,27 @@ function Trials({d, data}) {
         </div>
       <//>
     </div>
+
     <${Card} title="Ledger" note=${data && data.ledger && data.ledger.truncated
       ? "newest " + d.rows.length + " rows · window " + Math.round((data.ledger.window_bytes || 0) / 1024) + " KiB of " + Math.round((data.ledger.total_bytes || 0) / 1024) + " KiB"
       : d.rows.length + " rows"} flush=${true}>
-      ${d.rows.length ? html`<table>
+      <div className="toolbar">
+        <input className="srch" type="search" placeholder="symbol, scan id, date, cumulative…"
+          value=${q} onInput=${(e) => setQ(e.target.value)} aria-label="filter the ledger" />
+        ${[["all", "all", ""], ["STAND_DOWN", "stand down", "warn"], ["WINNER", "winner", ""], ["FAILED", "failed", "bad"]]
+          .map(([k, label, tone]) => html`<button key=${k}
+            className=${"chip" + (verdict === k ? " on " + tone : "")}
+            onClick=${() => setVerdict(k)}>${label} <span className="mono l-faint">${num0(counts[k] || 0)}</span></button>`)}
+        ${(q || verdict !== "all") ? html`<button className="chip" onClick=${() => { setQ(""); setVerdict("all"); }}>clear</button>` : null}
+        <span className="spacer"></span>
+        <${Pager} page=${safePage} pages=${pages} onPage=${setPage} total=${filtered.length}
+          size=${size} onSize=${setSize} />
+      </div>
+      ${pageRows.length ? html`<table>
         <thead><tr><th>when</th><th className="num">universe</th><th className="num">tested</th><th className="num">tests</th>
           <th className="num">fired</th><th className="num">short</th><th className="num">passed</th>
           <th className="num">cumulative</th><th>verdict</th></tr></thead>
-        <tbody>${d.rows.slice(0, 120).map((r, i) => html`<tr key=${i}>
+        <tbody>${pageRows.map((r, i) => html`<tr key=${(r.scan_id || "") + i}>
           <td className="mono" title=${r.ts}>${localize(r.ts)}</td>
           <td className="num">${num0(r.universe)}</td><td className="num">${num0(r.tested)}</td>
           <td className="num">${num0(r.total_tests)}</td><td className="num">${num0(r.triggering)}</td>
@@ -1473,7 +1607,9 @@ function Trials({d, data}) {
           <td className="num">${num0(r.cumulative)}</td>
           <td><span className=${"badge " + (r.verdict === "WINNER" ? "pass" : r.verdict === "FAILED" ? "bad" : "info")}>
             ${r.verdict === "STAND_DOWN" ? "STAND DOWN" : r.verdict}${r.signed ? "" : " !"}</span></td>
-        </tr>`)}</tbody></table>` : html`<${Empty} text="no scan has run on this tree yet" cmd="python run_funnel.py" />`}
+        </tr>`)}</tbody></table>`
+        : html`<${Empty} text=${d.rows.length ? "no row matches that filter" : "no scan has run on this tree yet"}
+            cmd=${d.rows.length ? null : "python run_funnel.py"} />`}
       <div className="l-faint" style=${{fontSize: "10.5px", padding: "6px 12px"}}>
         A <b>!</b> means the row carries no sig= segment. This page reports presence only — verification
         happens in status.py.
@@ -1534,30 +1670,41 @@ function Ops({d, data}) {
 
 function FlowPage({d, data}) {
   const [sel, setSel] = useState(null);
+  // A live canvas is unreadable while a scan is running: nodes change under the
+  // cursor. Freezing holds the snapshot you were looking at; the strip under the
+  // canvas says so, and resume is the only way back to live.
+  const [frozen, setFrozen] = useState(null);
+  const view = frozen || data;
+  const dd = frozen ? derive(frozen, true, 0) : d;
+  const prog = view && view.progress;
   return html`<div className="contents">
-    <${FlowCanvas} d=${data || {}} sel=${sel} onSelect=${setSel} />
+    <${FlowCanvas} d=${view || {}} sel=${sel} onSelect=${setSel}
+      frozen=${!!frozen} onFreeze=${() => setFrozen(frozen ? null : (data || null))} />
+    ${frozen ? html`<div className="l-warn" style=${{fontSize: "11px"}}>
+      frozen — held snapshot from ${new Date().toLocaleTimeString()}; the engine keeps running.
+    </div>` : null}
     <div className="grid g2">
-      <${Card} title="Verdict" note=${d.scanId ? "scan " + String(d.scanId).slice(0, 8) : "no scan"}>
-        <div className="kpi"><span className="k">${d.verdict || "no current verdict"}</span>
-          <span className="h">${d.stoodDown === true ? "standing down is the system working" :
-            d.stoodDown === false ? "survivors: " + d.survivors.join(", ") : "the artifacts on disk are not a coherent scan"}</span></div>
+      <${Card} title="Verdict" note=${dd.scanId ? "scan " + String(dd.scanId).slice(0, 8) : "no scan"}>
+        <div className="kpi"><span className="k">${dd.verdict || "no current verdict"}</span>
+          <span className="h">${dd.stoodDown === true ? "standing down is the system working" :
+            dd.stoodDown === false ? "survivors: " + dd.survivors.join(", ") : "the artifacts on disk are not a coherent scan"}</span></div>
         <div className="grid g3" style=${{marginTop: "12px"}}>
-          <div className="kpi"><span className="k">tests</span><span className="v">${num0(d.x.tests)}</span></div>
-          <div className="kpi"><span className="k">fires</span><span className="v">${num0(d.x.triggering)}</span></div>
-          <div className="kpi"><span className="k">passed</span><span className="v">${num0(d.x.passed)}</span></div>
+          <div className="kpi"><span className="k">tests</span><span className="v">${num0(dd.x.tests)}</span></div>
+          <div className="kpi"><span className="k">fires</span><span className="v">${num0(dd.x.triggering)}</span></div>
+          <div className="kpi"><span className="k">passed</span><span className="v">${num0(dd.x.passed)}</span></div>
         </div>
       <//>
       <${Card} title="Live stage" note="written by run_funnel.progress()">
-        ${data && data.progress ? html`<div>
-          <div className="kpi"><span className="k">${data.progress.stage} · ${data.progress.status}</span>
-            <span className="h">${data.progress.updated_utc ? "updated " + localize(data.progress.updated_utc) : ""}</span></div>
-          ${data.progress.error ? html`<div className="l-bad" style=${{marginTop: "6px"}}>${data.progress.error}</div>` : null}
-          ${data.progress.tests != null ? html`<div className="l-dim" style=${{marginTop: "6px"}}>
-            ${num0(data.progress.tests)} tests · cumulative ${num0(data.progress.cumulative)}</div>` : null}
+        ${prog ? html`<div>
+          <div className="kpi"><span className="k">${prog.stage} · ${prog.status}</span>
+            <span className="h">${prog.updated_utc ? "updated " + localize(prog.updated_utc) : ""}</span></div>
+          ${prog.error ? html`<div className="l-bad" style=${{marginTop: "6px"}}>${prog.error}</div>` : null}
+          ${prog.tests != null ? html`<div className="l-dim" style=${{marginTop: "6px"}}>
+            ${num0(prog.tests)} tests · cumulative ${num0(prog.cumulative)}</div>` : null}
         </div>` : html`<${Empty} text="no scan progress recorded on this tree yet" cmd="python run_funnel.py --window-utc 05:00-17:00" />`}
       <//>
     </div>
-    ${sel ? html`<${Inspector} id=${sel} d=${data || {}} onClose=${() => setSel(null)} />` : null}
+    ${sel ? html`<${Inspector} id=${sel} d=${view || {}} onClose=${() => setSel(null)} />` : null}
   </div>`;
 }
 
@@ -1600,7 +1747,10 @@ function useRoute() {
 
 function App() {
   const [data, setData] = useState(null);
-  const [up, setUp] = useState(false);
+  // connecting | live | reconnecting — "down" is not a state we can prove while
+  // a retry is in flight, so the page says what it is doing.
+  const [link, setLink] = useState("connecting");
+  const up = link === "live";
   const [err, setErr] = useState(null);
   const [elapsed, setElapsed] = useState(0);
   const [range, setRange] = useState("2h");
@@ -1610,28 +1760,72 @@ function App() {
   const route = useRoute();
 
   useEffect(() => {
-    let alive = true, ws, retry;
+    let alive = true, ws = null, retry = null, attempt = 0;
+    const schedule = () => {
+      if (!alive) return;
+      attempt += 1;
+      // 0.5 s, 1 s, 2 s, 4 s, then every 5 s. A busy server gets breathing room;
+      // a dead one is still probed often enough to recover on its own.
+      setLink("reconnecting");
+      retry = setTimeout(connect, backoffMs(attempt));
+    };
     const connect = () => {
-      ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`);
-      ws.onopen = () => { if (alive) { receivedAt.current = null; setUp(false); setErr("waiting for heartbeat"); } };
-      ws.onclose = () => { if (!alive) return; setUp(false); retry = setTimeout(connect, 1500); };
-      ws.onerror = () => { if (alive) setErr("websocket error"); };
-      ws.onmessage = (e) => {
+      if (!alive) return;
+      clearTimeout(retry);
+      if (ws && (ws.readyState === 0 || ws.readyState === 1)) return; // already trying
+      setLink(attempt ? "reconnecting" : "connecting");
+      try { ws = new WebSocket(`${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`); }
+      catch (_) { schedule(); return; }
+      const sock = ws;
+      sock.onopen = () => {
+        if (!alive) return;
+        // Freshness is measured from the open, not from the first message: a
+        // socket that opens and then says nothing is as broken as one that
+        // never opened, and used to sit on "connecting" forever.
+        receivedAt.current = Date.now();
+        setErr(null);
+      };
+      sock.onclose = () => { if (alive) schedule(); };
+      sock.onerror = () => { try { sock.close(); } catch (_) {} };
+      sock.onmessage = (e) => {
         if (!alive) return;
         try {
           const next = JSON.parse(e.data);
           if (!next || typeof next.ts !== "number" || !("engine" in next)) throw new Error("invalid snapshot");
-          receivedAt.current = Date.now(); setElapsed(0); setData(next); setUp(true); setErr(null);
-        } catch (_) { setUp(false); setErr("invalid snapshot"); }
+          attempt = 0;
+          receivedAt.current = Date.now(); setElapsed(0); setData(next); setLink("live"); setErr(null);
+        } catch (_) { setErr("invalid snapshot"); }
       };
     };
     connect();
+
     const watchdog = setInterval(() => {
       if (receivedAt.current == null) return;
       setElapsed(Math.max(0, Math.floor((Date.now() - receivedAt.current) / 1000)));
-      if (!transportFresh(receivedAt.current)) { setUp(false); setErr("heartbeat stale"); }
+      if (!transportFresh(receivedAt.current)) {
+        // Close the socket ourselves. A half-open connection (sleep, NAT idle
+        // timeout) never fires onclose, so waiting for it is how a page stays
+        // "connected" to a feed that stopped an hour ago.
+        setLink("reconnecting");
+        try { if (ws) ws.close(); } catch (_) {}
+        ws = null;
+        if (!retry) schedule();
+      }
     }, 1000);
-    return () => { alive = false; clearInterval(watchdog); clearTimeout(retry); try { ws.close(); } catch (_) {} };
+
+    // A laptop that wakes up should not wait out the backoff.
+    const wake = () => { if (document.visibilityState === "visible" && !transportFresh(receivedAt.current)) {
+      attempt = 0; try { if (ws) ws.close(); } catch (_) {} ws = null; connect(); } };
+    const online = () => { attempt = 0; try { if (ws) ws.close(); } catch (_) {} ws = null; connect(); };
+    document.addEventListener("visibilitychange", wake);
+    window.addEventListener("online", online);
+
+    return () => {
+      alive = false; clearInterval(watchdog); clearTimeout(retry);
+      document.removeEventListener("visibilitychange", wake);
+      window.removeEventListener("online", online);
+      try { if (ws) ws.close(); } catch (_) {}
+    };
   }, []);
 
   // A tab that was in the background catches up on the first second back.
@@ -1639,7 +1833,7 @@ function App() {
     const on = () => {
       if (document.visibilityState !== "visible") return;
       fetch("/api/snapshot").then((r) => r.json()).then((j) => {
-        if (j && typeof j.ts === "number") { setData(j); receivedAt.current = Date.now(); setElapsed(0); setUp(true); }
+        if (j && typeof j.ts === "number") { setData(j); receivedAt.current = Date.now(); setElapsed(0); setLink("live"); }
       }).catch(() => {});
     };
     document.addEventListener("visibilitychange", on);
@@ -1711,8 +1905,9 @@ function App() {
         <span className="spacer"></span>
         <button className=${"pill bell" + (alerts.length ? " has" : "")} onClick=${() => { location.hash = "#/ops"; }}
           aria-label=${alerts.length + " alerts"}>◔ ${alerts.length}</button>
-        <span className=${"pill " + (up ? "live" : "down")} aria-live="polite"
-          title="the browser socket to this dashboard — not the engine heartbeat"><span className="dot"></span>${up ? "socket live" : "socket down"}</span>
+        <span className=${"pill " + (up ? "live" : link === "reconnecting" ? "stale" : "down")} aria-live="polite"
+          title="the browser socket to this dashboard — not the engine heartbeat">
+          <span className="dot"></span>${up ? "socket live" : link === "reconnecting" ? "reconnecting" : "connecting"}</span>
         ${d.age != null && d.age > 30 ? html`<span className="pill stale">${fmtDur(d.age)} stale</span>` : null}
         ${data && !data.engine ? html`<span className="pill down">engine state missing</span>` : null}
         ${data && data.engine && data.engine.ok === false ? html`<span className="pill down" title=${data.engine.error || ""}>engine refusing</span>` : null}

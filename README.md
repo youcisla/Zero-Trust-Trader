@@ -185,6 +185,30 @@ touching the terminal.
 
 ---
 
+## Backtesting every symbol
+
+`tools/batch_backtest.py` runs the same Time Machine the funnel uses over every
+symbol in the universe, one family at a time, and ranks them against the real bar:
+
+```bash
+python tools/batch_backtest.py --limit 40 --family donchian
+python tools/batch_backtest.py --limit 0                     # all 120, all families
+```
+
+It is a **pre-screen, not a gate**: it runs with `permutations=0` because a nought-
+hypothesis test is what the gate exists for, and it says so in every row. A symbol
+that clears the bar here still has to survive a full scan. The artifact
+(`sweep_history.json`) is written next to the ledger and gitignored.
+
+### On TradingView
+
+TradingView's terms are explicit that their data is display-only: they forbid
+automated access, scraping, and any non-display use — including building a dataset
+through their MCP server — and they ban accounts for it. This project decides with
+that data, so pulling it in would be exactly the prohibited case, on top of being
+fragile. The backtest data comes from the broker that will fill the orders, which
+is also the data we can defend.
+
 ## Live dashboard
 
 ![Zero-Trust Trader dashboard](docs/dashboard.png)
