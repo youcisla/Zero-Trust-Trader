@@ -57,3 +57,7 @@ desk_journal.jsonl
 
 # Derived view of desk_history.sqlite (the database is the record).
 desk_history.json
+
+# Written by run_funnel.progress() every scan; the dashboard reads it live.
+scan_progress.json
+liquid_universe.backup*.json

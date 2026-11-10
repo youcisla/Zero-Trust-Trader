@@ -19,13 +19,14 @@ use axum::{
     },
     http::{header, HeaderMap, StatusCode},
     middleware::{self, Next},
-    response::{Html, IntoResponse, Response},
-    routing::get,
+    response::{Html, IntoResponse, Json, Response},
+    routing::{get, post},
     Router,
 };
 use serde_json::{json, Value};
 use std::{
     io::{Read, Seek, SeekFrom},
+    process::Command,
     net::SocketAddr,
     path::{Path, PathBuf},
     sync::Arc,
@@ -265,6 +266,9 @@ fn build(root: &Path) -> Value {
     // object each. The database is the record; this is the view the UI can read
     // without a SQLite driver in the dashboard binary.
     let desk_history = read_json(&root.join("desk_history.json"));
+    // Where the running scan is. Written by run_funnel.progress() at each stage
+    // boundary; absent when no scan has ever run on this tree.
+    let progress = read_json(&root.join("scan_progress.json"));
     let funnel = tail(&root.join("funnel_history.log"), TAIL);
     let scan = scan_state(root, &tier2, &tier3, funnel.as_ref());
 
@@ -276,6 +280,7 @@ fn build(root: &Path) -> Value {
         "tier3": tier3,
         "agent": agent,
         "desk_history": desk_history,
+        "progress": progress,
         "scan": scan,
         "equity": equity,
         "balance": balance,
@@ -479,6 +484,46 @@ async fn local_request(State(st): State<AppState>, request: Request, next: Next)
     response
 }
 
+/// POST /api/scan — the one write in this process.
+///
+/// It starts the *research* pipeline and nothing else. `run_funnel.py` takes its
+/// own lock (a double click costs 0.3 s and exits), enforces the UTC window, runs
+/// the demo-only pre-flight, and cannot place an order: order entry lives in
+/// `position_manager.py` behind a human APPROVED and the bridge consent gate.
+/// There is deliberately no argument: the button runs exactly what the scheduler
+/// runs, so the UI cannot become a second, differently-configured runner.
+async fn trigger_scan(State(st): State<AppState>) -> Response {
+    // `python` on PATH is not necessarily this project's interpreter (on this
+    // machine it is a tool venv without MetaTrader5). The Windows launcher `py -3`
+    // is the portable way to reach the installed 3.x that has the terminal module;
+    // ZTT_PYTHON overrides both.
+    let override_python = std::env::var("ZTT_PYTHON").ok();
+    let mut interpreter = Command::new(override_python.clone().unwrap_or_else(|| {
+        if cfg!(windows) { "py".to_string() } else { "python3".to_string() }
+    }));
+    if override_python.is_none() && cfg!(windows) {
+        interpreter.arg("-3");
+    }
+    let script = st.root.join("run_funnel.py");
+    if !script.exists() {
+        return (StatusCode::SERVICE_UNAVAILABLE,
+                Json(json!({"started": false, "error": "run_funnel.py not found"}))).into_response();
+    }
+    match interpreter
+        .arg(&script)
+        .arg("--window-utc").arg("05:00-17:00")
+        .arg("--t-gate")
+        .current_dir(&st.root)
+        .stdin(std::process::Stdio::null())
+        .spawn()
+    {
+        Ok(child) => (StatusCode::ACCEPTED,
+                      Json(json!({"started": true, "pid": child.id()}))).into_response(),
+        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR,
+                   Json(json!({"started": false, "error": e.to_string()}))).into_response(),
+    }
+}
+
 async fn ws(ws: WebSocketUpgrade, State(st): State<AppState>) -> impl IntoResponse {
     ws.on_upgrade(move |socket| client(socket, st))
 }
@@ -575,6 +620,7 @@ fn router(state: AppState) -> Router {
         .route("/", get(index))
         .route("/architecture", get(architecture))
         .route("/api/snapshot", get(snapshot))
+        .route("/api/scan", post(trigger_scan))
         .route("/api/logs/:which", get(full_log))
         .route("/api/report/latest", get(latest_report))
         .route("/ws", get(ws))

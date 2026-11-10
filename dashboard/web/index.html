@@ -72,6 +72,22 @@
   .pagesub{color:var(--faint);font-size:11.5px}
   .spacer{flex:1}
 
+  .runbtn{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;
+    padding:6px 11px;border-radius:var(--r-sm);border:1px solid var(--line2);
+    background:var(--surface2);color:var(--ink);cursor:pointer}
+  .runbtn:hover{background:var(--surface3);border-color:var(--accent)}
+  .runbtn:disabled{opacity:.55;cursor:progress}
+  .runbtn.armed{border-color:var(--accent);color:#cfe0ff;background:var(--accent-dim)}
+  .progress{display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap;font-size:11.5px;
+    color:var(--dim);padding:7px var(--s4);border-bottom:1px solid var(--line);
+    background:var(--surface2)}
+  .progress .stage{display:inline-flex;align-items:center;gap:5px}
+  .progress .stage.done{color:var(--good)}
+  .progress .stage.now{color:var(--ink);font-weight:600}
+  .progress .stage.now:before{content:"";width:7px;height:7px;border-radius:50%;
+    background:var(--accent);animation:pulse 1.1s infinite}
+  .progress .stage.todo{color:var(--faint)}
+  @keyframes pulse{0%,100%{opacity:1}50%{opacity:.25}}
   .pill{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;
     padding:4px 10px;border-radius:99px;border:1px solid var(--line2);color:var(--dim);
     white-space:nowrap}
@@ -854,6 +870,33 @@ function History({ h }) {
 }
 
 
+function ScanBar({ progress, onRun, running }) {
+  // run_funnel.progress() writes this at each stage boundary. Absence is stated
+  // as absence: no file means no scan has run on this tree, not "stage 0".
+  const stages = [["preflight", "pre-flight"], ["universe", "universe"],
+                  ["tier2", "tier 2"], ["tier3", "tier 3"], ["verdict", "verdict"]];
+  const idx = progress ? stages.findIndex(([k]) => k === progress.stage) : -1;
+  const ageS = progress && progress.updated_utc
+    ? Math.max(0, Math.round((Date.now() - Date.parse(progress.updated_utc)) / 1000)) : null;
+  const done = progress && progress.status === "done";
+  return html`<div className="progress">
+    <button className=${"runbtn" + (running ? " armed" : "")} disabled=${running}
+      onClick=${onRun} title="runs exactly what the scheduler runs; it takes the same lock">
+      ${running ? "starting…" : "▶ Run scan now"}</button>
+    ${!progress ? html`<span className="l-dim">no scan progress recorded on this tree yet</span>`
+      : html`${stages.map(([k, label], i) => html`
+          <span key=${k} className=${"stage " + (i < idx || done ? "done" : i === idx ? "now" : "todo")}>
+            ${(i < idx || done ? "✓ " : "")}${label}</span>`)}
+        ${progress.scan_id ? html`<span className="mono l-dim">${progress.scan_id.slice(0, 8)}</span>` : null}
+        ${progress.tests != null ? html`<span className="l-dim">${progress.tests} tests</span>` : null}
+        ${progress.verdict ? html`<span className=${"badge " + (progress.verdict === "PROPOSAL" ? "pass" : "")}>${progress.verdict}</span>` : null}
+        ${ageS != null ? html`<span className=${"l-dim" + (ageS > 600 && !done ? " l-bad" : "")}>
+          ${done ? "finished" : "updated"} ${ageS < 90 ? ageS + "s" : Math.round(ageS / 60) + "m"} ago</span>` : null}`}
+    <span className="spacer"></span>
+    <span className="l-dim">the button cannot place an order — see §9 of AGENTS.md</span>
+  </div>`;
+}
+
 const ICONS = {
   overview: "M3 3h7v7H3zM14 3h7v7h-7zM3 14h7v7H3zM14 14h7v7h-7z",
   pipeline: "M3 12h4l3-7 4 14 3-7h4",
@@ -956,6 +999,21 @@ function App() {
     setTimeout(() => setAllState(""), 1600);
   }, []);
 
+  // The only button that writes anything: it POSTs /api/scan, the server spawns
+  // the same run_funnel.py the scheduler runs, and the funnel's own lock makes a
+  // double click free. Nothing on this path is an order path.
+  const [running, setRunning] = useState(false);
+  const runScan = useCallback(async () => {
+    setRunning(true);
+    try {
+      const r = await fetch("/api/scan", {method: "POST"});
+      if (!r.ok) setErr("scan refused (" + r.status + ")");
+    } catch (e) { setErr("scan request failed"); }
+    // A request, not a completion: the progress strip reports the truth, so the
+    // button releases early and the strip carries the run.
+    setTimeout(() => setRunning(false), 6000);
+  }, []);
+
   const age = data?.engine_age_s == null ? null : data.engine_age_s + elapsed;
   const hasEngine = Boolean(data?.engine);
   const viewData = data ? {...data, engine_age_s: age, transport_live: up} : null;
@@ -1027,6 +1085,8 @@ function App() {
         <button className=${`copy ${allState}`} onClick=${copyAll} aria-live="polite">${allState === "done" ? "copied ✓" : allState === "fail" ? "copy failed" : "copy recent logs"}</button>
         <div className="equity mono"><b>${money(data?.equity, data?.currency)}</b><span>equity</span></div>
       </div>
+
+      <${ScanBar} progress=${data?.progress} onRun=${runScan} running=${running} />
 
       <main className="page">
         ${route === "overview" ? html`<div className="contents">

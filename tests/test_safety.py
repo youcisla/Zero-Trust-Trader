@@ -12,6 +12,7 @@ import sys
 import tempfile
 import time
 import unittest
+from unittest import mock
 from datetime import datetime, timezone
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -60,14 +61,22 @@ class TestPreflight(unittest.TestCase):
         self.assertEqual(rf.preflight_check(T(), A(server="some-demo-server")), [])
 
     def test_unset_pin_refuses(self):
-        """EXPECTED_LOGIN defaulting to 0 used to skip the account pin
-        silently, so a clone with no env var scanned whatever it found."""
-        old, rf.EXPECTED_LOGIN = rf.EXPECTED_LOGIN, 0
-        try:
+        """A clone with no pin must scan nothing, whatever it finds attached.
+
+        The pin is now read from the environment *at call time* (`.env` is a
+        fallback, an exported value wins), so the test removes the variable
+        rather than patching a module constant that no longer decides anything.
+        """
+        env = {k: v for k, v in os.environ.items() if k != "MT5_EXPECTED_LOGIN"}
+        with mock.patch.dict(os.environ, env, clear=True):
             problems = rf.preflight_check(T(), A())
-        finally:
-            rf.EXPECTED_LOGIN = old
         self.assertTrue(any("MT5_EXPECTED_LOGIN" in p for p in problems), problems)
+
+    def test_a_wrong_pin_refuses(self):
+        """A set pin for a different account is a mismatch, not a pass."""
+        with mock.patch.dict(os.environ, {"MT5_EXPECTED_LOGIN": "99999999"}):
+            problems = rf.preflight_check(T(), A())
+        self.assertTrue(any("expected 99999999" in p for p in problems), problems)
 
     def test_live_trade_mode_is_blocked_even_with_demo_name(self):
         self.assertTrue(rf.preflight_check(T(), A(trade_mode=2)))

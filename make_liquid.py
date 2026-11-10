@@ -44,9 +44,27 @@ BENCHMARKS = (
 )
 
 
+def count_symbols(path: Path) -> int:
+    try:
+        d = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return 0
+    return len(d.get("symbols") or d.get("rows") or [])
+
+
 def newest_universe() -> Path:
-    stamped = sorted(HERE.glob("tier1_universe_*.json"))
-    return stamped[-1] if stamped else HERE / "tier1_universe.json"
+    """The newest tier1 artifact that actually holds symbols.
+
+    A failed tier1 run leaves a timestamped file with `symbols: []`, and "newest
+    wins" picked it: the scan then measured nothing and refused to write, while
+    the good universe sat in tier1_universe.json. An empty artifact must never
+    shadow a full one - the emptiness is a measurement that did not happen.
+    """
+    stamped = sorted((p for p in HERE.glob("tier1_universe_*.json")
+                      if count_symbols(p) > 0), reverse=True)
+    if stamped:
+        return stamped[0]
+    return HERE / "tier1_universe.json"
 
 
 def measure(rows: list[dict], tf: str, lookback: int, max_spread_pct: float) -> list[dict]:
@@ -110,7 +128,7 @@ def dedupe(rows: list[dict], tf: str, corr_max: float, pool: int,
 def _main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--tier1", default=None)
-    ap.add_argument("--top", type=int, default=50)
+    ap.add_argument("--top", type=int, default=120)
     ap.add_argument("--tf", default="M15")
     ap.add_argument("--lookback", type=int, default=500)
     ap.add_argument("--max-spread-pct", type=float, default=5.0,

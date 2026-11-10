@@ -45,6 +45,36 @@ PY = sys.executable
 # Anti-sleep plus a hard pre-flight: a 50-minute scan against a disconnected
 # terminal would otherwise grind through 1,711 empty symbol probes and report a
 # quiet market. Abort instead.
+ENV_FILE = HERE / ".env"
+
+
+def load_env() -> None:
+    """Load .env into the process, without overriding what is already set.
+
+    The pin used to live only in `run_funnel.local.cmd`, so a scan started from
+    anywhere else - a shell, the dashboard button - was refused with
+    "MT5_EXPECTED_LOGIN is not set". That refusal was correct and the launcher was
+    the only caller that could satisfy it. Reading the same file the desk already
+    reads keeps one source for the pin and leaves the launcher (and any exported
+    override) winning.
+    """
+    try:
+        lines = ENV_FILE.read_text(encoding="utf-8", errors="replace").splitlines()
+    except OSError:
+        return
+    for line in lines:
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key, value = key.strip(), value.strip().strip('"').strip("'")
+        if key and key not in os.environ:
+            os.environ[key] = value
+
+
+
+load_env()
+
 EXPECTED_LOGIN = int(os.environ.get("MT5_EXPECTED_LOGIN", "0"))
 EXPECTED_SERVER_SUBSTR = "demo"
 _SCAN_ID = ""
@@ -61,12 +91,13 @@ def preflight_check(term, acct) -> list[str]:
     if acct is None:
         problems.append("account_info() is None — not logged in")
     else:
-        if not EXPECTED_LOGIN:
+        expected = int(os.environ.get("MT5_EXPECTED_LOGIN", "0") or 0)
+        if not expected:
             # Fail closed: an unset pin used to skip the check silently, which
             # means a clone with no env var would scan whatever account it found.
             problems.append("MT5_EXPECTED_LOGIN is not set — refusing to scan an unpinned account")
-        elif int(acct.login) != EXPECTED_LOGIN:
-            problems.append(f"logged into account {acct.login}, expected {EXPECTED_LOGIN}")
+        elif int(acct.login) != expected:
+            problems.append(f"logged into account {acct.login}, expected {expected}")
         if EXPECTED_SERVER_SUBSTR not in (acct.server or "").lower():
             problems.append(
                 f"server {acct.server!r} is not a DEMO server — refusing to scan a live account")
@@ -109,6 +140,27 @@ def tail(text: str, n: int = 12) -> str:
     """
     lines = [l.strip() for l in (text or "").strip().splitlines() if l.strip()]
     return " / ".join(lines[-n:])
+
+
+PROGRESS = HERE / "scan_progress.json"
+
+
+def progress(stage: str, status: str = "running", **extra) -> None:
+    """Where the scan is right now, for a dashboard that cannot ask it anything.
+
+    Written atomically: the UI polls this file every second and must never read
+    half a document. A failure to write is never allowed to fail the scan - the
+    scan is the product, the progress line is a convenience.
+    """
+    doc = {"scan_id": _SCAN_ID, "stage": stage, "status": status,
+           "updated_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
+    doc.update(extra)
+    try:
+        tmp = PROGRESS.with_suffix(".tmp")
+        tmp.write_text(json.dumps(doc), encoding="utf-8")
+        os.replace(tmp, PROGRESS)
+    except OSError:
+        pass
 
 
 def in_window(spec: str, now: datetime) -> bool:
@@ -169,6 +221,7 @@ def _main() -> int:
     _SCAN_ID = uuid.uuid4().hex
     t0 = time.monotonic()
     ap = argparse.ArgumentParser()
+    load_env()
     ap.add_argument("--rebuild", action="store_true",
                     help="run Tier 1 then rebuild liquid_universe.json, then exit "
                          "(no trade scan). This is the only mode that pays the "
@@ -185,7 +238,9 @@ def _main() -> int:
                     help="print the session plan and expected test count, then exit")
     ap.add_argument("--tolerance-min", type=int, default=10)
     ap.add_argument("--tf", default="M15")
-    ap.add_argument("--top", type=int, default=50, help="intraday universe size")
+    ap.add_argument("--top", type=int, default=120,
+                    help="intraday universe size: 120 covers shares as well as FX, "
+                         "indices, commodities and crypto; 50 held no shares outside the top 15")
     ap.add_argument("--shortlist", type=int, default=5)
     ap.add_argument("--bars", type=int, default=15000)
     ap.add_argument("--horizon", type=int, default=32)
@@ -231,6 +286,7 @@ def _main() -> int:
 
     fams = session_strategies(now)
     print(f"session matrix @ {now:%H:%M}Z: {', '.join(fams) if fams else 'none'}")
+    progress("preflight", strategies=fams)
     if a.plan_only:
         n_sym = 50
         try:
@@ -259,6 +315,8 @@ def _main() -> int:
         print("=" * 72)
         log(f"FAILED preflight | {' | '.join(problems)}")
         audit.write("refused", stage="preflight", problems=problems)
+        # A refusal must not leave the strip saying "pre-flight, running" forever.
+        progress("preflight", status="failed", error="; ".join(problems))
         return 2
 
     # Hold the machine awake for the run; atexit guarantees release on every
@@ -268,6 +326,7 @@ def _main() -> int:
     atexit.register(awake.__exit__, None, None, None)
     print(f"preflight ok | anti-sleep: {'active' if awake.active else 'inactive'} "
           f"| mode: {'rebuild' if a.rebuild else 'intraday'} | tf: {a.tf}")
+    progress("universe", strategies=fams)
 
     if a.rebuild:
         # min-days 160 => ~15,400 M15 bars available, the deep-test window.
@@ -307,6 +366,7 @@ def _main() -> int:
         log(f"FAILED trial accounting before scan | {type(exc).__name__}: {exc}")
         return 1
 
+    progress("tier2", symbols=len(universe), strategies=fams)
     try:
         t2 = run(["tier2_patterns.py", "--tier1", "liquid_universe.json",
                   "--tf", a.tf, "--top", str(a.shortlist),
@@ -347,6 +407,7 @@ def _main() -> int:
         log(f"FAILED trial accounting total_tests=UNKNOWN | {type(exc).__name__}: {exc}")
         return 1
     print(f"trials: {prior} prior + {scan_tests} this scan = {cumulative}")
+    progress("tier3", tests=scan_tests, cumulative=cumulative)
 
     t3_args = ["tier3_deep.py", "--tf", a.tf, "--bars", str(a.bars),
                "--horizon", str(a.horizon), "--permutations", str(a.permutations),
@@ -395,7 +456,10 @@ def _main() -> int:
 
     # Tier 3 writes the funnel_history.log line itself (it owns the trials count,
     # so manual runs are recorded too). Do not log a summary here as well.
+    verdict = "STAND_DOWN" if doc.get("stood_down") else "PROPOSAL"
     print(f"\ntier3 verdict: {'STAND_DOWN' if doc.get('stood_down') else 'WINNER ' + ','.join(doc.get('survivors', []))}")
+    progress("verdict", status="done", verdict=verdict, tests=scan_tests,
+             cumulative=cumulative, survivors=doc.get("survivors", []))
     audit.write(
         "verdict",
         scan_id=_SCAN_ID,

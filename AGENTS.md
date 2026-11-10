@@ -30,7 +30,9 @@ a trade-off, it is the product.
 
 ```
 Tier 1  universe filter      ~1,700 symbols -> ~600 tradable, liquid, live
-Tier 2  strategy matrix      3 families x all symbols, correlation-deduped
+        liquidity build      top 120 by M15 turnover: FX, indices, commodities,
+                             crypto AND shares (83 of 120 at the last rebuild)
+Tier 2  strategy matrix      3 families x every symbol with fresh bars
 Tier 3  deep test            15k bars, 10k Monte-Carlo paths, BOTH gates
    |
    v
@@ -81,6 +83,11 @@ Rules that follow from this:
 - **The launchers are local-only.** `run_funnel.local.cmd` and
   `run_rebuild.local.cmd` pin `MT5_EXPECTED_LOGIN` and are excluded through
   `.git/info/exclude`; the tracked `run_funnel.cmd` stays portable and sanitised.
+- **Progress is a file, not a channel.** `run_funnel.progress()` writes
+  `scan_progress.json` at each stage boundary (atomically, and never failing the
+  scan if it cannot). The UI reads it to show which stage is running, and stays
+  ignorant of everything else. The engine still does not know the dashboard
+  exists.
 - **The dashboard reads this directory.** `start_dashboard.bat` sets `ZTT_ROOT`
   to the parent of `dashboard\` (this tree). Launch it through the `.bat`, never
   the raw `.exe` — the exe would inherit `System32` as its working directory and
@@ -276,6 +283,13 @@ when launched from either the repo root or `dashboard/`.
 | `GET /api/snapshot` | read | one-shot state |
 | `GET /ws` | read | updates on change, plus a 1 Hz heartbeat so `engine_age_s` keeps ticking |
 | `GET /architecture` | read | the stage map, embedded from `dashboard/web/architecture.html` |
+| `POST /api/scan` | **write** | starts `run_funnel.py` — the *research* pipeline. The only write in this process |
+
+`POST /api/scan` is the one exception and it is narrow. It takes no argument, so
+the button runs exactly what the scheduler runs: the funnel's own lock (a double
+click costs 0.3 s), its UTC window, its demo-only pre-flight. It cannot place,
+modify or close anything — order entry does not live in the scan path at all.
+Adding a second write endpoint requires deleting this paragraph first.
 
 - **Never add** an endpoint, button, or socket message that places, modifies, or
   closes an order. If someone asks for one, the answer is no: execution goes
