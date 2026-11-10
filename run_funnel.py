@@ -238,7 +238,7 @@ def _main() -> int:
                     help="print the session plan and expected test count, then exit")
     ap.add_argument("--tolerance-min", type=int, default=10)
     ap.add_argument("--tf", default="M15")
-    ap.add_argument("--top", type=int, default=120,
+    ap.add_argument("--top", type=int, default=0,
                     help="intraday universe size: 120 covers shares as well as FX, "
                          "indices, commodities and crypto; 50 held no shares outside the top 15")
     ap.add_argument("--shortlist", type=int, default=5)
@@ -340,7 +340,13 @@ def _main() -> int:
             log(f"FAILED make_liquid rc={t1b.returncode} | {tail(t1b.stderr, 3)}")
             return 1
         print(tail(t1b.stdout, 6))
-        log(f"REBUILT universe={a.top} from {tail(t1.stdout, 1)}")
+        # Log what was written, not what was requested: `--top 0` means "everything
+        # tier 1 kept", and the ledger should carry the count, never the flag.
+        try:
+            wrote = json.loads((HERE / "liquid_universe.json").read_text(encoding="utf-8")).get("count")
+        except (OSError, ValueError):
+            wrote = None
+        log(f"REBUILT universe={wrote if wrote is not None else 'unknown'} from {tail(t1.stdout, 1)}")
         return 0
 
     if not (HERE / "liquid_universe.json").exists():

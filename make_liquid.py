@@ -128,14 +128,15 @@ def dedupe(rows: list[dict], tf: str, corr_max: float, pool: int,
 def _main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--tier1", default=None)
-    ap.add_argument("--top", type=int, default=120)
+    ap.add_argument("--top", type=int, default=120,
+                    help="0 = keep every symbol that survives dedupe")
     ap.add_argument("--tf", default="M15")
     ap.add_argument("--lookback", type=int, default=500)
     ap.add_argument("--max-spread-pct", type=float, default=5.0,
                     help="veto anything whose spread exceeds this %% of D1 ATR")
     ap.add_argument("--corr-max", type=float, default=0.7)
     ap.add_argument("--pool", type=int, default=150,
-                    help="candidates considered before correlation dedupe")
+                    help="candidates considered before correlation dedupe; 0 = all measured")
     a = ap.parse_args()
 
     src_path = Path(a.tier1) if a.tier1 else newest_universe()
@@ -146,14 +147,17 @@ def _main() -> int:
     md.connect()
     measured = measure(rows, a.tf, a.lookback, a.max_spread_pct)
     ordered = order(measured)
-    kept, dropped = dedupe(ordered, a.tf, a.corr_max, a.pool)
-    picked = kept[: a.top]
+    # 0 means "no cap" on either side: the whole measured list is deduped, and every
+    # survivor is kept. Both caps default to a number, so a caller that omits them
+    # keeps the old behaviour; `--top 0` is an explicit request for everything.
+    kept, dropped = dedupe(ordered, a.tf, a.corr_max, a.pool or len(ordered))
+    picked = kept[: a.top] if a.top else kept
     md.release_auto_selected()
 
     payload = {
         "generated_utc": md.now_utc(),
         "source": src_path.name,
-        "criteria": (f"top {a.top} by mean {a.tf} tick volume, correlation-deduped at "
+        "criteria": (f"{'every' if not a.top else 'top ' + str(a.top)} symbol by mean {a.tf} tick volume, correlation-deduped at "
                      f"|rho|>{a.corr_max}, benchmarks force-included, "
                      f"spread veto {a.max_spread_pct}% of ATR"),
         "count": len(picked),
