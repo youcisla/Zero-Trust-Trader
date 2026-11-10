@@ -410,6 +410,10 @@ terminal — `AGENTS.md` §1 still owns execution.
 | `chief` | the ledger, tier2/tier3, engine state | one paragraph + contradictions | synthesis |
 | `jury` | the facts, the skeptic's objection, the chief's summary | `stand_down` / `escalate` / `propose`, plus conditions | the last voice before a human, and the only role whose `size_lots` is policed: anything but 0.01 is rejected |
 
+Each role's card in the dashboard carries what that role **spent** — `5.9k in · 801 out` —
+read from `agent_notes.json`'s `role_metadata[role].usage`, and the footer sums it. A
+role that was never called shows no line at all: `null` is not zero here either.
+
 `desk_store.py` keeps every answer the desk ever gave in `desk_history.sqlite`
 (one row per run, one per role), and exports the last 24 runs to
 `desk_history.json` for the dashboard. `agent_notes.json` is the current state;

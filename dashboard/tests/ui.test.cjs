@@ -16,7 +16,7 @@ const helpers = source.split('// BEGIN fixture-tested state helpers')[1]
 
 const EXPORTS = ['scanCurrent', 'transportFresh', 'protectionLabel', 'parseFunnel', 'lastFunnel',
   'ledgerRows', 'pipeline', 'edgeCounts', 'edgeStates', 'computeDrawdown', 'bonferroniMirror',
-  'sessionState', 'derive', 'fmtDur', 'todayStats', 'num2', 'signed', 'backoffMs'];
+  'sessionState', 'derive', 'fmtDur', 'fmtTok', 'todayStats', 'num2', 'signed', 'backoffMs'];
 
 function load() {
   return vm.runInNewContext(helpers + '\n({' + EXPORTS.join(',') + '})', {});
@@ -216,6 +216,17 @@ test('the session matrix matches run_funnel', () => {
 });
 
 test('one duration spelling', () => {
+  // Tokens are a glance, not a ledger: the formatter must never invent a figure
+  // for a role that was never called, and must not round 999 up to a "k".
+  assert.equal(h.fmtTok(842), '842');
+  assert.equal(h.fmtTok(18432), '18.4k');
+  assert.equal(h.fmtTok(18078), '18.1k');
+  assert.equal(h.fmtTok(120000), '120k');
+  assert.equal(h.fmtTok(1240000), '1.2M');
+  assert.equal(h.fmtTok(1250000), '1.3M');  // rounds, like every other figure
+  assert.equal(h.fmtTok(null), '—');
+  assert.equal(h.fmtTok(undefined), '—');
+  assert.equal(h.fmtTok('978'), '978');
   assert.equal(h.fmtDur(45), '45s');
   assert.equal(h.fmtDur(60), '1m');
   assert.equal(h.fmtDur(92), '1m 32s');

@@ -224,7 +224,8 @@ live per-edge counts, a click-to-inspect drawer, zoom/pan/minimap and a ledger
 replay. Behind it: a verdict hero, an equity and drawdown series collected in
 memory, gate-margin and trials-activity heatmaps, universe health tiles, an
 outcome mix, the cumulative-trials burn-up with a what-if mirror of the bar, the
-full parsed ledger, the desk's four-agent chain with every stored answer, and an
+full parsed ledger, the desk's four-agent chain with every stored answer and what
+each role spent in tokens, and an
 alert rail derived on the server. The screenshot is the real thing running
 against the demo account.
 

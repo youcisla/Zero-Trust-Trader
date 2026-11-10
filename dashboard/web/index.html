@@ -208,6 +208,9 @@
   .hero .stats{margin-left:auto;display:flex;gap:var(--s5);text-align:right}
   .hero .stats div span{display:block;font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
 
+  .step .tok { margin-top:2px; font-family:var(--mono,ui-monospace,monospace); font-size:10px;
+    color:var(--faint); letter-spacing:.02em }
+
   /* ---- desk chain ----------------------------------------------------- */
   .chain{display:flex;align-items:stretch;gap:6px;flex-wrap:wrap}
   .step{flex:1 1 150px;min-width:120px;border:1px solid var(--line);border-radius:8px;
@@ -350,6 +353,14 @@ const pct = (v, d = 1) => v == null ? "—" : (Number(v) * 100).toFixed(d) + "%"
 const signed = (v, d = 2) => v == null ? "—" : (v > 0 ? "+" : "") + Number(v).toFixed(d);
 
 // 45 -> 45s, 120 -> 2m, 3600 -> 1h, 5400 -> 1h 30m, 90000 -> 1d 1h
+// Tokens are read at a glance, never to the digit: 18,432 is "18.4k".
+const fmtTok = (n) => {
+  if (n == null || !Number.isFinite(Number(n))) return "—";
+  const v = Number(n);
+  if (v < 1000) return String(v);
+  if (v < 1000000) return (v / 1000).toFixed(v < 100000 ? 1 : 0) + "k";
+  return (v / 1000000).toFixed(1) + "M";
+};
 const fmtDur = (s) => {
   if (s == null) return "—";
   const n = Math.max(0, Math.round(Number(s)));
@@ -1186,16 +1197,21 @@ function Desk({agent, compact}) {
       const r = roles[key] || {};
       const say = r.headline || r.summary || r.verdict || r.why || r.reason
         || (r.status === "no key" ? "no model key — nothing called" : "");
+      const u = ((agent.role_metadata || {})[key] || {}).usage || {};
+      const spent = u.prompt_tokens == null && u.completion_tokens == null ? null
+        : fmtTok(u.prompt_tokens) + " in · " + fmtTok(u.completion_tokens) + " out";
       return html`<div key=${key} className=${"step " + tone(r)}>
         <div className="who"><span className="dot"></span>${label}
           ${r.status && r.status !== "ok" ? html`<${Badge} tone="warn">${r.status}</${Badge}>` : null}</div>
         <div className="say" title=${String(say)}>${String(say || "—").slice(0, compact ? 90 : 200)}</div>
+        ${spent ? html`<div className="tok" title=${spent + (u.prompt_cache_hit_tokens ? " · " + u.prompt_cache_hit_tokens + " cached" : "")}>${spent}</div>` : null}
       </div>`;
     })}</div>
     <div className="legend" style=${{marginTop: "8px"}}>
       <span>${agent.model || "no model"}</span>
       <span>${agent.status || "—"}</span>
       ${agent.model_drift ? html`<span className="l-warn">drift: served ${agent.model_drift.served}</span>` : null}
+      ${agent.usage_total ? html`<span className="mono">${fmtTok(agent.usage_total.prompt_tokens)} in · ${fmtTok(agent.usage_total.completion_tokens)} out</span>` : null}
       <span>${localize(agent.generated_utc)}</span>
     </div>
   </div>`;
