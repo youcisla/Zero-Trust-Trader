@@ -23,7 +23,7 @@ class ProgressFileTests(unittest.TestCase):
     def test_a_stage_is_written_whole(self):
         with TemporaryDirectory() as d:
             target = Path(d) / "scan_progress.json"
-            with mock.patch.object(run_funnel, "PROGRESS", target):
+            with mock.patch.object(run_funnel, "_progress_path", lambda: target):
                 run_funnel.progress("tier2", symbols=120, strategies=["donchian"])
             doc = json.loads(target.read_text(encoding="utf-8"))
         self.assertEqual(doc["stage"], "tier2")
@@ -35,13 +35,13 @@ class ProgressFileTests(unittest.TestCase):
     def test_no_temporary_file_is_left_behind(self):
         with TemporaryDirectory() as d:
             target = Path(d) / "scan_progress.json"
-            with mock.patch.object(run_funnel, "PROGRESS", target):
+            with mock.patch.object(run_funnel, "_progress_path", lambda: target):
                 run_funnel.progress("tier3", tests=238)
             leftovers = sorted(p.name for p in Path(d).iterdir())
         self.assertEqual(leftovers, ["scan_progress.json"])
 
     def test_an_unwritable_path_never_fails_the_scan(self):
-        with mock.patch.object(run_funnel, "PROGRESS", Path("Z:/nope/scan_progress.json")):
+        with mock.patch.object(run_funnel, "_progress_path", lambda: Path("Z:/nope/scan_progress.json")):
             run_funnel.progress("verdict", status="done")   # must not raise
 
 

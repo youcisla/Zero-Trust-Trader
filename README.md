@@ -77,7 +77,7 @@ looked like a genuine edge:
 z = +2.40 clears the conventional 1.96 threshold comfortably. Any single-symbol
 study would have called that a finding and sized a position on it.
 
-It was **refused**. Against the corrected bar for 576 tests (z = 3.92), +2.40 is
+It was **refused**. Against the corrected bar for 568 tests (z = 3.92), +2.40 is
 unremarkable — precisely what taking the best of 568 draws produces by luck.
 
 The same instrument was later re-tested on four times the history:
@@ -215,6 +215,7 @@ scheduled — they answer a question on demand.
 | `run_tests.py` | the Python suite, with the terminal stubbed |
 | `check_public.py` | refuse to publish a machine path, a login or a key prefix |
 | `check_docs.py` | refuse to ship a README, a map or a mémoire that describe the tree as it was |
+| `export_desk_history.py` | publish the desk's answers as `docs/desk-history.jsonl`; the live SQLite stays local |
 | `build_public.py` | sanitise a copy into `_publish/`; refuses if it finds a machine path |
 
 ### On TradingView
@@ -279,7 +280,7 @@ as a green "no data", and both were fixed here after being caught on screen.
 | `/vendor/echarts.min.js` | the chart bundle, vendored from a pinned npm tarball (sha256 in `PROVENANCE.json`) |
 | `POST /api/scan` | **the only write in this process.** Takes no argument, so the button runs exactly what the scheduler runs — same lock, same window, same demo pre-flight. It cannot reach an order |
 
-#> **Can a 50 EUR account become 1,000 EUR in a month?** `docs/SIZE-AND-RUIN.md`
+> **Can a 50 EUR account become 1,000 EUR in a month?** `docs/SIZE-AND-RUIN.md`
 > works it out with the broker's own numbers, the ruin distribution of the best
 > measured edge, and the published statistics on day traders. Answer: no, and the
 > reason is arithmetic rather than a missing strategy.
@@ -331,7 +332,7 @@ scan.
 | --- | --- |
 | 1 (a single hypothesis) | 1.96 — no correction at all |
 | 150 (one scan, three families) | 3.59 |
-| 525 (the aborted wide run) | 3.90 |
+| 525 (a subset validation run) | 3.90 |
 | 1,791 (one full-universe run) | 4.19 |
 | 5,388 | 4.43 |
 | 9,081 (historical example) | 4.54 |

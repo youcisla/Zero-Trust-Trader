@@ -8,13 +8,14 @@ it cannot manufacture a z-score, a win rate or a trial count, and it cannot
 launch, size, veto or close anything. `AGENTS.md` §1 still owns execution:
 human `APPROVED` plus the bridge's single-use token.
 
-Roles, and why only these three are agents:
+Roles, and why only these four are agents:
 
 | role    | does                                            | why a model and not code |
 | ------- | ----------------------------------------------- | ------------------------ |
 | scout   | reads headlines, maps them to symbols           | text, not numbers        |
 | skeptic | argues against a candidate using its own stats   | adversarial prose        |
 | chief   | explains the run, names contradictions           | synthesis                |
+| jury    | reads the facts, the objection and the summary    | the last voice before a human; `size_lots` policed to 0.01 |
 
 Chart-reading, strategy testing and execution stay deterministic on purpose:
 tier 2 and tier 3 already do that work with a measured error rate, and an agent

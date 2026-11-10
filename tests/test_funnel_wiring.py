@@ -79,6 +79,7 @@ class TestTGateReachesTier3(unittest.TestCase):
             clock = mock.Mock(wraps=datetime)
             clock.now.return_value = datetime(2026, 11, 9, 14, tzinfo=timezone.utc)
             with mock.patch.object(rf, "HERE", tmp), \
+                 mock.patch.object(rf, "_progress_path", lambda: tmp / "scan_progress.json"), \
                  mock.patch.object(rf, "LOG", ledger), \
                  mock.patch.object(rf, "LOCK", tmp / "funnel.lock"), \
                  mock.patch.object(rf, "run", fake_run), \

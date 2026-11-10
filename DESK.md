@@ -1,6 +1,6 @@
 # Desk rules
 
-Every agent reads this before it answers. It is the one thing that makes three
+Every agent reads this before it answers. It is the one thing that makes four
 separate roles act like one desk, and it is short on purpose: a rule the model
 cannot hold in one breath is a rule it will bend.
 

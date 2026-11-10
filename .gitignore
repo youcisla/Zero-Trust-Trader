@@ -24,15 +24,13 @@ stops.json
 stops.json.*.tmp
 .stops.*.tmp
 tm_run_*.json
-funnel.lock
 
 # secrets
 .env*
 !.env.example
 config.toml
 idempotency.db*
-run_funnel.local.cmd
-run_rebuild.local.cmd
+*.local.cmd
 .venv/
 _publish/
 
@@ -55,8 +53,17 @@ desk_journal.jsonl
 .pytest_cache/
 !tools/build_public.py
 
-# Derived view of desk_history.sqlite (the database is the record).
+# The desk's live database is runtime state: it grows every 15 minutes and two
+# machines editing it produce a binary conflict every time. It stays local.
+desk_history.sqlite
+desk_history.sqlite*
+*.sqlite-wal
+*.sqlite-shm
+*.sqlite-journal
+
+# The published record is a redacted text view: tools/export_desk_history.py.
 desk_history.json
+!docs/desk-history.jsonl
 
 # Written by run_funnel.progress() every scan; the dashboard reads it live.
 scan_progress.json

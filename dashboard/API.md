@@ -25,7 +25,7 @@ a user-authentication boundary; the same user must protect the producer files.
 | `/` | Embedded dashboard HTML | Subject to local Host/Origin policy |
 | `/architecture` | Embedded generated architecture HTML | Built with the binary |
 | `/api/snapshot` | Cached JSON snapshot | Missing or invalid producer data is null/unknown |
-| `/ws` | Current snapshot, then approximately one update/second | Invalid origin is 403; standard upgrade validation still applies |
+| `/ws` | Current snapshot, then the snapshot on change (checked at 1 Hz), resent at least every 5 s so a quiet tree cannot be mistaken for a dead feed; protocol ping every 15 s; age advances in the browser | Invalid origin is 403; standard upgrade validation still applies |
 | `/api/logs/funnel` | Recent complete lines from the final bounded 4 MB window | 404 missing, 503 unreadable |
 | `/api/logs/actions` | Same contract for supervisor actions | 404 missing, 503 unreadable |
 | `/api/logs/audit` | Same contract for the resolved audit log | 404 missing, 503 unreadable |

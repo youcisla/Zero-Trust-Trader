@@ -30,9 +30,6 @@ from pathlib import Path
 SIG_PREFIX = " sig="
 
 HERE = Path(__file__).resolve().parent
-WORK = Path(__file__).resolve().parent
-if WORK.exists():
-    HERE = WORK
 LOG = HERE / "funnel_history.log"
 
 LEGACY_TRIALS = 2205

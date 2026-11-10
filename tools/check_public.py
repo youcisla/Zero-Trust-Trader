@@ -65,8 +65,16 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=ROOT)
     args = parser.parse_args(argv)
+    identifier = os.environ.get("ZTT_PRIVATE_IDENTIFIER", "")
+    # GitHub renders a secret as an empty string for a pull request from a fork.
+    # With no identifier the rule below silently becomes a no-op and this script
+    # prints "passed" - the exact silent-degradation the rest of the tree refuses.
+    if os.environ.get("CI") == "true" and not identifier:
+        print("ZTT_PRIVATE_IDENTIFIER is not configured; refusing to run a weakened scan",
+              file=sys.stderr)
+        return 2
     try:
-        failures = scan_files(args.root, tracked_files(args.root), os.environ.get("ZTT_PRIVATE_IDENTIFIER", ""))
+        failures = scan_files(args.root, tracked_files(args.root), identifier)
     except (OSError, ValueError, subprocess.CalledProcessError):
         print("privacy scan failed to read the complete tracked inventory", file=sys.stderr)
         return 2

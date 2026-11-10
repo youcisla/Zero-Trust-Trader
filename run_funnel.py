@@ -75,7 +75,15 @@ def load_env() -> None:
 
 load_env()
 
-EXPECTED_LOGIN = int(os.environ.get("MT5_EXPECTED_LOGIN", "0"))
+def _int_env(name: str) -> int:
+    """A malformed pin must not raise at import: the funnel's job is to refuse cleanly."""
+    try:
+        return int(os.environ.get(name, "0") or 0)
+    except ValueError:
+        return 0
+
+
+EXPECTED_LOGIN = _int_env("MT5_EXPECTED_LOGIN")
 EXPECTED_SERVER_SUBSTR = "demo"
 _SCAN_ID = ""
 
@@ -91,8 +99,11 @@ def preflight_check(term, acct) -> list[str]:
     if acct is None:
         problems.append("account_info() is None — not logged in")
     else:
-        expected = int(os.environ.get("MT5_EXPECTED_LOGIN", "0") or 0)
-        if not expected:
+        raw_pin = os.environ.get("MT5_EXPECTED_LOGIN", "")
+        expected = _int_env("MT5_EXPECTED_LOGIN")
+        if raw_pin and not raw_pin.isdecimal():
+            problems.append("MT5_EXPECTED_LOGIN is not a numeric account id — refusing")
+        elif not expected:
             # Fail closed: an unset pin used to skip the check silently, which
             # means a clone with no env var would scan whatever account it found.
             problems.append("MT5_EXPECTED_LOGIN is not set — refusing to scan an unpinned account")
@@ -142,7 +153,9 @@ def tail(text: str, n: int = 12) -> str:
     return " / ".join(lines[-n:])
 
 
-PROGRESS = HERE / "scan_progress.json"
+def _progress_path() -> Path:
+    """Resolved at call time: a test that patches HERE must not write into the tree."""
+    return HERE / "scan_progress.json"
 
 
 def progress(stage: str, status: str = "running", **extra) -> None:
@@ -155,10 +168,11 @@ def progress(stage: str, status: str = "running", **extra) -> None:
     doc = {"scan_id": _SCAN_ID, "stage": stage, "status": status,
            "updated_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")}
     doc.update(extra)
+    target = _progress_path()
     try:
-        tmp = PROGRESS.with_suffix(".tmp")
+        tmp = target.with_suffix(".tmp")
         tmp.write_text(json.dumps(doc), encoding="utf-8")
-        os.replace(tmp, PROGRESS)
+        os.replace(tmp, target)
     except OSError:
         pass
 

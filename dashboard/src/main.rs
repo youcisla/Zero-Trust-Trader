@@ -9,8 +9,13 @@
 //! Endpoints
 //!   GET /              the UI (single embedded HTML file, React vendored locally)
 //!   GET /api/snapshot  current state, one shot
-//!   GET /ws            updates on change, plus a 1 Hz heartbeat so engine_age_s
-//!                      ticks in the browser instead of freezing between writes
+//!   GET /ws            the snapshot on change (checked at 1 Hz), resent at least
+//!                      every 5 s, pinged every 15 s; age advances in the browser
+//!   GET /architecture  the generated stage map
+//!   POST /api/scan     the only write: starts run_funnel.py, no argument
+//!   GET /vendor/*      vendored React and ECharts, hash-pinned
+//!   GET /api/logs/*    bounded tails of the files the engine writes
+//!   GET /api/report/latest  the producer's HTML report, if one exists
 
 use axum::{
     extract::{

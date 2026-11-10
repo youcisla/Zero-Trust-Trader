@@ -70,7 +70,7 @@ directory the ledger lives in. There is no second copy and nothing to sync.
 | Code | this repository (tracked) |
 | Execution | the same directory — `HermesMT5Funnel` runs `run_funnel.local.cmd` here, `HermesMT5Rebuild` runs `run_rebuild.local.cmd` here |
 | Ledger | `funnel_history.log`, `trades.csv`, `stops.json`, `liquid_universe.json`, `engine_state.json`, `audit.jsonl`, `idempotency.db` — same directory, gitignored |
-| Desk record | `desk_history.sqlite` — same directory, **tracked** (§9b): agent prose only, broker login redacted before every write |
+| Desk record | `desk_history.sqlite` — same directory, **gitignored** (§9b); the published view is `docs/desk-history.jsonl`, written by `tools/export_desk_history.py` |
 | Policy | `config.toml` at the root — gitignored, pinned by both the MCP `--config` argument and its own `[audit]` / `[idempotency]` paths |
 | Dashboard | `dashboard/target/release/zero-trust-dashboard.exe`, launched through `dashboard/start_dashboard.bat` |
 
@@ -375,7 +375,7 @@ when launched from either the repo root or `dashboard/`.
 | --- | --- | --- |
 | `GET /` | read | the UI (single embedded HTML, React vendored — no CDN, no build step) |
 | `GET /api/snapshot` | read | one-shot state |
-| `GET /ws` | read | updates on change, plus a 1 Hz heartbeat so `engine_age_s` keeps ticking |
+| `GET /ws` | read | the snapshot on change (checked at 1 Hz), resent at least every 5 s so a quiet tree cannot be mistaken for a dead feed; protocol ping every 15 s; age advances in the browser |
 | `GET /architecture` | read | the stage map, embedded from `dashboard/web/architecture.html` |
 | `POST /api/scan` | **write** | starts `run_funnel.py` — the *research* pipeline. The only write in this process |
 | `/vendor/echarts.min.js` | read | the chart library, embedded from a pinned npm tarball |
@@ -424,7 +424,7 @@ no second port, no CORS.
 
 ## 9b. The desk (agents)
 
-`desk.py` + `agent_brief.py`: three LLM roles that read this tree and write
+`desk.py` + `agent_brief.py`: four LLM roles that read this tree and write
 `agent_notes.json`. They are **advisory**. Nothing they produce can place, size,
 cancel or veto anything, and there is no code path from this module to the
 terminal — `AGENTS.md` §1 still owns execution.
@@ -451,12 +451,14 @@ python desk_store.py --history 20      # the last 20 runs, every role
 python desk_store.py --query jury      # every jury answer, newest first
 ```
 
-**`desk_history.sqlite` is the one tracked runtime file, and the exception is
-narrow.** It holds agent prose only — no terminal state, no order, no position.
-The broker login is redacted before every write (`.env` and `MT5_EXPECTED_LOGIN`),
-and `tests/test_desk_store.py` fails if it ever survives into the file. If a
-future change wants to store an artifact instead of an answer, it does not
-belong in this database.
+**`desk_history.sqlite` is runtime state and is no longer tracked.** It grows on
+every 15-minute run, it carries third-party headline text, and two machines
+editing it produce a binary merge conflict every time — it was re-committed 14
+times before the export existed. What ships is a **view**: `tools/export_desk_history.py`
+writes `docs/desk-history.jsonl` (last 100 runs; role, status, headline, token
+counts; every string through `desk_store._redact`). No raw payloads, no prompts,
+no feed bodies. The broker login and any machine path are scrubbed before the
+write, and `tests/test_desk_store.py` fails if either survives into the database.
 
 **The citation rule.** Every number a note contains must already appear in the
 artifact the model was given. `desk._guard()` rejects the whole note otherwise

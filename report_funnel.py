@@ -16,12 +16,9 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 
+# history: the cron runner used to copy this script into ~/hermes/scripts, where
+# __file__ pointed at the wrong directory. It runs in place now.
 HERE = Path(__file__).resolve().parent
-WORK = Path(__file__).resolve().parent
-# The cron runner copies this into ~/hermes/scripts, where __file__ points at the
-# wrong directory — resolve the data next to the funnel instead.
-if WORK.exists():
-    HERE = WORK
 LOG = HERE / "funnel_history.log"
 T3 = HERE / "tier3_results.json"
 LOT = 0.01
