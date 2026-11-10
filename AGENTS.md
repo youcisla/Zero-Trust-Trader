@@ -131,15 +131,41 @@ Rules that follow from this:
 
 ---
 
-## 2b. The public record moves with the code
+## 2b. Nothing is finished while something still describes the old tree
 
-Two documents describe this system to people outside it, and both are part of
-"done". A change is not finished while they still describe the tree as it was.
+**This is a standing rule, not a suggestion, and it is now partly mechanical.**
+Every change — a family, a gate, a cap, a route, a threshold, a page, a tool —
+lands together with everything that describes it. The tree has three records of
+itself and they move in lockstep with the code, in the same commit.
 
-| Document | Lives | Update when |
-| --- | --- | --- |
-| `README.md` | this repo | any change a reader can see: endpoints, pages, tools, test counts, the bar |
-| the EISI mémoire | `../MemoireIPSSI/TradeBot_Memoire/` (beside this repo, never inside it) | any change to the thesis, the gates, the numbers or the operational surface |
+| Artifact | Lives | Update when | Enforced by |
+| --- | --- | --- | --- |
+| `docs/architecture.archify.json` → `dashboard/web/architecture.html` | this repo (the map is generated, never hand-drawn) | **any change to the pipeline**: a stage, a cap, a file it names, a number in a tag | `tools/check_docs.py` — fails if a cited file is gone or a tag disagrees with the artifacts |
+| `README.md` | this repo | any change a reader can see: endpoints, pages, tools, test counts, the bar, the universe | same check: every `tools/*.py` must be mentioned |
+| the EISI mémoire | `../MemoireIPSSI/TradeBot_Memoire/` (beside this repo, never inside it) | any change to the thesis, the gates, the numbers or the operational surface | `python sync_toc.py --check` + a rebuild; advisory in `check_docs.py` because CI cannot see it |
+
+```bash
+python tools/check_docs.py        # exit 1 and a list of what disagrees — run before every commit
+```
+
+The map is **generated**: edit the JSON, then re-run the Archify skill (its own
+`bin/archify.mjs`; the path is machine-local, so take it from the skill, never
+from this file) and rebuild the binary that embeds it. The receipts are
+gitignored because they carry absolute paths.
+
+```bash
+rm -f dashboard/web/architecture.*.json
+node "$ARCHIFY/bin/archify.mjs" finalize architecture \
+  docs/architecture.archify.json dashboard/web/architecture.html \
+  --quality showcase --repo-root . --json     # four gates must pass
+cd dashboard && cargo build --release           # the HTML is embedded with include_str!
+```
+
+Why this is a rule and not a habit: the map said `1,723 → 120` for a full day
+after the universe became 248, because nothing read it but a human. Two numbers
+per tag, typed by hand, is exactly the kind of thing that rots silently — so the
+numbers in a tag are now checked against `liquid_universe.json` and the newest
+`tier1_universe_*.json`, and CI fails on the parts that do not need runtime state.
 
 The mémoire is a `.docx` built from `05_memoire_long.md`; never edit the docx by
 hand, and never renumber the table of contents:

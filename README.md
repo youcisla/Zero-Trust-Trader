@@ -200,6 +200,23 @@ hypothesis test is what the gate exists for, and it says so in every row. A symb
 that clears the bar here still has to survive a full scan. The artifact
 (`sweep_history.json`) is written next to the ledger and gitignored.
 
+### Every tool in `tools/`
+
+Read-only diagnostics. **None of them imports the order path**, and none is
+scheduled — they answer a question on demand.
+
+| Tool | Question it answers |
+| --- | --- |
+| `batch_backtest.py` | pre-screen the whole universe against the real bar (`permutations=0`, one artifact) |
+| `broker_math.py` | what the broker actually says about a 50 EUR account: leverage, margin, stop-out |
+| `vol_dispersion.py` | how much one 0.01 lot really risks, symbol by symbol |
+| `ruin_20x.py` | can the best measured edge multiply the account, or is the path to ruin the likely one |
+| `exit_policy_ab.py` | A/B the two exit policies on identical bars |
+| `run_tests.py` | the Python suite, with the terminal stubbed |
+| `check_public.py` | refuse to publish a machine path, a login or a key prefix |
+| `check_docs.py` | refuse to ship a README, a map or a mémoire that describe the tree as it was |
+| `build_public.py` | sanitise a copy into `_publish/`; refuses if it finds a machine path |
+
 ### On TradingView
 
 We looked at the alternatives people actually recommend — Quantower, NinjaTrader,

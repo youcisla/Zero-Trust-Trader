@@ -31,6 +31,8 @@ jobs:
         env:
           ZTT_PRIVATE_IDENTIFIER: ${{ secrets.ZTT_PRIVATE_IDENTIFIER }}
         run: python tools/check_public.py
+      - name: The map, the README and the tree must agree
+        run: python tools/check_docs.py
       - name: Unit tests with terminal stubbed and external sockets blocked
         run: python tools/run_tests.py
       - name: Correctness lint
