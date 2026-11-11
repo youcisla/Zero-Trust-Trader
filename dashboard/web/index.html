@@ -291,7 +291,10 @@
   .tile.hit{outline:1px solid rgba(232,237,243,.8);outline-offset:1px}
   .bar{height:4px;border-radius:2px;background:rgba(139,155,171,.2);margin-top:10px;overflow:hidden}
   .bar i{display:block;height:100%;background:var(--green, #00ffa3)}
-  .why{font-size:12px;line-height:1.45;color:var(--dim, #b6c2cf);margin-top:6px}
+  .why{font-size:11.5px;line-height:1.4;color:var(--dim,#b6c2cf);margin-top:6px}
+  .clamp2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+  .g3 .card .body{padding:var(--s3)}
+  .g3 .card h2{font-size:11px}
   .legend{display:flex;gap:var(--s3);flex-wrap:wrap;color:var(--faint);font-size:10.5px;align-items:center}
   .legend i{width:8px;height:8px;border-radius:2px;display:inline-block;margin-right:4px}
 
@@ -662,8 +665,18 @@ const heatFrac = (v, lo, hi, worse) => {
   const f = Math.max(0, Math.min(1, (Number(v) - lo) / (hi - lo)));
   return worse === "low" ? 1 - f : f;
 };
-const heatRgb = (frac) => frac == null ? "rgba(139,155,171,.18)"
-  : `rgba(${Math.round(frac * 255)},${Math.round(255 - frac * 190)},${Math.round(163 - frac * 140)},.78)`;
+// Sequential, cool to hot - cyan through amber - and never green or red. On this
+// page green and red mean direction (a long, a short); a cost ramp that borrowed
+// them would make the two unreadable, which is the one rule the reference
+// terminals never break.
+const HEAT_STOPS = [[13, 44, 54], [34, 211, 238], [255, 180, 84]];
+const heatRgb = (frac) => {
+  if (frac == null) return "rgba(139,155,171,.22)";
+  const f = Math.max(0, Math.min(1, frac)) * (HEAT_STOPS.length - 1);
+  const i = Math.min(HEAT_STOPS.length - 2, Math.floor(f)), t = f - i;
+  const c = HEAT_STOPS[i].map((v, k) => Math.round(v + (HEAT_STOPS[i + 1][k] - v) * t));
+  return `rgb(${c[0]},${c[1]},${c[2]})`;
+};
 
 // END fixture-tested state helpers
 /* ====================================================================== */
@@ -1789,7 +1802,7 @@ function Layers({data}) {
     <//>
     <${Card} title="2 · Desk · deepseek" note=${agent.model || "no notes"}>
       ${jury.status === "ok" ? html`<div className="kv"><span>verdict</span><b>${jury.verdict || "—"}</b></div>
-        <div className="why">${(jury.why || "").slice(0, 320)}</div>
+        <div className="why clamp2" title=${jury.why || ""}>${jury.why || ""}</div>
         ${(jury.conditions || []).length ? html`<div className="l-faint" style=${{fontSize: "11px", marginTop: "6px"}}>
           action: ${(jury.conditions || []).join(" · ").slice(0, 220)}</div>` : null}`
         : html`<${Empty} text=${jury.reason || "the desk has not run since this page was opened"} cmd="python agent_brief.py" />`}
@@ -1805,7 +1818,7 @@ function Layers({data}) {
         <div className="kv"><span>desk grounded</span><b>${grounded.choice || "—"}</b></div>
         <div className="bar"><i style=${{width: Math.round(100 * ((att.probabilities || {})[att.choice] || 0)) + "%"}}></i></div>`
         : html`<div className="kv"><span>status</span><b>${jev.status || "not run"}</b></div>
-          <div className="why">${jev.reason || "no decision-model call has been recorded yet"}</div>
+          <div className="why clamp2">${jev.reason || "no decision-model call has been recorded yet"}</div>
           <div className="l-faint" style=${{fontSize: "11px", marginTop: "6px"}}>
             It would answer two typed questions — ${(jev.would_ask || ["attention", "grounded"]).join(", ")} —
             with a label and probabilities, and no prose. Put OPENROUTER_API_KEY in .env; it is advisory and can never
@@ -1822,11 +1835,13 @@ function Heatmap({d, data}) {
     const m = new Map();
     for (const h of (snap.tier2 && snap.tier2.all_hits) || []) m.set(h.symbol, h);
     return m;
-  }, [data]);
+  }, [snap]);
   const [metric, setMetric] = useState("spread_pct_atr");
   const [cls, setCls] = useState("all");
   const meta = HEAT_METRICS[metric] || HEAT_METRICS.spread_pct_atr;
-  // lo..p95 of the metric, over the symbols that actually carry it.
+
+  // lo..p95 of the metric, over the symbols that carry it: one broken value must
+  // not repaint the whole board.
   const scale = useMemo(() => {
     const vals = syms.map((s) => s[metric]).filter((v) => v != null && Number.isFinite(Number(v)))
       .map(Number).sort((a, b) => a - b);
@@ -1834,20 +1849,93 @@ function Heatmap({d, data}) {
     return {lo: vals[0], hi: vals[Math.min(vals.length - 1, Math.floor(vals.length * 0.95))], n: vals.length};
   }, [syms, metric]);
   const classes = useMemo(() => ["all", ...new Set(syms.map((s) => s.class).filter(Boolean))], [syms]);
-  const shown = cls === "all" ? syms : syms.filter((s) => s.class === cls);
+  const shown = useMemo(() => cls === "all" ? syms : syms.filter((s) => s.class === cls), [syms, cls]);
   const hitCount = shown.filter((s) => hits.has(s.symbol)).length;
-  const cellTitle = (s) => {
-    const h = hits.get(s.symbol);
-    const nums = ["class " + (s.class || "?"), "spread " + num2(s.spread_pct_atr) + "% of ATR",
-      "bar age " + num2(s.bar_age_min) + " min", "history " + num2(s.h1_days) + " d",
-      "tick vol " + num0(s.mean_tick_volume)];
-    return [s.symbol, ...nums, h ? "HIT " + h.strategy + " " + h.side + " (strength " + num2(h.strength) + ")" : "no hit this scan"].join("\n");
-  };
+
+  // A treemap, not a grid of squares: area carries a second measure (how much the
+  // symbol actually trades) and the label lives inside the tile, which is how a
+  // market map is read - shape first, then the number you came for.
+  const option = useMemo(() => {
+    const groups = new Map();
+    for (const s of shown) {
+      const g = s.class || "other";
+      if (!groups.has(g)) groups.set(g, []);
+      const h = hits.get(s.symbol);
+      groups.get(g).push({
+        name: s.symbol,
+        sym: s.symbol,
+        // Area is the class's share of the universe, one tile per symbol. Tick
+        // volume is not comparable across FX, indices and shares - sizing by it
+        // let two index tiles swallow the other 178.
+        value: 1,
+        tag: s[metric] == null ? "—" : num2(s[metric]) + meta.unit,
+        dir: h ? (h.side === "short" ? "S" : "L") : "",
+        itemStyle: {
+          color: heatRgb(heatFrac(s[metric], scale.lo, scale.hi, meta.worse)),
+          borderColor: h ? (h.side === "short" ? "#ff4d5e" : "#00ffa3") : "rgba(5,6,8,.9)",
+          borderWidth: h ? 1.5 : 1,
+        },
+      });
+    }
+    const data = [...groups.entries()]
+      .sort((a, b) => b[1].reduce((x, y) => x + y.value, 0) - a[1].reduce((x, y) => x + y.value, 0))
+      .map(([name, children]) => ({name, children}));
+    return {
+      backgroundColor: "transparent",
+      animationDuration: 260,
+      tooltip: {
+        backgroundColor: "#0b0e12", borderColor: "#28323f", textStyle: {color: "#e8f0f2", fontSize: 11},
+        formatter: (p) => {
+          if (!p.data || !p.data.sym) return p.name;
+          const s = shown.find((x) => x.symbol === p.data.sym) || {};
+          const h = hits.get(s.symbol);
+          const rows = [
+            ["class", s.class || "—"],
+            ["spread", num2(s.spread_pct_atr) + "% of ATR"],
+            ["bar age", num2(s.bar_age_min) + " min"],
+            ["history", num2(s.h1_days) + " d"],
+            ["tick volume", num0(s.mean_tick_volume)],
+          ];
+          const hit = h ? `<div style="color:${h.side === "short" ? "#ff4d5e" : "#00ffa3"};margin-top:4px">
+            ${h.side === "short" ? "▼ short" : "▲ long"} · ${h.strategy} · strength ${num2(h.strength)}</div>`
+            : `<div style="color:#5b6a79;margin-top:4px">tested, no hit this scan</div>`;
+          return `<div style="font:600 12px var(--font-mono,monospace);margin-bottom:4px">${s.symbol}</div>`
+            + rows.map(([k, v]) => `<div style="display:flex;gap:12px;justify-content:space-between">
+                <span style="color:#8b9bab">${k}</span><b>${v}</b></div>`).join("") + hit;
+        },
+      },
+      series: [{
+        type: "treemap",
+        roam: false,
+        nodeClick: false,
+        clickable: false,
+        breadcrumb: {show: false},
+        width: "100%",
+        height: "100%",
+        label: {
+          show: true, position: "inside", color: "#e8f0f2", fontSize: 10, lineHeight: 12,
+          // A dark outline keeps the symbol readable on the pale end of the ramp.
+          textBorderColor: "rgba(5,6,8,.85)", textBorderWidth: 2,
+          formatter: (p) => p.data && p.data.sym
+            ? (p.data.dir ? p.data.dir + " " + p.data.sym : p.data.sym)
+            : "",
+        },
+        upperLabel: {show: false},
+        itemStyle: {borderColor: "#050608", borderWidth: 1, gapWidth: 1},
+        levels: [
+          {itemStyle: {borderWidth: 2, gapWidth: 2, borderColor: "#050608"},
+           upperLabel: {show: true, height: 15, color: "#5b6a79", fontSize: 10}},
+        ],
+        data,
+      }],
+    };
+  }, [shown, metric, scale.lo, scale.hi, meta.unit, meta.worse, hits]);
+
   return html`<div className="contents">
-    <${Layers} data=${snap} />
-    <${Card} title="All symbols" note=${u.present ? num0(syms.length) + " in the universe · " + hitCount + " with a hit this scan" : "no universe on disk"}>
-      <div className="row wrap" style=${{alignItems: "center", gap: "var(--s3)", marginBottom: "var(--s3)"}}>
-        <label className="l-faint">colour by
+    <${Card} title="Market map" flush
+      note=${u.present ? num0(syms.length) + " symbols · " + hitCount + " hit · area = share of the universe, colour = " + meta.label : "no universe on disk"}>
+      <div className="row wrap" style=${{alignItems: "center", gap: "var(--s3)", padding: "var(--s2) var(--s3)", borderBottom: "1px solid var(--line)"}}>
+        <label className="l-faint">colour
           <select value=${metric} onChange=${(e) => setMetric(e.target.value)}>
             ${Object.entries(HEAT_METRICS).map(([k, m]) => html`<option key=${k} value=${k}>${m.label}</option>`)}
           </select></label>
@@ -1855,28 +1943,22 @@ function Heatmap({d, data}) {
           <select value=${cls} onChange=${(e) => setCls(e.target.value)}>
             ${classes.map((c) => html`<option key=${c} value=${c}>${c}</option>`)}
           </select></label>
-        <span className="l-faint">${num2(scale.lo)}${meta.unit} → ${num2(scale.hi)}${meta.unit} (p95, ${num0(scale.n)} measured)</span>
+        <span className="l-faint mono">${num2(scale.lo)}${meta.unit} → ${num2(scale.hi)}${meta.unit} · p95 of ${num0(scale.n)}</span>
+        <span className="spacer"></span>
+        <span className="legend">
+          <span><i style=${{background: heatRgb(0)}}></i>cheap</span>
+          <span><i style=${{background: heatRgb(0.5)}}></i></span>
+          <span><i style=${{background: heatRgb(1)}}></i>expensive</span>
+          <span><i style=${{background: "transparent", boxShadow: "inset 0 0 0 1.5px #00ffa3"}}></i>▲ long</span>
+          <span><i style=${{background: "transparent", boxShadow: "inset 0 0 0 1.5px #ff4d5e"}}></i>▼ short</span>
+          <span><i style=${{background: "rgba(139,155,171,.22)"}}></i>not measured</span>
+        </span>
       </div>
-      ${u.present && syms.length ? html`<div className="heatgrid">
-        ${shown.map((s) => {
-          const frac = heatFrac(s[metric], scale.lo, scale.hi, meta.worse);
-          const h = hits.get(s.symbol);
-          return html`<div key=${s.symbol} className=${"tile" + (h ? " hit" : "")}
-            style=${{background: heatRgb(frac)}} title=${cellTitle(s)}></div>`;
-        })}
-      </div>` : html`<${Empty} text="no universe on disk — run the rebuild" cmd="python make_liquid.py --top 120" />`}
-      <div className="legend" style=${{marginTop: "8px"}}>
-        <span><i style=${{background: heatRgb(0)}}></i>best</span>
-        <span><i style=${{background: heatRgb(0.5)}}></i></span>
-        <span><i style=${{background: heatRgb(1)}}></i>worst (${meta.worse === "low" ? "low" : "high"} ${meta.label})</span>
-        <span><i className="hit" style=${{background: "transparent"}}></i>ring = a tier-2 hit this scan</span>
-        <span className="l-faint">grey = not measured</span>
-      </div>
-      <div className="l-faint" style=${{fontSize: "11px", marginTop: "8px"}}>
-        Every symbol in the universe, coloured by one measured number. Hover a tile for all of them.
-        A symbol with no hit is not a symbol that was skipped — it was tested and did not trigger.
-      </div>
+      ${u.present && syms.length
+        ? html`<${Chart} option=${option} height=${470} />`
+        : html`<${Empty} text="no universe on disk — run the rebuild" cmd="python make_liquid.py --top 120" />`}
     <//>
+    <${Layers} data=${snap} />
   </div>`;
 }
 

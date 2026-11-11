@@ -285,9 +285,21 @@ test('a symbol without a measurement is grey, not green', () => {
   assert.notEqual(h.heatRgb(null), h.heatRgb(0));
 });
 
-test('the ramp runs green to red and never repeats a colour', () => {
-  const seen = new Set([0, 0.25, 0.5, 0.75, 1].map(h.heatRgb));
-  assert.equal(seen.size, 5);
-  assert.match(h.heatRgb(0), /rgba\(0,255,163/);
-  assert.match(h.heatRgb(1), /rgba\(255,65,23/);
+test('the ramp never repeats a colour', () => {
+  assert.equal(new Set([0, 0.25, 0.5, 0.75, 1].map(h.heatRgb)).size, 5);
+});
+
+test('the cost ramp is sequential and never borrows green or red', () => {
+  // Green and red mean direction on this page. A cost ramp in the same hues would
+  // make "short and expensive" and "short and cheap" the same tile.
+  const [cheap, mid, dear] = [h.heatRgb(0), h.heatRgb(0.5), h.heatRgb(1)];
+  const rgb = (s) => s.match(/\d+/g).map(Number);
+  assert.deepEqual(rgb(cheap), [13, 44, 54]);
+  assert.deepEqual(rgb(dear), [255, 180, 84]);
+  assert.ok(rgb(dear)[0] > rgb(mid)[0] && rgb(mid)[0] > rgb(cheap)[0], 'red channel rises');
+  for (const c of [cheap, mid, dear]) {
+    const [r, g, b] = rgb(c);
+    assert.ok(!(g > 180 && r < 90 && b < 180 && g > r + 80), 'no green stop: ' + c);
+    assert.ok(!(r > 200 && g < 90), 'no red stop: ' + c);
+  }
 });

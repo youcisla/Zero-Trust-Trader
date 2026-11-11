@@ -254,9 +254,10 @@ language. The default page is a **nine-stage flow canvas** (scheduler, pre-fligh
 tier 1, tier 2, correlation dedupe, tier 3, verdict, consent, supervisor) with
 live per-edge counts, a click-to-inspect drawer, zoom/pan/minimap and a ledger
 replay. Behind it: a verdict hero, an equity and drawdown series collected in
-memory, gate-margin and trials-activity heatmaps, a `#/heatmap` page that colours
-every symbol in the universe by one measured number and puts the engine, the
-desk and the decision model side by side, an outcome mix, the cumulative-trials burn-up with a what-if mirror of the bar, the
+memory, gate-margin and trials-activity heatmaps, a `#/heatmap` market map — a
+treemap of every symbol in the universe, area by asset class, colour by one
+measured number, green and red reserved for a long or a short — with the engine,
+the desk and the decision model side by side beneath it, an outcome mix, the cumulative-trials burn-up with a what-if mirror of the bar, the
 full parsed ledger, the desk's four-agent chain with every stored answer and what
 each role spent in tokens, and an
 alert rail derived on the server. The screenshot is the real thing running
