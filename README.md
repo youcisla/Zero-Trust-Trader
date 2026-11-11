@@ -564,4 +564,5 @@ the dashboard/diagnostics, not in static README examples.
 | [docs/LINEAGE.md](docs/LINEAGE.md) | the three attempts, and what each measured |
 | [docs/AUTONOMY.md](docs/AUTONOMY.md) | what runs without a human, and the three options |
 | [docs/ALTERNATIVES.md](docs/ALTERNATIVES.md) | the charting platforms, and why none changes the source |
+| [docs/PRIOR-ART.md](docs/PRIOR-ART.md) | other trading/agent software, what we took and what we refused |
 | [dashboard/API.md](dashboard/API.md) | every HTTP route and the snapshot contract |
