@@ -115,7 +115,7 @@ design, because a stop you cannot move without a second signature is a stop you
 cannot tighten when the market turns.
 
 Gates 3 and 4 are not redundant. The permutation test is per-instrument and does
-**not** correct for the scan: at 576 tests, a p-value of 0.015 is expected ~8
+**not** correct for the scan: at 568 tests, a p-value of 0.015 is expected ~8
 times per run. Passing one gate is not permission to trade.
 
 Gate 3 tests the win rate by default. `--t-gate` tests the **mean R** instead,
