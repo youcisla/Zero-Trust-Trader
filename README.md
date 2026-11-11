@@ -249,13 +249,14 @@ is also the data we can defend.
 
 ![Zero-Trust Trader dashboard](docs/dashboard.png)
 
-A Rust (Axum) server streaming to a React UI: six pages behind one design
+A Rust (Axum) server streaming to a React UI: seven pages behind one design
 language. The default page is a **nine-stage flow canvas** (scheduler, pre-flight,
 tier 1, tier 2, correlation dedupe, tier 3, verdict, consent, supervisor) with
 live per-edge counts, a click-to-inspect drawer, zoom/pan/minimap and a ledger
 replay. Behind it: a verdict hero, an equity and drawdown series collected in
-memory, gate-margin and trials-activity heatmaps, universe health tiles, an
-outcome mix, the cumulative-trials burn-up with a what-if mirror of the bar, the
+memory, gate-margin and trials-activity heatmaps, a `#/heatmap` page that colours
+every symbol in the universe by one measured number and puts the engine, the
+desk and the decision model side by side, an outcome mix, the cumulative-trials burn-up with a what-if mirror of the bar, the
 full parsed ledger, the desk's four-agent chain with every stored answer and what
 each role spent in tokens, and an
 alert rail derived on the server. The screenshot is the real thing running
@@ -424,7 +425,8 @@ $env:MT5_EXPECTED_LOGIN = Read-Host "Numeric demo account login"
 
 `MT5_EXPECTED_LOGIN` is read at call time: an exported value wins, and a `.env`
 beside the tree is the fallback (that is how the scheduler and the dashboard
-button satisfy the same pre-flight). `ZTT_LEDGER_KEY` and `DEEPSEEK_API_KEY`
+button satisfy the same pre-flight). `ZTT_LEDGER_KEY`, `DEEPSEEK_API_KEY` and the
+optional `OPENROUTER_API_KEY` (the decision-model layer)
 are consumed by their own components and may use the private `.env` file.
 `MT5_SERVER` and `ZTT_WINDOW_UTC` are not scanner settings; the window is a CLI
 argument and the actual account server is inspected by preflight. `.env.example`

@@ -282,6 +282,16 @@
   .tiles{display:flex;flex-wrap:wrap;gap:3px}
   .tile{width:16px;height:16px;border-radius:3px;border:1px solid var(--line);
     position:relative;cursor:default}
+  .kv{display:flex;justify-content:space-between;align-items:baseline;gap:10px;
+    padding:3px 0;border-bottom:1px solid rgba(139,155,171,.12);font-size:12px}
+  .kv span{color:var(--faint);font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+  .kv b{color:var(--foreground,#e8edf3);font-weight:600}
+  .heatgrid{display:flex;flex-wrap:wrap;gap:4px}
+  .heatgrid .tile{width:22px;height:22px;border-radius:4px}
+  .tile.hit{outline:1px solid rgba(232,237,243,.8);outline-offset:1px}
+  .bar{height:4px;border-radius:2px;background:rgba(139,155,171,.2);margin-top:10px;overflow:hidden}
+  .bar i{display:block;height:100%;background:var(--green, #00ffa3)}
+  .why{font-size:12px;line-height:1.45;color:var(--dim, #b6c2cf);margin-top:6px}
   .legend{display:flex;gap:var(--s3);flex-wrap:wrap;color:var(--faint);font-size:10.5px;align-items:center}
   .legend i{width:8px;height:8px;border-radius:2px;display:inline-block;margin-right:4px}
 
@@ -636,6 +646,24 @@ function todayStats(rows, nowS) {
     verdicts: mine.slice(0, 14),
   };
 }
+
+/* The heatmap's ramp, in one place. A grid that hard-codes its own red is how two
+   views end up disagreeing about which symbol is the expensive one. */
+const HEAT_METRICS = {
+  spread_pct_atr: {label: "spread, % of ATR", worse: "high", unit: "%"},
+  bar_age_min: {label: "bar age", worse: "high", unit: " min"},
+  mean_tick_volume: {label: "tick volume", worse: "low", unit: ""},
+  h1_days: {label: "history depth", worse: "low", unit: " d"},
+};
+// 0 = best, 1 = worst, null = not measured. `hi` is a percentile, not the maximum,
+// so one broken symbol does not turn the whole board green.
+const heatFrac = (v, lo, hi, worse) => {
+  if (v == null || !Number.isFinite(Number(v)) || !Number.isFinite(lo) || !Number.isFinite(hi) || hi <= lo) return null;
+  const f = Math.max(0, Math.min(1, (Number(v) - lo) / (hi - lo)));
+  return worse === "low" ? 1 - f : f;
+};
+const heatRgb = (frac) => frac == null ? "rgba(139,155,171,.18)"
+  : `rgba(${Math.round(frac * 255)},${Math.round(255 - frac * 190)},${Math.round(163 - frac * 140)},.78)`;
 
 // END fixture-tested state helpers
 /* ====================================================================== */
@@ -1734,9 +1762,128 @@ function FlowPage({d, data}) {
    App
    ====================================================================== */
 
+
+/* The three layers, side by side: what the engine computed, what the desk said,
+   and what the decision model answered. Each card states its own status — an
+   absent layer is a badge, never a zero. */
+function Layers({data}) {
+  const snap = data || {};   // the first paint has no snapshot yet
+  const agent = snap.agent || {};
+  const roles = agent.roles || {};
+  const jury = roles.jury || {};
+  const jev = agent.jev || {};
+  const t3 = snap.tier3 || {};
+  const sig = ((t3.results || [])[0] || {}).significance || {};
+  const prog = snap.progress || {};
+  const att = (jev.answers || {}).attention || {};
+  const grounded = (jev.answers || {}).grounded || {};
+  return html`<div className="grid g3">
+    <${Card} title="1 · Engine" note="arithmetic, no model">
+      <div className="kv"><span>last verdict</span><b>${prog.verdict || "—"}</b></div>
+      <div className="kv"><span>tests this scan</span><b>${num0(prog.tests)}</b></div>
+      <div className="kv"><span>cumulative trials</span><b>${num0(t3.trials_cumulative)}</b></div>
+      <div className="kv"><span>bar (corrected)</span><b>${num2(sig.z_crit_bonferroni)}</b></div>
+      <div className="l-faint" style=${{fontSize: "11px", marginTop: "8px"}}>
+        The gate is passed or it is not. Nothing in this card was written by a model.
+      </div>
+    <//>
+    <${Card} title="2 · Desk · deepseek" note=${agent.model || "no notes"}>
+      ${jury.status === "ok" ? html`<div className="kv"><span>verdict</span><b>${jury.verdict || "—"}</b></div>
+        <div className="why">${(jury.why || "").slice(0, 320)}</div>
+        ${(jury.conditions || []).length ? html`<div className="l-faint" style=${{fontSize: "11px", marginTop: "6px"}}>
+          action: ${(jury.conditions || []).join(" · ").slice(0, 220)}</div>` : null}`
+        : html`<${Empty} text=${jury.reason || "the desk has not run since this page was opened"} cmd="python agent_brief.py" />`}
+      <div className="l-faint" style=${{fontSize: "11px", marginTop: "8px"}}>
+        Generative: it reasons, writes the sentence, and may not size or approve.
+      </div>
+    <//>
+    <${Card} title="3 · Jev · decision model" note=${jev.model || "typesafe/jev-1.14"}>
+      ${jev.status === "ok" ? html`
+        <div className="kv"><span>attention</span><b>${att.choice || "—"}</b></div>
+        <div className="kv"><span>probability</span><b>${pct((att.probabilities || {})[att.choice])}</b></div>
+        <div className="kv"><span>confidence</span><b>${pct(att.confidence)}</b></div>
+        <div className="kv"><span>desk grounded</span><b>${grounded.choice || "—"}</b></div>
+        <div className="bar"><i style=${{width: Math.round(100 * ((att.probabilities || {})[att.choice] || 0)) + "%"}}></i></div>`
+        : html`<div className="kv"><span>status</span><b>${jev.status || "not run"}</b></div>
+          <div className="why">${jev.reason || "no decision-model call has been recorded yet"}</div>
+          <div className="l-faint" style=${{fontSize: "11px", marginTop: "6px"}}>
+            It would answer two typed questions — ${(jev.would_ask || ["attention", "grounded"]).join(", ")} —
+            with a label and probabilities, and no prose. Put OPENROUTER_API_KEY in .env; it is advisory and can never
+            gate, size or approve.</div>`}
+    <//>
+  </div>`;
+}
+
+function Heatmap({d, data}) {
+  const snap = data || {};
+  const u = snap.universe || {};
+  const syms = u.symbols || [];
+  const hits = useMemo(() => {
+    const m = new Map();
+    for (const h of (snap.tier2 && snap.tier2.all_hits) || []) m.set(h.symbol, h);
+    return m;
+  }, [data]);
+  const [metric, setMetric] = useState("spread_pct_atr");
+  const [cls, setCls] = useState("all");
+  const meta = HEAT_METRICS[metric] || HEAT_METRICS.spread_pct_atr;
+  // lo..p95 of the metric, over the symbols that actually carry it.
+  const scale = useMemo(() => {
+    const vals = syms.map((s) => s[metric]).filter((v) => v != null && Number.isFinite(Number(v)))
+      .map(Number).sort((a, b) => a - b);
+    if (!vals.length) return {lo: 0, hi: 1, n: 0};
+    return {lo: vals[0], hi: vals[Math.min(vals.length - 1, Math.floor(vals.length * 0.95))], n: vals.length};
+  }, [syms, metric]);
+  const classes = useMemo(() => ["all", ...new Set(syms.map((s) => s.class).filter(Boolean))], [syms]);
+  const shown = cls === "all" ? syms : syms.filter((s) => s.class === cls);
+  const hitCount = shown.filter((s) => hits.has(s.symbol)).length;
+  const cellTitle = (s) => {
+    const h = hits.get(s.symbol);
+    const nums = ["class " + (s.class || "?"), "spread " + num2(s.spread_pct_atr) + "% of ATR",
+      "bar age " + num2(s.bar_age_min) + " min", "history " + num2(s.h1_days) + " d",
+      "tick vol " + num0(s.mean_tick_volume)];
+    return [s.symbol, ...nums, h ? "HIT " + h.strategy + " " + h.side + " (strength " + num2(h.strength) + ")" : "no hit this scan"].join("\n");
+  };
+  return html`<div className="contents">
+    <${Layers} data=${snap} />
+    <${Card} title="All symbols" note=${u.present ? num0(syms.length) + " in the universe · " + hitCount + " with a hit this scan" : "no universe on disk"}>
+      <div className="row wrap" style=${{alignItems: "center", gap: "var(--s3)", marginBottom: "var(--s3)"}}>
+        <label className="l-faint">colour by
+          <select value=${metric} onChange=${(e) => setMetric(e.target.value)}>
+            ${Object.entries(HEAT_METRICS).map(([k, m]) => html`<option key=${k} value=${k}>${m.label}</option>`)}
+          </select></label>
+        <label className="l-faint">class
+          <select value=${cls} onChange=${(e) => setCls(e.target.value)}>
+            ${classes.map((c) => html`<option key=${c} value=${c}>${c}</option>`)}
+          </select></label>
+        <span className="l-faint">${num2(scale.lo)}${meta.unit} → ${num2(scale.hi)}${meta.unit} (p95, ${num0(scale.n)} measured)</span>
+      </div>
+      ${u.present && syms.length ? html`<div className="heatgrid">
+        ${shown.map((s) => {
+          const frac = heatFrac(s[metric], scale.lo, scale.hi, meta.worse);
+          const h = hits.get(s.symbol);
+          return html`<div key=${s.symbol} className=${"tile" + (h ? " hit" : "")}
+            style=${{background: heatRgb(frac)}} title=${cellTitle(s)}></div>`;
+        })}
+      </div>` : html`<${Empty} text="no universe on disk — run the rebuild" cmd="python make_liquid.py --top 120" />`}
+      <div className="legend" style=${{marginTop: "8px"}}>
+        <span><i style=${{background: heatRgb(0)}}></i>best</span>
+        <span><i style=${{background: heatRgb(0.5)}}></i></span>
+        <span><i style=${{background: heatRgb(1)}}></i>worst (${meta.worse === "low" ? "low" : "high"} ${meta.label})</span>
+        <span><i className="hit" style=${{background: "transparent"}}></i>ring = a tier-2 hit this scan</span>
+        <span className="l-faint">grey = not measured</span>
+      </div>
+      <div className="l-faint" style=${{fontSize: "11px", marginTop: "8px"}}>
+        Every symbol in the universe, coloured by one measured number. Hover a tile for all of them.
+        A symbol with no hit is not a symbol that was skipped — it was tested and did not trigger.
+      </div>
+    <//>
+  </div>`;
+}
+
 const ROUTES = [
   ["flow", "Flow", "1"], ["overview", "Overview", "2"], ["research", "Research", "3"],
   ["performance", "Performance", "4"], ["trials", "Trials", "5"], ["ops", "Ops", "6"],
+  ["heatmap", "Heatmap", "7"],
 ];
 const SUBS = {
   flow: "nine stages, and where the funnel stopped",
@@ -1745,6 +1892,7 @@ const SUBS = {
   performance: "what the account and the candidates did",
   trials: "every hypothesis ever tested, and the bar it set",
   ops: "health, alerts, and the raw files",
+  heatmap: "every symbol, three layers, and what each one said",
 };
 
 const ICONS = {
@@ -1973,6 +2121,7 @@ function App() {
         ${route === "performance" ? html`<${Performance} d=${d} data=${data} />` : null}
         ${route === "trials" ? html`<${Trials} d=${d} data=${data} />` : null}
         ${route === "ops" ? html`<${Ops} d=${d} data=${data} />` : null}
+        ${route === "heatmap" ? html`<${Heatmap} d=${d} data=${data} />` : null}
       </main>
     </div>
   </div>`;

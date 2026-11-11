@@ -462,6 +462,10 @@ fn universe(root: &Path) -> Value {
                 "class": s.get("class").cloned().unwrap_or(Value::Null),
                 "spread_pct_atr": s.get("spread_pct_atr").cloned().unwrap_or(Value::Null),
                 "mean_tick_volume": s.get("mean_tick_volume").cloned().unwrap_or(Value::Null),
+                // The heatmap needs a few more readings per symbol, and the builder
+                // already measured them: friction, history depth and staleness.
+                "h1_days": s.get("h1_days").cloned().unwrap_or(Value::Null),
+                "bar_age_min": s.get("bar_age_min").cloned().unwrap_or(Value::Null),
             })
         })
         .collect();

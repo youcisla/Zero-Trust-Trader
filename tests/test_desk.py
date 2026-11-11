@@ -586,5 +586,76 @@ class AnEscalationMustNameTheAction(unittest.TestCase):
         self.assertEqual(out["status"], "ok")
 
 
+class TheDecisionModelLayer(unittest.TestCase):
+    """A typed decision beside the verdict: no prose, no gate, and honest when absent."""
+
+    def setUp(self):
+        # Same shape as the desk's own test server: no network leaves the machine.
+        self.server = HTTPServer(("127.0.0.1", 0), _Handler)
+        threading.Thread(target=self.server.serve_forever, daemon=True).start()
+        self.url = f"http://127.0.0.1:{self.server.server_address[1]}/api/alpha/decisions"
+
+    def tearDown(self):
+        self.server.shutdown()
+        self.server.server_close()
+
+    def test_a_reply_yields_the_typed_answer_and_nothing_else(self):
+        out = desk.jev("cumulative=29999", {"verdict": "stand_down", "why": "gate refused"},
+                       "test-key", url=self.url)
+        self.assertEqual(out["status"], "ok")
+        att = out["answers"]["attention"]
+        self.assertEqual(att["choice"], "stand_down")
+        self.assertAlmostEqual(att["probabilities"]["stand_down"], 0.91)
+        self.assertNotIn("text", att)          # prose is not copied into the record
+        self.assertEqual(sorted(out["answers"]), ["attention", "grounded"])
+
+    def test_no_key_is_a_visible_absence_not_a_zero(self):
+        out = desk.jev("x", {}, None)
+        self.assertEqual(out["status"], "not configured")
+        self.assertIn("OPENROUTER_API_KEY", out["reason"])
+        self.assertEqual(out["would_ask"], ["attention", "grounded"])
+
+    def test_an_unreachable_endpoint_is_an_error_not_a_verdict(self):
+        out = desk.jev("x", {}, "test-key", url="http://127.0.0.1:9/api/alpha/decisions")
+        self.assertEqual(out["status"], "error")
+        self.assertNotIn("answers", out)
+
+    def test_the_desk_never_reads_it_back(self):
+        src = (Path(__file__).resolve().parents[1] / "desk.py").read_text(encoding="utf-8")
+        lines = [l for l in src.splitlines() if 'notes["jev"]' in l]
+        # Written once on success and once on failure, and never read back: if it
+        # were read, the layer would be a gate.
+        self.assertEqual(len(lines), 2, lines)
+        self.assertTrue(all('notes["jev"] =' in l for l in lines), lines)
+
+
+class _Handler(BaseHTTPRequestHandler):
+    def do_POST(self):  # noqa: N802 - the base class names it
+        length = int(self.headers.get("Content-Length", 0))
+        body = json.loads(self.rfile.read(length) or b"{}")
+        assert "questions" in body and "state" in body
+        payload = {
+            "model": "typesafe/jev-1.14-test",
+            "answers": {
+                "attention": {"type": "choice", "choice": "stand_down",
+                              "probabilities": {"show": 0.04, "stand_down": 0.91, "escalate": 0.05},
+                              "confidence": 0.91, "text": "should not survive"},
+                "grounded": {"type": "choice", "choice": "supported",
+                             "probabilities": {"supported": 0.88, "unsupported": 0.12},
+                             "confidence": 0.88},
+            },
+            "usage": {"input_tokens": 1200, "cost": 0.00005},
+        }
+        raw = json.dumps(payload).encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
+    def log_message(self, *a):
+        pass
+
+
 if __name__ == "__main__":
     unittest.main()

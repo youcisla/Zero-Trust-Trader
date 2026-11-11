@@ -132,6 +132,18 @@ belong in the refusal path of a system whose thesis is that we do not trade at
 78% confidence. If it is ever added, it is added the way a strategy family is
 added: measured against this tree's own claims first.
 
+**Implemented 2026-11-11 as the third layer, not as a gate.** `desk.jev()` sends
+the same digest and the desk's own verdict to `typesafe/jev-1.14` and asks two
+typed questions — *what deserves a person's attention* (show / stand_down /
+escalate) and *is the desk's verdict grounded in the figures it cites* — and
+records the choice, the probability and the confidence. Nothing reads the answer
+back: a test asserts the record is written and never consulted, so the layer
+cannot become a gate by accident. With no `OPENROUTER_API_KEY` the layer records
+`not configured` with the questions it would have asked, because an absent layer
+must be visible rather than zero. The comparison it enables is the point: the
+engine computes, the desk writes a sentence, the decision model returns a label
+and a probability, and all three sit on one page next to the same evidence.
+
 ---
 
 ## 3. The rankings, read 2026-11-11

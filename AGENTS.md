@@ -83,13 +83,15 @@ Rules that follow from this:
 - **The launchers are local-only.** `run_funnel.local.cmd` and
   `run_rebuild.local.cmd` pin `MT5_EXPECTED_LOGIN` and are excluded through
   `.git/info/exclude`; the tracked `run_funnel.cmd` stays portable and sanitised.
-- **The six pages answer six questions.** `#/flow` (default) is the nine-stage canvas
+- **The seven pages answer seven questions.** `#/flow` (default) is the nine-stage canvas
   — scheduler, pre-flight, tier 1, tier 2, correlation dedupe, tier 3, verdict,
   consent, supervisor — with per-edge counts and a click-to-inspect drawer.
   `#/overview` is "is it alive, what did it decide, what do I hold";
   `#/research` is the gate-margin and trials-activity evidence; `#/performance` is
   equity, drawdown and outcomes; `#/trials` is the accounting that sets the bar;
-  `#/ops` is health, alerts and the raw files. Keys `1`–`6` switch between them.
+  `#/ops` is health, alerts and the raw files; `#/heatmap` is every symbol in the universe as one
+measured number, with the engine, the desk and the decision model side by side. Keys `1`–`7` switch
+between them.
 - **The equity series is memory, not history.** `collector.rs` samples the resolved
   engine state once per second into three ring buffers (2 h @ 1 s, 48 h @ 30 s,
   14 d @ 5 min) and downsamples with LTTB on the way out. Nothing is persisted and

@@ -80,6 +80,15 @@ def main(argv=None) -> int:
             state = note.get("status", "ok")
             line = note.get("summary") or note.get("verdict") or note.get("reason") or ""
             print(f"  {role:<8} {state:<12} {str(line)[:110]}")
+        jv = notes.get("jev") or {}
+        if jv.get("status") == "ok":
+            answers = jv.get("answers") or {}
+            att = (answers.get("attention") or {})
+            print(f"  {'jev':<8} {'ok':<12} {att.get('choice', '?')} "
+                  f"(p {att.get('probabilities', {}).get(att.get('choice'), 0):.2f}, "
+                  f"confidence {att.get('confidence', 0):.2f}) - {jv.get('model')}")
+        else:
+            print(f"  {'jev':<8} {str(jv.get('status'))[:12]:<12} {jv.get('reason', '')[:110]}")
 
     audit.write("agent_brief", status=notes["status"], model=notes["model"],
                 facts_sha=notes["facts_sha"], feeds=len(feeds))

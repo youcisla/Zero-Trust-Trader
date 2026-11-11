@@ -71,6 +71,83 @@ def api_key(root: Path | None = None) -> str | None:
     return None
 
 
+def openrouter_key(root: Path | None = None) -> str | None:
+    """OpenRouter's key, needed only by the decision-model layer.
+
+    Same rule as `api_key`: environment first, then a local `.env`. Absent is not an
+    error - the layer records "not configured" and the desk runs without it.
+    """
+    k = os.environ.get("OPENROUTER_API_KEY", "").strip()
+    if k:
+        return k
+    try:
+        for line in ((root or Path.cwd()) / ".env").read_text(encoding="utf-8").splitlines():
+            if line.strip().startswith("OPENROUTER_API_KEY="):
+                return line.split("=", 1)[1].strip().strip('"').strip("'") or None
+    except OSError:
+        pass
+    return None
+
+
+JEV_URL = "https://openrouter.ai/api/alpha/decisions"
+JEV_MODEL = "typesafe/jev-1.14"
+# The questions are typed on purpose: a decision model answers from a fixed set and
+# returns probabilities, so it cannot invent a sentence or a number. They ask the
+# same thing the jury decides, which is what makes the two outputs comparable.
+JEV_QUESTIONS = {
+    "attention": {
+        "type": "choice",
+        "instructions": "Given this scan and the desk's reading of it, what deserves a person's attention now?",
+        "criteria": {
+            "show": "one candidate is worth a human's attention, with its own numbers",
+            "stand_down": "nothing here deserves a human's attention; the gate refused everything",
+            "escalate": "a person must act before anything else happens",
+        },
+    },
+    "grounded": {
+        "type": "choice",
+        "instructions": "Is the desk's verdict supported by the figures it cites, with no figure it invented?",
+        "criteria": {
+            "supported": "every claim follows from the figures in the state, and nothing is contradicted",
+            "unsupported": "the verdict cites a figure absent from the state, contradicts one, or answers a different question",
+        },
+    },
+}
+
+
+def jev(facts: str, desk_view: dict, key: str | None, *, url: str = JEV_URL,
+        timeout: int = 30) -> dict:
+    """A typed decision on the same evidence the jury saw.
+
+    Advisory only: it returns a label and probabilities, never prose, and nothing in
+    this file reads its answer back into a verdict, a size or a gate. `status` is
+    `ok`, `not configured` or `error` - a decision model that is not reachable is a
+    visible absence, not a silent zero.
+    """
+    if not key:
+        return {"status": "not configured", "model": JEV_MODEL,
+                "reason": "OPENROUTER_API_KEY is not set (env or .env)",
+                "would_ask": sorted(JEV_QUESTIONS)}
+    payload = {"model": JEV_MODEL, "state": facts[-12000:] + "\n\nDESK VIEW:\n"
+               + json.dumps(desk_view, ensure_ascii=False)[:4000],
+               "questions": JEV_QUESTIONS}
+    try:
+        doc = _post(payload, key, url=url, timeout=timeout)
+    except DeskError as e:
+        return {"status": "error", "model": JEV_MODEL, "reason": str(e)}
+    answers = doc.get("answers") or {}
+    out = {"status": "ok", "model": doc.get("model") or JEV_MODEL,
+           "usage": doc.get("usage") or {}, "answers": {}}
+    for name in JEV_QUESTIONS:
+        a = answers.get(name) or {}
+        # Only the typed fields are copied: a provider that added prose to the
+        # response does not get to smuggle it into the record.
+        out["answers"][name] = {
+            k: a[k] for k in ("type", "choice", "probabilities", "confidence") if k in a
+        } or {"missing": True}
+    return out
+
+
 class _NoRedirect(urllib.request.HTTPRedirectHandler):
     """A redirect is how a trusted URL becomes an untrusted one on the next hop."""
 
@@ -596,6 +673,16 @@ def run(root: Path, feeds: list[str] | None = None, model: str | None = None) ->
     except DeskError as e:
         notes["roles"]["jury"] = {"agent": "jury", "status": "error", "reason": str(e)}
     role_meta["jury"] = dict(meta)
+
+    # Third layer: a System One model answers two typed questions on the same
+    # evidence. Advisory and recorded beside the verdict - nothing below reads it.
+    verdict_note = notes["roles"].get("jury") or {}
+    try:
+        notes["jev"] = jev(facts, {"verdict": verdict_note.get("verdict"),
+                                   "why": verdict_note.get("why") or ""},
+                           openrouter_key(root))
+    except Exception as e:  # a layer that fails must not take the desk with it
+        notes["jev"] = {"status": "error", "model": JEV_MODEL, "reason": str(e)}
 
     # `meta` after the loop is the jury's call, or {} if the jury errored - so
     # "what model actually served" used to be empty or last-caller-biased even

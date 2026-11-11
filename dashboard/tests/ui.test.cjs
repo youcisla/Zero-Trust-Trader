@@ -16,7 +16,8 @@ const helpers = source.split('// BEGIN fixture-tested state helpers')[1]
 
 const EXPORTS = ['scanCurrent', 'transportFresh', 'protectionLabel', 'parseFunnel', 'lastFunnel',
   'ledgerRows', 'pipeline', 'edgeCounts', 'edgeStates', 'computeDrawdown', 'bonferroniMirror',
-  'sessionState', 'derive', 'fmtDur', 'fmtTok', 'todayStats', 'num2', 'signed', 'backoffMs'];
+  'sessionState', 'derive', 'fmtDur', 'fmtTok', 'todayStats', 'num2', 'signed', 'backoffMs',
+  'heatFrac', 'heatRgb', 'HEAT_METRICS'];
 
 function load() {
   return vm.runInNewContext(helpers + '\n({' + EXPORTS.join(',') + '})', {});
@@ -259,4 +260,34 @@ test('historical is a fact about the artifacts, not a guess', () => {
   const stale = h.derive({scan: {current: false}, tier3: {stood_down: true}}, true, 0);
   assert.equal(stale.historical, true);
   assert.equal(stale.verdict, null, 'a stale artifact is never shown as the verdict');
+});
+
+/* ---- the heatmap ramp ------------------------------------------------ */
+
+test('the ramp is one scale for every metric', () => {
+  assert.deepEqual(Object.keys(h.HEAT_METRICS).sort(),
+    ['bar_age_min', 'h1_days', 'mean_tick_volume', 'spread_pct_atr']);
+  // worse = high: the largest value is the worst colour
+  assert.equal(h.heatFrac(0, 0, 10, 'high'), 0);
+  assert.equal(h.heatFrac(10, 0, 10, 'high'), 1);
+  // worse = low: it inverts, because a thin history is the risk
+  assert.equal(h.heatFrac(0, 0, 10, 'low'), 1);
+  assert.equal(h.heatFrac(10, 0, 10, 'low'), 0);
+  // clamped, and a flat scale is not a division
+  assert.equal(h.heatFrac(20, 0, 10, 'high'), 1);
+  assert.equal(h.heatFrac(0, 5, 5, 'high'), null);
+});
+
+test('a symbol without a measurement is grey, not green', () => {
+  assert.equal(h.heatFrac(null, 0, 10, 'high'), null);
+  assert.equal(h.heatFrac('nope', 0, 10, 'high'), null);
+  assert.match(h.heatRgb(null), /139,155,171/);
+  assert.notEqual(h.heatRgb(null), h.heatRgb(0));
+});
+
+test('the ramp runs green to red and never repeats a colour', () => {
+  const seen = new Set([0, 0.25, 0.5, 0.75, 1].map(h.heatRgb));
+  assert.equal(seen.size, 5);
+  assert.match(h.heatRgb(0), /rgba\(0,255,163/);
+  assert.match(h.heatRgb(1), /rgba\(255,65,23/);
 });
