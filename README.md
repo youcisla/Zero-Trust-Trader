@@ -219,6 +219,7 @@ scheduled — they answer a question on demand.
 | `check_public.py` | refuse to publish a machine path, a login or a key prefix |
 | `check_docs.py` | refuse to ship a README, a map or a mémoire that describe the tree as it was |
 | `export_desk_history.py` | publish the desk's answers as `docs/desk-history.jsonl`; the live SQLite stays local |
+| `desk_scorecard.py` | what the desk decided and how often a note survived the guard; reads `desk_history.sqlite` read-only |
 
 `batch_backtest.py`, `broker_math.py`, `vol_dispersion.py` and `exit_policy_ab.py`
 need the **MT5 terminal on Windows** — they read live bars, so they fail with

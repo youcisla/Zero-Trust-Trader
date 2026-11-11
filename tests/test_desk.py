@@ -7,6 +7,7 @@ shape and the citation guard are tested without a DeepSeek key.
 import json
 import os
 import threading
+import tempfile
 import unittest
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from pathlib import Path
@@ -518,6 +519,37 @@ class ThousandsSeparators(unittest.TestCase):
         out = desk._guard(note, "cumulative=21854 z_crit_corrected=4.72")
         self.assertEqual(out["status"], "rejected")
         self.assertIn("9.99", out["reason"])
+
+
+class TheDigestExplainsItsOwnNumbers(unittest.TestCase):
+    """The jury escalated on 34 of 45 judged runs before the legend existed.
+
+    Every one of those escalations compared two figures that mean different things:
+    tier2's close against tier3's live quote a few seconds later, or
+    significance.z against permutation.actual_z. The digest showed both without
+    saying which was which, so the model did the reasonable thing with what it had.
+    """
+
+    def test_the_legend_leads_the_digest(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "funnel_history.log").write_text("2026-11-11T16:58:19Z | universe=1\n", encoding="utf-8")
+            self.assertTrue(desk.digest(root).startswith(desk.FIELD_LEGEND))
+            self.assertIn("TWO stages", desk.digest(root))
+
+    def test_the_legend_does_not_license_a_number_nobody_measured(self):
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            (root / "funnel_history.log").write_text("cumulative=29999\n", encoding="utf-8")
+            src = desk.digest(root)
+            note = {"agent": "chief", "summary": "cumulative 29999 at 44444",
+                    "contradictions": [], "watch": "none"}
+            self.assertEqual(desk.uncited(note, src), ["44444"])
+
+    def test_the_two_prompts_that_hunt_contradictions_know_it(self):
+        self.assertIn("FIELD LEGEND", desk.JURY_SYS)
+        self.assertIn("FIELD LEGEND", desk.CHIEF_SYS)
+        self.assertIn("not a contradiction", desk.FIELD_LEGEND)
 
 
 if __name__ == "__main__":

@@ -317,9 +317,25 @@ def _guard(note: dict, source: str, expected_role: str | None = None) -> dict:
 
 # ---------------------------------------------------------------- the facts
 
+FIELD_LEGEND = """FIELD LEGEND - read this before calling anything a contradiction.
+It is not a contradiction if a line here explains it:
+- ONE scan, TWO stages. tier2 wrote all_hits at the signal; tier3 re-read the live
+  quote seconds later into current. A close in all_hits and a reference_bid in
+  current are the same instrument at two moments: a few ticks apart is a clock.
+- DEDUPE. tier2.deduped is the LIST of pairs removed on this scan; the ledger's
+  deduped=N is that list's length, so an empty list and deduped=0 agree. Both vary
+  scan to scan; a difference between scans is not a contradiction.
+- "z" NAMES TWO STATISTICS. significance.z is the win-rate z; significance.t_stat_R
+  is the mean-net-R statistic; permutation.actual_z repeats t_stat_R as the
+  permutation saw it. Only t_stat_R is compared with z_crit_bonferroni.
+- ENGINE generated_utc is when the supervisor last wrote and may be older than the
+  scan: an idle supervisor, not a disagreement.
+"""
+
+
 def digest(root: Path) -> str:
     """The only thing an agent is allowed to know. Text, because it is audited."""
-    parts = []
+    parts = [FIELD_LEGEND]
     ledger = root / "funnel_history.log"
     if ledger.exists():
         try:
@@ -395,8 +411,10 @@ SKEPTIC_SYS = (
 
 CHIEF_SYS = (
     "You are the chief of staff on a research desk. Summarise what the scan actually did, in "
-    "plain English, for an operator who will read one paragraph. Name any contradiction between "
-    "the artifacts. Quote figures exactly as given; never compute or estimate one. You do not "
+    "plain English, for an operator who will read one paragraph. Name a contradiction only when "
+    "the FIELD LEGEND does not explain it - two stages measuring the same thing at different "
+    "moments, or two different statistics, are not one. Quote figures exactly as given; never "
+    "compute or estimate one. You do not "
     "recommend trades and you never state that a candidate should be executed. "
     "Reply ONLY with JSON: {\"agent\":\"chief\",\"summary\":str,\"contradictions\":[str],"
     "\"watch\":str}."
@@ -406,6 +424,9 @@ CHIEF_SYS = (
 JURY_SYS = (
     "You are the final judge on a research desk, and the last voice before a human decides. "
     "You receive the scan facts, the risk officer's objection and the chief's summary. "
+    "Escalate only for a disagreement the FIELD LEGEND does not explain: an unreconciled "
+    "figure that changes what the numbers mean, or the same quantity at the same moment "
+    "reported two ways. Two stages of one scan, or two different statistics, are not that. "
     "Return the desk's verdict for today: \"stand_down\" (nothing here is worth a human's time), "
     "\"escalate\" (a human should look before anything else happens) or \"propose\" (one candidate is "
     "worth showing to the operator). You never place, approve or cancel an order: a human types "

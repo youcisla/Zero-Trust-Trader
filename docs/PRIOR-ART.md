@@ -212,11 +212,26 @@ runs found in total.*
 Rule for the next audit here: keep the ledger, split finder from verifier, and do
 not present one pass as coverage.
 
-### Adopted today
+### Adopted: the scorecard, and the legend it exposed
 
-Nothing new. Every relevant entry is either already installed or a protocol for the
-next change — which is the correct outcome of reading a ranking: it maps the
-industry, it does not set the backlog.
+The survey's one gap — a decision log that is never settled — became
+`tools/desk_scorecard.py`, and building it immediately paid for itself. It showed
+that the jury had escalated on **34 of 45 judged runs (76%)**, including six in a
+row. That is not a desk exercising judgement; it is a desk with a stuck gate.
+
+The reasons were all the same shape: `tier2` close against `tier3` reference_bid a
+few seconds later, `significance.z` against `permutation.actual_z`, an empty
+`deduped` list against a ledger count of 0. Every one of those pairs is two
+different things, and the digest showed them as raw JSON with nothing saying so —
+so the model, told to name contradictions, named the only differences it could
+find. The fix is a `FIELD LEGEND` at the top of the digest that says which figure
+is which moment and which statistic, and one sentence in the chief and jury
+prompts: a disagreement the legend explains is not a contradiction.
+
+Measured once after the change: `stand_down`, zero chief contradictions, and a
+`why` that cites the legend by name ("the two-statistic difference the legend
+covers"). One run is a direction, not a result — the scorecard is the instrument
+that will settle it.
 
 ---
 
