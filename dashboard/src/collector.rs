@@ -73,9 +73,7 @@ impl Collector {
     /// an event is what it says, not when it was last seen.
     pub fn event(&mut self, ts: i64, kind: &str, label: &str, scan_id: Option<&str>) {
         let dup = self.events.back().is_some_and(|e| {
-            e["kind"] == json!(kind)
-                && e["label"] == json!(label)
-                && e["scan_id"] == json!(scan_id)
+            e["kind"] == json!(kind) && e["label"] == json!(label) && e["scan_id"] == json!(scan_id)
         });
         if dup {
             return;
@@ -116,14 +114,26 @@ pub fn human_age(secs: i64) -> String {
     }
     let m = n / 60;
     if n < 3600 {
-        return if n % 60 == 0 { format!("{m}m") } else { format!("{m}m {}s", n % 60) };
+        return if n % 60 == 0 {
+            format!("{m}m")
+        } else {
+            format!("{m}m {}s", n % 60)
+        };
     }
     let h = m / 60;
     if h < 24 {
-        return if m % 60 == 0 { format!("{h}h") } else { format!("{h}h {}m", m % 60) };
+        return if m % 60 == 0 {
+            format!("{h}h")
+        } else {
+            format!("{h}h {}m", m % 60)
+        };
     }
     let d = h / 24;
-    if h % 24 == 0 { format!("{d}d") } else { format!("{d}d {}h", h % 24) }
+    if h % 24 == 0 {
+        format!("{d}d")
+    } else {
+        format!("{d}d {}h", h % 24)
+    }
 }
 
 /// Keep the last sample per bucket and drop anything older than `keep_s`.

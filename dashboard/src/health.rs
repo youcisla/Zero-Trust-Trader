@@ -34,7 +34,12 @@ fn age_of(path: &Path) -> Option<i64> {
     if !m.is_file() {
         return None;
     }
-    let modified = m.modified().ok()?.duration_since(UNIX_EPOCH).ok()?.as_secs() as i64;
+    let modified = m
+        .modified()
+        .ok()?
+        .duration_since(UNIX_EPOCH)
+        .ok()?
+        .as_secs() as i64;
     // A file with a future mtime (clock skew, a copy) reports 0 rather than a
     // negative age that would render as "-3s old".
     Some((now() - modified).max(0))
@@ -68,14 +73,12 @@ pub fn maintenance(root: &Path) -> Value {
     let Some(age_s) = age_of(&p) else {
         return json!({"active": false, "age_min": null, "note": null});
     };
-    let note = std::fs::read_to_string(&p)
-        .ok()
-        .and_then(|t| {
-            t.lines()
-                .map(str::trim)
-                .find(|l| !l.is_empty())
-                .map(|l| l.chars().take(200).collect::<String>())
-        });
+    let note = std::fs::read_to_string(&p).ok().and_then(|t| {
+        t.lines()
+            .map(str::trim)
+            .find(|l| !l.is_empty())
+            .map(|l| l.chars().take(200).collect::<String>())
+    });
     json!({
         "active": true,
         "age_min": age_s / 60,
@@ -206,18 +209,19 @@ mod tests {
     use super::*;
     use std::io::Write;
 
-/// A unique directory under the OS temp dir. Deliberately not `tempfile`: adding a
-/// dev-dependency would need a registry round-trip, and `cargo test --locked
-/// --offline` has to keep working on a machine with no network.
-fn tmpdir(tag: &str) -> std::path::PathBuf {
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let p = std::env::temp_dir().join(format!("ztt-test-{}-{}-{}", tag, std::process::id(), nanos));
-    std::fs::create_dir_all(&p).expect("temp dir");
-    p
-}
+    /// A unique directory under the OS temp dir. Deliberately not `tempfile`: adding a
+    /// dev-dependency would need a registry round-trip, and `cargo test --locked
+    /// --offline` has to keep working on a machine with no network.
+    fn tmpdir(tag: &str) -> std::path::PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let p =
+            std::env::temp_dir().join(format!("ztt-test-{}-{}-{}", tag, std::process::id(), nanos));
+        std::fs::create_dir_all(&p).expect("temp dir");
+        p
+    }
 
     struct Dir(std::path::PathBuf);
     impl Dir {
@@ -257,9 +261,20 @@ fn tmpdir(tag: &str) -> std::path::PathBuf {
                 "chief": {"status": "error", "reason": "HTTP 401 from the model endpoint"}
             }
         });
-        let a = alerts(false, None, true, None, None, Some(&agent),
-                       &serde_json::json!({"active": false}), false);
-        let hit = a.as_array().unwrap().iter()
+        let a = alerts(
+            false,
+            None,
+            true,
+            None,
+            None,
+            Some(&agent),
+            &serde_json::json!({"active": false}),
+            false,
+        );
+        let hit = a
+            .as_array()
+            .unwrap()
+            .iter()
             .find(|x| x["id"] == "desk_error")
             .expect("the failure must surface");
         assert_eq!(hit["severity"], "bad");
@@ -285,7 +300,16 @@ fn tmpdir(tag: &str) -> std::path::PathBuf {
 
     #[test]
     fn no_engine_raises_a_missing_alert_not_a_stale_one() {
-        let a = alerts(false, None, true, None, None, None, &json!({"active": false}), false);
+        let a = alerts(
+            false,
+            None,
+            true,
+            None,
+            None,
+            None,
+            &json!({"active": false}),
+            false,
+        );
         let ids: Vec<&str> = a
             .as_array()
             .unwrap()
@@ -300,7 +324,16 @@ fn tmpdir(tag: &str) -> std::path::PathBuf {
     #[test]
     fn a_failing_engine_and_a_failed_scan_both_surface() {
         let row = json!({"verdict": "FAILED", "detail": "preflight", "ts": "2026-11-10T09:00:00Z", "signed": true});
-        let a = alerts(true, Some(5), false, Some("mt5 init failed"), Some(&row), None, &json!({"active": false}), true);
+        let a = alerts(
+            true,
+            Some(5),
+            false,
+            Some("mt5 init failed"),
+            Some(&row),
+            None,
+            &json!({"active": false}),
+            true,
+        );
         let text = a.to_string();
         assert!(text.contains("engine_refusing"));
         assert!(text.contains("mt5 init failed"));
@@ -311,7 +344,16 @@ fn tmpdir(tag: &str) -> std::path::PathBuf {
     #[test]
     fn an_unsigned_row_is_reported_as_unverified() {
         let row = json!({"verdict": "STAND_DOWN", "signed": false, "ts": "2026-11-10T09:00:00Z"});
-        let a = alerts(true, Some(1), true, None, Some(&row), None, &json!({"active": false}), true);
+        let a = alerts(
+            true,
+            Some(1),
+            true,
+            None,
+            Some(&row),
+            None,
+            &json!({"active": false}),
+            true,
+        );
         assert!(a.to_string().contains("ledger_unsigned"));
     }
 

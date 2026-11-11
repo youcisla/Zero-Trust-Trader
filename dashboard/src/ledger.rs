@@ -73,7 +73,10 @@ impl Row {
 /// never become a fabricated scan.
 /// The canonical verdict word if `s` starts with one.
 fn verdict_word(s: &str) -> Option<&'static str> {
-    let first = s.trim_start().split(|c: char| c.is_whitespace() || c == ':').next()?;
+    let first = s
+        .trim_start()
+        .split(|c: char| c.is_whitespace() || c == ':')
+        .next()?;
     match first {
         "STAND_DOWN" => Some("STAND_DOWN"),
         "WINNER" => Some("WINNER"),
@@ -120,12 +123,7 @@ pub fn parse_line(line: &str) -> Option<Row> {
     }
 
     let num = |k: &str| fields.get(k).and_then(Value::as_i64);
-    let text = |k: &str| {
-        fields
-            .get(k)
-            .and_then(Value::as_str)
-            .map(|s| s.to_string())
-    };
+    let text = |k: &str| fields.get(k).and_then(Value::as_str).map(|s| s.to_string());
 
     // The verdict segment: a word, optional ":" payload, optional " sig=..." suffix.
     let signed = tail.split_whitespace().any(|t| t.starts_with("sig="));
@@ -265,19 +263,19 @@ pub fn snapshot(path: &Path) -> Value {
 mod tests {
     use super::*;
 
-/// A unique directory under the OS temp dir. Deliberately not `tempfile`: adding a
-/// dev-dependency would need a registry round-trip, and `cargo test --locked
-/// --offline` has to keep working on a machine with no network.
-fn tmpdir(tag: &str) -> std::path::PathBuf {
-    let nanos = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos())
-        .unwrap_or(0);
-    let p = std::env::temp_dir().join(format!("ztt-test-{}-{}-{}", tag, std::process::id(), nanos));
-    std::fs::create_dir_all(&p).expect("temp dir");
-    p
-}
-
+    /// A unique directory under the OS temp dir. Deliberately not `tempfile`: adding a
+    /// dev-dependency would need a registry round-trip, and `cargo test --locked
+    /// --offline` has to keep working on a machine with no network.
+    fn tmpdir(tag: &str) -> std::path::PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let p =
+            std::env::temp_dir().join(format!("ztt-test-{}-{}-{}", tag, std::process::id(), nanos));
+        std::fs::create_dir_all(&p).expect("temp dir");
+        p
+    }
 
     const STAND_DOWN: &str = "2026-11-10T10:29:41Z | universe=120 tested=119 strategies=2 total_tests=238 triggering=15 deduped=1 shortlist=4 passed_both=0 trials=238 cumulative=11080 scan_id=3844a179ea804ddc98fceebca6b4cb0d permutations=1000 | STAND_DOWN sig=f9459ce5323cb7fa";
 
@@ -288,7 +286,10 @@ fn tmpdir(tag: &str) -> std::path::PathBuf {
         assert_eq!(r.universe, Some(120));
         assert_eq!(r.total_tests, Some(238));
         assert_eq!(r.cumulative, Some(11080));
-        assert_eq!(r.scan_id.as_deref(), Some("3844a179ea804ddc98fceebca6b4cb0d"));
+        assert_eq!(
+            r.scan_id.as_deref(),
+            Some("3844a179ea804ddc98fceebca6b4cb0d")
+        );
         assert!(r.signed);
         assert!(r.winners.is_empty());
     }
@@ -312,7 +313,8 @@ fn tmpdir(tag: &str) -> std::path::PathBuf {
 
     #[test]
     fn a_failed_row_keeps_the_stage_that_failed() {
-        let line = "2026-11-09T21:28:53Z | universe=0 tested=0 total_tests=0 | FAILED preflight sig=aa";
+        let line =
+            "2026-11-09T21:28:53Z | universe=0 tested=0 total_tests=0 | FAILED preflight sig=aa";
         let r = parse_line(line).expect("row");
         assert_eq!(r.verdict, "FAILED");
         assert_eq!(r.detail.as_deref(), Some("preflight"));

@@ -668,10 +668,13 @@ function CopyBtn({which, label, onCopy}) {
 function LogPane({lines, missing, raw, onCopy, which}) {
   if (missing) return html`<${Empty} text=${"no " + which + " on disk — the engine has not written it yet"} />`;
   if (!lines || !lines.length) return html`<${Empty} text="the file exists and is empty" />`;
-  const errIdx = lines.findIndex((l) => /ERROR|FAILED|refus/i.test(l) && !/RECOVERED/.test(l));
+  // The tail is read oldest-first; the caption promises newest-first. Reverse
+  // here, then dim what is OLDER than the newest error rather than newer.
+  const shown = lines.slice().reverse();
+  const errIdx = shown.findIndex((l) => /ERROR|FAILED|refus/i.test(l) && !/RECOVERED/.test(l));
   return html`<div>
-    <pre className="log">${lines.map((l, i) => html`<div key=${i}
-      className=${errIdx >= 0 && i < errIdx ? "old" : errIdx === i ? "err" : ""}>${l}</div>`)}</pre>
+    <pre className="log">${shown.map((l, i) => html`<div key=${i}
+      className=${errIdx >= 0 && i > errIdx ? "old" : errIdx === i ? "err" : ""}>${l}</div>`)}</pre>
     <div className="trunc">newest first · showing ${lines.length} lines from a bounded tail${raw ? " · raw" : ""}
       ${onCopy ? html` <${CopyBtn} which=${which} onCopy=${onCopy} label="copy" />` : null}</div>
   </div>`;
@@ -1126,14 +1129,14 @@ function Inspector({id, d, onClose}) {
         return html`<div>
           <p className="l-dim">A human types APPROVED in the terminal; the bridge issues a single-use
           token with an idempotency key. Nothing on this screen can approve, size or place anything.</p>
-          ${(d.mcp || []).slice(0, 8).map((l, i) => html`<div key=${i} className="mono l-faint" style=${{fontSize: "10.5px"}}>${l}</div>`)}
+          ${(d.mcp || []).slice(-8).reverse().map((l, i) => html`<div key=${i} className="mono l-faint" style=${{fontSize: "10.5px"}}>${l}</div>`)}
         </div>`;
       case "supervisor":
         return html`<div>
           <p className="l-dim">${protectionLabel(d, d.engine_age_s, true)}</p>
           <p className="l-faint">Trails stops, moves to break-even, closes at session end. It cannot open,
           enlarge or reverse a position.</p>
-          ${(d.actions || []).slice(0, 10).map((l, i) => html`<div key=${i} className="mono l-faint" style=${{fontSize: "10.5px"}}>${l}</div>`)}
+          ${(d.actions || []).slice(-10).reverse().map((l, i) => html`<div key=${i} className="mono l-faint" style=${{fontSize: "10.5px"}}>${l}</div>`)}
         </div>`;
       default:
         return null;
@@ -1690,15 +1693,17 @@ function FlowPage({d, data}) {
   // A live canvas is unreadable while a scan is running: nodes change under the
   // cursor. Freezing holds the snapshot you were looking at; the strip under the
   // canvas says so, and resume is the only way back to live.
+  // {data, at}: the label used to call new Date() on every render, so the
+  // "held snapshot from ..." time advanced with the clock.
   const [frozen, setFrozen] = useState(null);
-  const view = frozen || data;
-  const dd = frozen ? derive(frozen, true, 0) : d;
+  const view = frozen ? frozen.data : data;
+  const dd = frozen ? derive(frozen.data, true, 0) : d;
   const prog = view && view.progress;
   return html`<div className="contents">
     <${FlowCanvas} d=${view || {}} sel=${sel} onSelect=${setSel}
-      frozen=${!!frozen} onFreeze=${() => setFrozen(frozen ? null : (data || null))} />
+      frozen=${!!frozen} onFreeze=${() => setFrozen(frozen ? null : {data: data || null, at: new Date()})} />
     ${frozen ? html`<div className="l-warn" style=${{fontSize: "11px"}}>
-      frozen — held snapshot from ${new Date().toLocaleTimeString()}; the engine keeps running.
+      frozen — held snapshot from ${frozen.at.toLocaleTimeString()}; the engine keeps running.
     </div>` : null}
     <div className="grid g2">
       <${Card} title="Verdict" note=${dd.scanId ? "scan " + String(dd.scanId).slice(0, 8) : "no scan"}>
@@ -1752,7 +1757,11 @@ const ICONS = {
 };
 
 function useRoute() {
-  const read = () => (location.hash.replace(/^#\/?/, "") || "flow");
+  // An unknown hash used to render an empty <main> with the topbar saying "Flow".
+  const read = () => {
+    const h = location.hash.replace(/^#\/?/, "") || "flow";
+    return ROUTES.some(([k]) => k === h) ? h : "flow";
+  };
   const [route, setRoute] = useState(read);
   useEffect(() => {
     const on = () => setRoute(read());
@@ -1850,7 +1859,12 @@ function App() {
     const on = () => {
       if (document.visibilityState !== "visible") return;
       fetch("/api/snapshot").then((r) => r.json()).then((j) => {
-        if (j && typeof j.ts === "number") { setData(j); receivedAt.current = Date.now(); setElapsed(0); setLink("live"); }
+        // The server returns its last-good snapshot even when the watch loop is
+        // wedged, so a fresh fetch is not fresh data: gate on the snapshot's own
+        // age, or stale numbers get a live badge.
+        const fresh = j && typeof j.ts === "number" && (Date.now() / 1000) - j.ts < 10;
+        if (fresh) { setData(j); receivedAt.current = Date.now(); setElapsed(0); setLink("live"); }
+        else setLink("stale");
       }).catch(() => {});
     };
     document.addEventListener("visibilitychange", on);

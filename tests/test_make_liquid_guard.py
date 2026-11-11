@@ -2,42 +2,40 @@
 
 A `--top 1` probe once replaced 188 symbols with EURUSD and nothing complained:
 the next scan tested one symbol and reported STAND_DOWN as though the market had
-narrowed to a currency pair. The guard is one inequality, and it is asserted here
-against the source as well, because the way this test fails to help is the guard
-quietly disappearing from `make_liquid.py`.
+narrowed to a currency pair. The guard is one inequality, and this test calls the
+function that applies it — re-implementing the arithmetic in the test is how a
+`<` becomes `<=` in production and the suite stays green.
 """
+import sys
 import unittest
 from pathlib import Path
 
-SRC = (Path(__file__).resolve().parents[1] / "make_liquid.py").read_text(encoding="utf-8")
-
-
-def refuses(picked: int, before: int, force: bool = False) -> bool:
-    """The same inequality `make_liquid._main` applies before writing."""
-    if not picked:
-        return True
-    return bool(before and picked * 2 < before and not force)
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+import make_liquid  # noqa: E402
 
 
 class ShrinkGuard(unittest.TestCase):
     def test_halving_is_refused(self):
-        self.assertTrue(refuses(93, 188))
-        self.assertTrue(refuses(1, 188))
+        self.assertTrue(make_liquid.refuses_shrink(93, 188, False))
+        self.assertTrue(make_liquid.refuses_shrink(1, 188, False))
 
     def test_a_normal_rebuild_is_written(self):
-        self.assertFalse(refuses(187, 188))
-        self.assertFalse(refuses(93, 120))  # 77% - a real rebuild, not a probe
-        self.assertFalse(refuses(3, 0))     # nothing on disk yet
+        self.assertFalse(make_liquid.refuses_shrink(187, 188, False))
+        self.assertFalse(make_liquid.refuses_shrink(93, 120, False))  # 77%
+        self.assertFalse(make_liquid.refuses_shrink(3, 0, False))     # nothing on disk
 
     def test_force_is_the_escape(self):
-        self.assertFalse(refuses(93, 188, force=True))
+        self.assertFalse(make_liquid.refuses_shrink(93, 188, True))
 
-    def test_the_guard_is_still_in_the_writer(self):
-        self.assertIn("len(picked) * 2 < before", SRC)
-        self.assertIn("return 4", SRC)
-        self.assertIn('"--force", action="store_true"', SRC)
-        # and it runs before the write, not after it
-        self.assertLess(SRC.index("len(picked) * 2 < before"), SRC.index("OUT.write_text"))
+    def test_exactly_half_is_allowed(self):
+        # The rule is "less than half", not "at most half".
+        self.assertFalse(make_liquid.refuses_shrink(94, 188, False))
+        self.assertTrue(make_liquid.refuses_shrink(93, 188, False))
+
+    def test_the_writer_calls_it_before_writing(self):
+        src = (Path(__file__).resolve().parents[1] / "make_liquid.py").read_text(encoding="utf-8")
+        self.assertIn("refuses_shrink(len(picked), before, a.force)", src)
+        self.assertLess(src.index("refuses_shrink(len(picked)"), src.index("OUT.write_text"))
 
 
 if __name__ == "__main__":

@@ -147,6 +147,16 @@ def _claim_terminal(held: bool, max_age_min: float = 40.0) -> bool:
     return False
 
 
+def refuses_shrink(picked: int, before: int, force: bool) -> bool:
+    """A universe may only be replaced by at least half of itself, unless forced.
+
+    A `--top 1` probe once replaced 188 symbols with EURUSD and the next scan
+    reported `universe=1` as though the market had narrowed to a currency pair.
+    Shrinking is sometimes the right measurement, so the escape is explicit.
+    """
+    return bool(before) and picked * 2 < before and not force
+
+
 def _main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--lock-held", action="store_true",
@@ -210,7 +220,7 @@ def _main() -> int:
         before = int(json.loads(OUT.read_text())["count"])
     except (OSError, ValueError, KeyError, TypeError):
         before = 0
-    if before and len(picked) * 2 < before and not a.force:
+    if refuses_shrink(len(picked), before, a.force):
         print(f"REFUSED: {len(picked)} symbols would replace {before} on disk. "
               f"Pass --force if that is the measurement you want.")
         return 4

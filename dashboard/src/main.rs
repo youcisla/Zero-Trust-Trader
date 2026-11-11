@@ -31,9 +31,9 @@ use axum::{
 use serde_json::{json, Value};
 use std::{
     io::{Read, Seek, SeekFrom},
-    process::Command,
     net::SocketAddr,
     path::{Path, PathBuf},
+    process::Command,
     sync::Arc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
@@ -157,6 +157,30 @@ fn resolve_audit(root: &Path) -> Option<PathBuf> {
 
 /// Null when the file is absent or mid-write: the snapshot must never fail
 /// because a producer was between `open()` and `write()`.
+/// Keep only the fields the UI reads, and cap the arrays it renders.
+///
+/// `null` passes through untouched: a missing artifact must stay "unknown", not
+/// become an empty object.
+fn trim_stage(doc: &Value, keep: &[&str], arrays: &[&str], cap: usize) -> Value {
+    if !doc.is_object() {
+        return doc.clone();
+    }
+    let mut out = serde_json::Map::new();
+    for key in keep {
+        let Some(value) = doc.get(*key) else { continue };
+        let value = if arrays.contains(key) {
+            match value.as_array() {
+                Some(rows) => Value::Array(rows.iter().rev().take(cap).rev().cloned().collect()),
+                None => value.clone(),
+            }
+        } else {
+            value.clone()
+        };
+        out.insert((*key).to_string(), value);
+    }
+    Value::Object(out)
+}
+
 fn read_json(path: &Path) -> Value {
     read_bounded(path, JSON_LIMIT)
         .ok()
@@ -183,7 +207,9 @@ fn display_engine(mut engine: Value) -> Value {
         return Value::Null;
     };
     object.retain(|k, _| ["ok", "applied", "error", "positions", "account"].contains(&k.as_str()));
-    let positions_valid = object.get("positions").and_then(Value::as_array)
+    let positions_valid = object
+        .get("positions")
+        .and_then(Value::as_array)
         .is_some_and(|items| items.iter().all(Value::is_object));
     if object.get("ok").and_then(Value::as_bool) == Some(true) && !positions_valid {
         object.insert("ok".into(), json!(false));
@@ -207,10 +233,8 @@ fn display_engine(mut engine: Value) -> Value {
         for position in positions {
             if let Some(fields) = position.as_object_mut() {
                 fields.retain(|k, _| {
-                    [
-                        "symbol", "side", "volume", "entry", "price", "sl", "profit",
-                    ]
-                    .contains(&k.as_str())
+                    ["symbol", "side", "volume", "entry", "price", "sl", "profit"]
+                        .contains(&k.as_str())
                 });
             }
         }
@@ -282,8 +306,45 @@ fn build(root: &Path, series: &mut collector::Collector) -> Value {
 
     // The two stage artifacts the funnel leaves behind. Absent outside a scan
     // window, which is the normal state most of the day.
-    let tier2 = read_json(&root.join("tier2_candidates.json"));
-    let tier3 = read_json(&root.join("tier3_results.json"));
+    //
+    // Projected, not shipped whole: the raw documents reach 2 MB each, ride every
+    // snapshot string, sit 32-deep in the broadcast ring and are cloned per
+    // client per second. The keep-lists are exactly the fields the UI reads
+    // (`t2.*` / `t3.*` in index.html) — nothing here is guessed.
+    let tier2 = trim_stage(
+        &read_json(&root.join("tier2_candidates.json")),
+        &[
+            "scan_id",
+            "generated_utc",
+            "symbols_in",
+            "symbols_tested",
+            "total_tests",
+            "triggering",
+            "per_family",
+            "corr_max",
+            "deduped",
+            "all_hits",
+        ],
+        &["all_hits"],
+        20,
+    );
+    let tier3 = trim_stage(
+        &read_json(&root.join("tier3_results.json")),
+        &[
+            "scan_id",
+            "generated_utc",
+            "trials_declared",
+            "trials_cumulative",
+            "z_crit_corrected",
+            "corr_max",
+            "passed_both_gates",
+            "survivors",
+            "stood_down",
+            "results",
+        ],
+        &["results"],
+        20,
+    );
     let agent = read_json(&root.join("agent_notes.json"));
     // Derived from desk_history.sqlite by desk_store.export(): the last runs, one
     // object each. The database is the record; this is the view the UI can read
@@ -301,15 +362,26 @@ fn build(root: &Path, series: &mut collector::Collector) -> Value {
         .duration_since(UNIX_EPOCH)
         .map(|d| d.as_secs() as i64)
         .unwrap_or(0);
-    series.sample(now, equity.as_ref().and_then(Value::as_f64),
-                  balance.as_ref().and_then(Value::as_f64));
+    series.sample(
+        now,
+        equity.as_ref().and_then(Value::as_f64),
+        balance.as_ref().and_then(Value::as_f64),
+    );
 
     let ledger_doc = ledger::snapshot(&root.join("funnel_history.log"));
-    if let Some(row) = ledger_doc.get("rows").and_then(Value::as_array).and_then(|r| r.first()) {
+    if let Some(row) = ledger_doc
+        .get("rows")
+        .and_then(Value::as_array)
+        .and_then(|r| r.first())
+    {
         let verdict = row.get("verdict").and_then(Value::as_str).unwrap_or("");
         if !verdict.is_empty() {
-            series.event(now, "verdict", verdict,
-                         row.get("scan_id").and_then(Value::as_str));
+            series.event(
+                now,
+                "verdict",
+                verdict,
+                row.get("scan_id").and_then(Value::as_str),
+            );
         }
     }
 
@@ -329,10 +401,16 @@ fn build(root: &Path, series: &mut collector::Collector) -> Value {
         engine_age_secs.map(|a| a as i64),
         engine.get("ok").and_then(Value::as_bool).unwrap_or(true),
         engine.get("error").and_then(Value::as_str),
-        ledger_doc.get("rows").and_then(Value::as_array).and_then(|r| r.first()),
+        ledger_doc
+            .get("rows")
+            .and_then(Value::as_array)
+            .and_then(|r| r.first()),
         Some(&agent),
         &maintenance,
-        ledger_doc.get("present").and_then(Value::as_bool).unwrap_or(false),
+        ledger_doc
+            .get("present")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
     );
 
     json!({
@@ -636,7 +714,11 @@ async fn trigger_scan(State(st): State<AppState>) -> Response {
     // ZTT_PYTHON overrides both.
     let override_python = std::env::var("ZTT_PYTHON").ok();
     let mut interpreter = Command::new(override_python.clone().unwrap_or_else(|| {
-        if cfg!(windows) { "py".to_string() } else { "python3".to_string() }
+        if cfg!(windows) {
+            "py".to_string()
+        } else {
+            "python3".to_string()
+        }
     }));
     if override_python.is_none() && cfg!(windows) {
         interpreter.arg("-3");
@@ -644,20 +726,26 @@ async fn trigger_scan(State(st): State<AppState>) -> Response {
     {
         let mut last = st.last_scan.lock().unwrap_or_else(|e| e.into_inner());
         if last.elapsed() < Duration::from_secs(5) {
-            return (StatusCode::TOO_MANY_REQUESTS,
-                    Json(json!({"started": false, "error": "scan already starting"})))
+            return (
+                StatusCode::TOO_MANY_REQUESTS,
+                Json(json!({"started": false, "error": "scan already starting"})),
+            )
                 .into_response();
         }
         *last = std::time::Instant::now();
     }
     let script = st.root.join("run_funnel.py");
     if !script.exists() {
-        return (StatusCode::SERVICE_UNAVAILABLE,
-                Json(json!({"started": false, "error": "run_funnel.py not found"}))).into_response();
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(json!({"started": false, "error": "run_funnel.py not found"})),
+        )
+            .into_response();
     }
     match interpreter
         .arg(&script)
-        .arg("--window-utc").arg("05:00-17:00")
+        .arg("--window-utc")
+        .arg("05:00-17:00")
         .arg("--t-gate")
         .current_dir(&st.root)
         .stdin(std::process::Stdio::null())
@@ -670,11 +758,17 @@ async fn trigger_scan(State(st): State<AppState>) -> Response {
             std::thread::spawn(move || {
                 let _ = child.wait();
             });
-            (StatusCode::ACCEPTED,
-             Json(json!({"started": true, "pid": pid}))).into_response()
+            (
+                StatusCode::ACCEPTED,
+                Json(json!({"started": true, "pid": pid})),
+            )
+                .into_response()
         }
-        Err(e) => (StatusCode::INTERNAL_SERVER_ERROR,
-                   Json(json!({"started": false, "error": e.to_string()}))).into_response(),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(json!({"started": false, "error": e.to_string()})),
+        )
+            .into_response(),
     }
 }
 
@@ -808,7 +902,10 @@ fn router(state: AppState) -> Router {
             "/vendor/echarts.min.js",
             get(|| async {
                 (
-                    [(header::CONTENT_TYPE, "application/javascript; charset=utf-8")],
+                    [(
+                        header::CONTENT_TYPE,
+                        "application/javascript; charset=utf-8",
+                    )],
                     include_str!("../web/vendor/echarts.min.js"),
                 )
             }),
@@ -825,6 +922,38 @@ mod tests {
         let p = std::env::temp_dir().join(format!("ztt-{}-{}", std::process::id(), name));
         let _ = std::fs::remove_file(&p);
         p
+    }
+
+    #[test]
+    fn a_stage_artifact_is_projected_not_shipped_whole() {
+        let wide = serde_json::json!({
+            "scan_id": "abc", "total_tests": 741,
+            "all_hits": (0..100).map(|i| serde_json::json!({"i": i})).collect::<Vec<_>>(),
+            "payload": "x".repeat(1000)
+        });
+        let out = trim_stage(
+            &wide,
+            &["scan_id", "total_tests", "all_hits"],
+            &["all_hits"],
+            20,
+        );
+        assert_eq!(out["scan_id"], "abc");
+        assert_eq!(out["total_tests"], 741);
+        assert_eq!(
+            out.as_object().unwrap().len(),
+            3,
+            "an unlisted field survived"
+        );
+        let hits = out["all_hits"].as_array().unwrap();
+        assert_eq!(hits.len(), 20);
+        // the cap keeps the newest, which are the last rows of the document
+        assert_eq!(hits[19]["i"], 99);
+    }
+
+    #[test]
+    fn a_missing_stage_artifact_stays_null() {
+        let out = trim_stage(&serde_json::Value::Null, &["scan_id"], &[], 20);
+        assert!(out.is_null(), "a missing file became an empty object");
     }
 
     #[test]
