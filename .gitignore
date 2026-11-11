@@ -51,6 +51,9 @@ desk_journal.jsonl
 # Tool caches and temporary release artifacts.
 .ruff_cache/
 .pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
 !tools/build_public.py
 
 # The desk's live database is runtime state: it grows every 15 minutes and two
