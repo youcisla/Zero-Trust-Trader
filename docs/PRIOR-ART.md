@@ -134,7 +134,93 @@ added: measured against this tree's own claims first.
 
 ---
 
-## 3. Standing conclusions
+## 3. The rankings, read 2026-11-11
+
+Trendshift's four boards (daily / weekly / monthly / yearly, 25 each) and
+star-history's two (all-time by stars, weekly by gain). Method: dedupe, then keep
+only what could change how Hermes or this tree is built. Everything else is
+dropped without a note — a ranking is not a reading list.
+
+### The headline: the yearly board describes this machine
+
+Twelve of the twenty-five yearly entries are already here — `openclaw` (migrated
+from), `obra/superpowers`, `morluto/rea`, `NousResearch/hermes-agent` (the
+harness writing this), `mattpocock/skills`, `msitarzewski/agency-agents`,
+`opencode`, `DietrichGebert/ponytail` (the mode this session runs in),
+`thedotmack/claude-mem`, `Graphify-Labs/graphify`, `garrytan/gstack`,
+`anthropics/claude-code`. Two more exist in another form: `anthropics/skills` as
+the `claude-api` and `brand-guidelines` skills, and `firecrawl` as the fetch
+backend. The board is a description of the toolchain, not a shopping list, and the
+marginal value of reading it is entirely in the ten entries we do not have.
+
+### Ranking is not quality, and the daily board proves it
+
+Roughly ten of the daily twenty-five are "installer" repositories created
+2026-11-06, with **HTML as their only language** and ~1,300 stars in five days:
+`cubase-studio-desktop`, `archicad-desktop-setup`, `adobe-substance-3d-studio`,
+`aida-64-extreme`, and their siblings. That is the exact shape of a cracked-software
+malware drop, and the board ranks it because stars are cheap at volume. The same
+pattern appears in the monthly list as clones of a vendor tool —
+`ccch1mneyyy/dsh-Go` (19.7k stars in 17 days, a Dart wrapper around DeepSeek's
+harness) and `Ebony-Vinyl/dsh-our-free-model`. **Never install from a ranking.**
+Check the account's age, the star count against the size of the code, and whether
+the language matches the claim.
+
+### What was worth reading
+
+| Repository | Board | What it is | Verdict |
+| --- | --- | --- | --- |
+| `TauricResearch/TradingAgents` | yearly #22, 122k | multi-agent trading framework, arXiv 2412.20138, Python, still shipping (v0.7.1 in October) | **read** — three lessons below |
+| `cloudflare/security-audit-skill` | monthly #20, 70k | a six-phase audit protocol with a coverage ledger and independent verifiers | **adopt for the next audit** |
+| `GoogleChrome/modern-web-guidance` | daily #3, 4.8k | web-platform guidance packaged as an agent skill | read when the dashboard next changes |
+| `janestreet/agent_skills` | daily #2, 5.5k | created 2026-11-03, one push, no README on `main` | nothing to read yet — recheck |
+| `meta/astryx` | weekly #1, 24.7k | a design system | no — Sentio has its own |
+| `deepseek-ai/deepseek-harness` | yearly #11, 279k | DeepSeek's plugin-based agent harness | no — our harness is Hermes |
+| `storytold/craft-anything` | monthly #1, 28k | reverse-engineering toolkit | already installed |
+| `we-promise/sure` | daily #6, 12.8k | a personal-finance app in Ruby | no |
+
+### TradingAgents: three things they learned the hard way
+
+1. **Identity and prices are resolved deterministically before any agent runs.**
+   Their release notes say earlier runs produced "different companies" and
+   "fabricated price levels"; the fix was to resolve the ticker before the agents
+   start and to ground every price claim in a verified snapshot. That is precisely
+   what `desk.uncited()` does here, arrived at independently — the strongest signal
+   in this whole exercise is that two projects converged on the same structural
+   answer rather than on a better prompt.
+2. **Point-in-time integrity.** v0.7.1 fixed "model dates that could read filings
+   made after the run date". Our equivalent exposure is narrow — the desk reads the
+   tree at run time and is advisory — but it is exactly why every tier-3 record
+   carries `timestamp_basis` and `timestamp_limitations` rather than assuming the
+   broker's offset never moved.
+3. **A decision log that gets settled.** They keep past decisions and score them
+   against what subsequently happened. We log every run and never score it. That is
+   the one real gap this survey found: we cannot currently answer "was the desk
+   right?" — only "what did it say?". Everything needed to close it is already
+   stored.
+
+### Cloudflare's audit protocol: what our 72-finding audit lacked
+
+Our audit was one pass, by one agent, producing findings of one kind. Theirs has a
+coverage ledger (what was *examined*, not just what was found), a fresh verifier
+for every candidate that never the finder, three verdicts — `confirmed`,
+`needs_validation`, `rejected` — and a rule that a defense-in-depth gap is a
+hardening note, not a vulnerability. Their measured observation is the one that
+matters: *a single run found roughly half of the vulnerabilities that repeated
+runs found in total.*
+
+Rule for the next audit here: keep the ledger, split finder from verifier, and do
+not present one pass as coverage.
+
+### Adopted today
+
+Nothing new. Every relevant entry is either already installed or a protocol for the
+next change — which is the correct outcome of reading a ranking: it maps the
+industry, it does not set the backlog.
+
+---
+
+## 4. Standing conclusions
 
 - **A refusal is cheaper than an integration.** Five of the seven ideas above
   were declined, and the tree is smaller for it.
@@ -144,3 +230,9 @@ added: measured against this tree's own claims first.
 - **A verifier you cannot argue with beats one you can.** The desk's guard is
   arithmetic; a probabilistic check is a second opinion, and second opinions are
   for humans, not for gates.
+- **A ranking measures attention, not engineering.** The yearly board described
+  this machine; the daily board described a malware campaign. Both were correct
+  about what they measure, and neither is a backlog.
+- **Convergence is the best evidence.** Two independent projects arriving at
+  "ground every number in the source, before any agent runs" is worth more than any
+  single benchmark in either README.
