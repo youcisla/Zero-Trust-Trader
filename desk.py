@@ -205,6 +205,17 @@ _DATE_TIME = re.compile(
     r"|(?<!\d)\d{2}:\d{2}(?::\d{2})?Z?(?!\d)")
 
 
+def _thousands(text: str) -> str:
+    """`21,854` is one number, not two.
+
+    The scanner splits on the comma, so a correct note that writes "cumulative
+    21,854" used to fail the fabrication check with `uncited numbers: 21, 854` —
+    measured at 9 of 37 chief notes. Only digit-group commas are removed: a list
+    ("1,2") and a European decimal ("2.191") are left exactly as written.
+    """
+    return re.sub(r"(?<=\d),(?=\d{3}(?!\d))", "", text)
+
+
 def _renders(v: float) -> set[str]:
     out = {f"{v}", f"{v:.1f}", f"{v:.2f}", f"{v:.3f}", f"{v:g}", f"{int(v)}" if float(v).is_integer() else f"{v}"}
     return {s.lstrip("+") for s in out}
@@ -218,8 +229,8 @@ def uncited(note: dict, source: str) -> list[str]:
     """
     bad = []
     # ensure_ascii=False keeps em dashes as characters; dates are not figures.
-    blob = _DATE_TIME.sub(" ", json.dumps(note, ensure_ascii=False, default=str))
-    source_tokens = [m.group(0) for m in _NUM.finditer(_DATE_TIME.sub(" ", source))]
+    blob = _thousands(_DATE_TIME.sub(" ", json.dumps(note, ensure_ascii=False, default=str)))
+    source_tokens = [m.group(0) for m in _NUM.finditer(_thousands(_DATE_TIME.sub(" ", source)))]
     allowed = set()
     for token in source_tokens:
         value = float(token)

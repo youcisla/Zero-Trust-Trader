@@ -482,5 +482,43 @@ class WatcherWindowTests(unittest.TestCase):
         ran.assert_called_once()
 
 
+class ThousandsSeparators(unittest.TestCase):
+    """A correct note must not be rejected for writing 21,854 instead of 21854.
+
+    Measured on the journal: 9 of 37 chief notes were rejected, and the reasons
+    were fragments of comma-separated numbers - the fabrication check was
+    splitting "21,854" into 21 and 854 and finding neither in the source.
+    """
+
+    def test_a_thousands_separator_is_one_number(self):
+        note = {"agent": "chief", "summary": "cumulative 21,854 trials at z 4.72",
+                "contradictions": [], "watch": "none"}
+        self.assertEqual(desk.uncited(note, "cumulative=21854 z_crit_corrected=4.72"), [])
+
+    def test_the_source_may_carry_the_separator_too(self):
+        note = {"agent": "chief", "summary": "21854 trials", "contradictions": [], "watch": "none"}
+        self.assertEqual(desk.uncited(note, "cumulative=21,854"), [])
+
+    def test_a_fabricated_number_is_still_rejected(self):
+        note = {"agent": "chief", "summary": "21,999 trials", "contradictions": [], "watch": "none"}
+        # Reported as the figure the model wrote (21,999 normalised to 21999), not
+        # as two fragments - the message should name what to fix.
+        self.assertEqual(desk.uncited(note, "cumulative=21854"), ["21999"])
+
+    def test_a_list_is_not_a_thousands_group(self):
+        # "1,2" must not become 12: only \d{3} after the comma is a group.
+        self.assertEqual(desk._thousands("1,2"), "1,2")
+        self.assertEqual(desk._thousands("21,854"), "21854")
+        self.assertEqual(desk._thousands("1,234,567"), "1234567")
+        self.assertEqual(desk._thousands("2.191, 3.103"), "2.191, 3.103")
+
+    def test_a_rejected_note_says_which_figure_was_missing(self):
+        note = {"agent": "chief", "summary": "cumulative 21,854 at z 9.99",
+                "contradictions": [], "watch": "none"}
+        out = desk._guard(note, "cumulative=21854 z_crit_corrected=4.72")
+        self.assertEqual(out["status"], "rejected")
+        self.assertIn("9.99", out["reason"])
+
+
 if __name__ == "__main__":
     unittest.main()
