@@ -286,6 +286,11 @@ def _validate_note(note: dict, source: str, expected_role: str | None) -> str | 
         size = note.get("size_lots", 0.01)
         if isinstance(size, bool) or not isinstance(size, (int, float)) or abs(float(size) - 0.01) > 1e-9:
             return "jury may not size an order"
+        # Attention is the currency (dsh-superagent's rule, and this desk's real
+        # failure): an escalation that does not name an action asks a person to
+        # go and find out what to do. Name it, or stand down.
+        if note["verdict"] == "escalate" and not note.get("conditions"):
+            return "an escalation must name the action a person takes"
     if role == "scout":
         symbols = set(re.findall(r'"symbol"\s*:\s*"([^"\\]+)"', source))
         if not isinstance(note["items"], list) or len(note["items"]) > 20:
@@ -428,12 +433,15 @@ JURY_SYS = (
     "figure that changes what the numbers mean, or the same quantity at the same moment "
     "reported two ways. Two stages of one scan, or two different statistics, are not that. "
     "Return the desk's verdict for today: \"stand_down\" (nothing here is worth a human's time), "
-    "\"escalate\" (a human should look before anything else happens) or \"propose\" (one candidate is "
-    "worth showing to the operator). You never place, approve or cancel an order: a human types "
+    "\"escalate\" (a person must act, and you can name the action in one line) or \"propose\" (one "
+    "candidate is worth showing to the operator). "
+    "One rule decides escalate: someone must act and you can say what. If you cannot name the "
+    "action, stand down - this desk is judged by the attention it costs, not by how much it says. You never place, approve or cancel an order: a human types "
     "APPROVED and an independent consent gate issues the token. The order size is fixed by policy at "
     "0.01 lots and is not yours to choose. Quote figures exactly as given; never compute one. "
     "Reply ONLY with JSON: {\"agent\":\"jury\",\"verdict\":\"stand_down\"|\"escalate\"|\"propose\","
-    "\"size_lots\":0.01,\"why\":str,\"conditions\":[str]}."
+    "\"size_lots\":0.01,\"why\":str,\"conditions\":[str]}. "
+    "On escalate, conditions holds the action itself, imperative and one line."
 )
 
 JURY_POLICY = ("POLICY, not a suggestion and not yours to change: order size is 0.01 lots, the human "

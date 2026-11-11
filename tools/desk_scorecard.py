@@ -31,16 +31,24 @@ def _rows(con: sqlite3.Connection, sql: str) -> list[tuple]:
 def _verdicts(con: sqlite3.Connection) -> list[dict]:
     out = []
     for run_id, payload in _rows(
-            con, "select run_id, payload from answers where role='jury' and status='ok' order by id"):
+            con, "select r.id, a.payload from answers a join runs r on r.id = a.run_id"
+                 " where a.role='jury' and a.status='ok' order by a.id"):
         try:
             doc = json.loads(payload)
         except (TypeError, ValueError):
             continue
-        out.append({"run": run_id, "verdict": doc.get("verdict"), "why": doc.get("why") or ""})
+        out.append({"run": run_id, "verdict": doc.get("verdict"), "why": doc.get("why") or "",
+                    "ts": con.execute("select generated_utc from runs where id=?", (run_id,)).fetchone()[0]})
     return out
 
 
-def report(root: Path, limit: int = 10) -> dict:
+def _rate(verdicts: list[dict]) -> dict:
+    judged = len(verdicts)
+    esc = sum(1 for v in verdicts if v["verdict"] == "escalate")
+    return {"judged": judged, "escalated": esc, "pct": round(100 * esc / judged) if judged else 0}
+
+
+def report(root: Path, limit: int = 10, since: str | None = None) -> dict:
     db = root / "desk_history.sqlite"
     if not db.exists():
         raise SystemExit(f"no desk history at {db} - run agent_brief.py first")
@@ -71,6 +79,11 @@ def report(root: Path, limit: int = 10) -> dict:
         "runs": runs, "first": first, "last": last, "runs_per_day": day,
         "roles": roles, "verdicts": counts, "escalations": flagged[-limit:],
         "escalations_total": len(flagged), "notes": len(verdicts),
+        "all_time": _rate(verdicts),
+        # A gate that fires on most runs is not discriminating; measuring it on each
+        # side of a change is the only way to know whether the change worked.
+        "since": since, "since_rate": _rate([v for v in verdicts if v["ts"] and v["ts"] >= since])
+        if since else None,
         "tokens": {"in": tokens_in, "out": tokens_out},
         "tokens_per_run": {"in": round(tokens_in / runs), "out": round(tokens_out / runs)},
         "per_day_at_current_cadence": round((tokens_in + tokens_out) / max(1, runs) * 48),
@@ -91,7 +104,12 @@ def render(doc: dict) -> str:
                  f"{sum(s.get('error', 0) for s in doc['roles'].values()):>7d}   "
                  f"notes that survived the guard: {total_ok}/{total_ok + total_bad}")
     lines += ["", "jury verdicts  " + "   ".join(f"{k} {v}" for k, v in sorted(doc["verdicts"].items()))]
-    lines.append(f"escalations    {doc['escalations_total']} of {doc['notes']} judged runs")
+    rate = doc["all_time"]
+    lines.append(f"escalations    {rate['escalated']} of {rate['judged']} judged runs "
+                 f"({rate['pct']}%) - a gate that fires on most runs is not discriminating")
+    if doc.get("since_rate") is not None:
+        r = doc["since_rate"]
+        lines.append(f"since {doc['since']}  {r['escalated']} of {r['judged']} judged runs ({r['pct']}%)")
     # desk_store keeps ONE call's usage, not the run's total, and the journal keeps
     # none - so summing these columns would publish a number that means something
     # else. The desk card already shows the run total from role_metadata.
@@ -109,9 +127,11 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--root", type=Path, default=Path(__file__).resolve().parent.parent)
     ap.add_argument("--limit", type=int, default=10)
+    ap.add_argument("--since", default=None,
+                    help="ISO timestamp; also report the escalation rate from this moment on")
     ap.add_argument("--json", action="store_true")
     a = ap.parse_args(argv)
-    doc = report(a.root, a.limit)
+    doc = report(a.root, a.limit, a.since)
     print(json.dumps(doc, indent=1) if a.json else render(doc))
     return 0
 

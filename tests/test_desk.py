@@ -552,5 +552,39 @@ class TheDigestExplainsItsOwnNumbers(unittest.TestCase):
         self.assertIn("not a contradiction", desk.FIELD_LEGEND)
 
 
+class AnEscalationMustNameTheAction(unittest.TestCase):
+    """The desk is judged by the attention it costs, not by how much it says.
+
+    dsh-superagent's rule, adopted: an agent "speaks only when a person must act or
+    can use a result". An escalation with no action makes a person go and find out
+    what to do, which is the most expensive thing this desk can produce.
+    """
+
+    # JURY_POLICY is part of the real source, which is why 0.01 is citable.
+    src = "cumulative=29999 passed_both=0; order size is 0.01 lots, a human types APPROVED"
+
+    def note(self, **kw):
+        base = {"agent": "jury", "verdict": "escalate", "size_lots": 0.01,
+                "why": "two artifacts disagree", "conditions": []}
+        base.update(kw)
+        return base
+
+    def test_an_escalation_without_an_action_is_refused(self):
+        out = desk._guard(self.note(), self.src, "jury")
+        self.assertEqual(out["status"], "rejected")
+        self.assertIn("must name the action", out["reason"])
+
+    def test_an_escalation_that_names_the_action_passes(self):
+        out = desk._guard(self.note(conditions=["Reconcile the tier2 scan_id against a ledger row"]),
+                          self.src, "jury")
+        self.assertEqual(out["status"], "ok")
+
+    def test_standing_down_needs_no_action(self):
+        out = desk._guard({"agent": "jury", "verdict": "stand_down", "size_lots": 0.01,
+                           "why": "29999 tests, nothing cleared the bar", "conditions": []},
+                          self.src, "jury")
+        self.assertEqual(out["status"], "ok")
+
+
 if __name__ == "__main__":
     unittest.main()

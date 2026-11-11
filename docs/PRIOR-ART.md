@@ -171,6 +171,7 @@ the language matches the claim.
 | Repository | Board | What it is | Verdict |
 | --- | --- | --- | --- |
 | `TauricResearch/TradingAgents` | yearly #22, 122k | multi-agent trading framework, arXiv 2412.20138, Python, still shipping (v0.7.1 in October) | **read** — three lessons below |
+| `deepseek-ai/dsh-superagent-prototype` | monthly #2, 22k | a proactive coding agent for one repo, with an explicit theory of attention | **adopt the attention rule** — below |
 | `cloudflare/security-audit-skill` | monthly #20, 70k | a six-phase audit protocol with a coverage ledger and independent verifiers | **adopt for the next audit** |
 | `GoogleChrome/modern-web-guidance` | daily #3, 4.8k | web-platform guidance packaged as an agent skill | read when the dashboard next changes |
 | `janestreet/agent_skills` | daily #2, 5.5k | created 2026-11-03, one push, no README on `main` | nothing to read yet — recheck |
@@ -211,6 +212,24 @@ runs found in total.*
 
 Rule for the next audit here: keep the ledger, split finder from verifier, and do
 not present one pass as coverage.
+
+### dsh-superagent: the sentence that fixed the desk
+
+Their philosophy document states the rule the desk was missing: **"It speaks only
+when a person must act or can use a result."** Everything else follows from it —
+one concrete question at a time, a panel that lists only what waits for a person,
+and "when the agent is noisy, make its prompts shorter and stricter, or pause it.
+Do not add more messages to explain the noise."
+
+Applied here, that became one line in the jury's schema: **an escalation must name
+the action a person takes**, or it is refused as a malformed note. The prompt says
+the same thing in the voice the model reads: if you cannot name the action, stand
+down. A desk that escalates without an action is asking a person to go and find out
+what to do, which is the most expensive thing it can produce.
+
+Their second lesson is the instrument: a healthy state takes no space. That is why
+the scorecard reports the escalation *rate* rather than a list of escalations, and
+why it can be split at a moment — the only question that matters after a fix.
 
 ### Adopted: the scorecard, and the legend it exposed
 

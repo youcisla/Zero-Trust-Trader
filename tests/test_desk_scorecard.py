@@ -51,6 +51,14 @@ class TheScorecard(unittest.TestCase):
             desk_scorecard.report(Path(d))
         self.assertIn("no desk history", str(ctx.exception))
 
+    def test_the_rate_can_be_split_at_a_moment(self):
+        """The only question that matters after a fix: does it fire less often now?"""
+        with tempfile.TemporaryDirectory() as d:
+            fixture(Path(d), runs=3, verdicts=("escalate", "stand_down", "stand_down"))
+            doc = desk_scorecard.report(Path(d), since="2026-11-12T00:00:00Z")
+        self.assertEqual(doc["all_time"], {"judged": 3, "escalated": 1, "pct": 33})
+        self.assertEqual(doc["since_rate"], {"judged": 1, "escalated": 0, "pct": 0})
+
     def test_the_rendered_table_names_every_role(self):
         with tempfile.TemporaryDirectory() as d:
             fixture(Path(d))
