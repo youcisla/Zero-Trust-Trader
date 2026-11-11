@@ -66,6 +66,17 @@ def main(argv=None) -> int:
     parser.add_argument("--root", type=Path, default=ROOT)
     args = parser.parse_args(argv)
     identifier = os.environ.get("ZTT_PRIVATE_IDENTIFIER", "")
+    # A local run can read the one identifier this tree actually protects. CI cannot
+    # (no .env), which is why ZTT_PRIVATE_IDENTIFIER exists there - but the machine
+    # that commits is the machine where the slip happens, and an eight-digit login
+    # is exactly what a fixture copies by accident.
+    local_env = args.root / ".env"
+    if local_env.exists() and not identifier:
+        for line in local_env.read_text(encoding="utf-8", errors="replace").splitlines():
+            m = re.match(r"\s*MT5_EXPECTED_LOGIN\s*=\s*(\d{6,})", line)
+            if m:
+                identifier = m.group(1)
+                break
     expects = os.environ.get("ZTT_EXPECT_IDENTIFIER") == "1"
     # GitHub renders a secret as an empty string for a pull request from a fork, and
     # an unset secret looks identical. The workflow therefore states its expectation

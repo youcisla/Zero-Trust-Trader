@@ -81,12 +81,12 @@ class NoSecretsTests(unittest.TestCase):
     def test_the_broker_login_is_redacted_before_it_is_stored(self):
         with TemporaryDirectory() as d:
             root = Path(d)
-            (root / ".env").write_text("MT5_EXPECTED_LOGIN=62155913\n", encoding="utf-8")
+            (root / ".env").write_text("MT5_EXPECTED_LOGIN=20481736\n", encoding="utf-8")
             dirty = notes()
-            dirty["roles"]["chief"]["summary"] = "account 62155913 on PepperstoneUK-Demo"
+            dirty["roles"]["chief"]["summary"] = "account 20481736 on PepperstoneUK-Demo"
             desk_store.record(root, dirty)
             text = (root / desk_store.DB).read_bytes().decode("utf-8", "replace")
-        self.assertNotIn("62155913", text)
+        self.assertNotIn("20481736", text)
         self.assertIn("PepperstoneUK-Demo", text)
 
     def test_an_eight_digit_login_is_redacted_without_being_known(self):
@@ -111,7 +111,7 @@ class NoSecretsTests(unittest.TestCase):
     def test_a_clean_run_is_stored_unaltered(self):
         with TemporaryDirectory() as d:
             root = Path(d)
-            with mock.patch.dict("os.environ", {"MT5_EXPECTED_LOGIN": "62155913"}):
+            with mock.patch.dict("os.environ", {"MT5_EXPECTED_LOGIN": "20481736"}):
                 dirty = notes()
                 dirty["roles"]["chief"]["summary"] = "nothing to redact here"
                 desk_store.record(root, dirty)
