@@ -66,13 +66,20 @@ def main(argv=None) -> int:
     parser.add_argument("--root", type=Path, default=ROOT)
     args = parser.parse_args(argv)
     identifier = os.environ.get("ZTT_PRIVATE_IDENTIFIER", "")
-    # GitHub renders a secret as an empty string for a pull request from a fork.
-    # With no identifier the rule below silently becomes a no-op and this script
-    # prints "passed" - the exact silent-degradation the rest of the tree refuses.
-    if os.environ.get("CI") == "true" and not identifier:
+    expects = os.environ.get("ZTT_EXPECT_IDENTIFIER") == "1"
+    # GitHub renders a secret as an empty string for a pull request from a fork, and
+    # an unset secret looks identical. The workflow therefore states its expectation
+    # explicitly (`ZTT_EXPECT_IDENTIFIER`), so this script can tell "this repository
+    # has no identifier to check" from "the identifier it needs did not arrive".
+    # Either way it says so out loud: the silent version is what the first audit
+    # found, and a scan that quietly loses a rule is worse than one that refuses.
+    if expects and not identifier:
         print("ZTT_PRIVATE_IDENTIFIER is not configured; refusing to run a weakened scan",
               file=sys.stderr)
         return 2
+    if not identifier:
+        print("note: no private identifier configured — only the generic patterns ran",
+              file=sys.stderr)
     try:
         failures = scan_files(args.root, tracked_files(args.root), identifier)
     except (OSError, ValueError, subprocess.CalledProcessError):

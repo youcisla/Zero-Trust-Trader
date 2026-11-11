@@ -37,6 +37,9 @@ jobs:
       - name: Guard all tracked files without printing matched values
         env:
           ZTT_PRIVATE_IDENTIFIER: ${{ secrets.ZTT_PRIVATE_IDENTIFIER }}
+          # Empty secret == no expectation. When the owner configures the secret,
+          # every later run (including a fork PR that cannot see it) is held to it.
+          ZTT_EXPECT_IDENTIFIER: ${{ secrets.ZTT_PRIVATE_IDENTIFIER != '' && '1' || '' }}
         run: python tools/check_public.py
       - name: The map, the README and the tree must agree
         run: python tools/check_docs.py
