@@ -134,7 +134,7 @@ the permutation null.
 flowchart TD
     SCH["Task Scheduler<br/>05:00–17:00 UTC"] --> PRE{"pre-flight<br/>demo · connected · lock"}
     PRE -->|refuse| STOP1([abort, nothing scanned])
-    PRE -->|pass| T1["Tier 1 · universe filter<br/>~1,700 → ~600 symbols"]
+    PRE -->|pass| T1["Tier 1 · universe filter<br/>1,711 → 180 liquid"]
     T1 --> T2["Tier 2 · strategy matrix<br/>3 families"]
     T2 --> DED{"|ρ| < 0.7<br/>correlation dedupe"}
     DED --> T3["Tier 3 · deep test<br/>15k bars · 10k paths"]
@@ -146,7 +146,7 @@ flowchart TD
     HUMAN --> BRIDGE["bridge consent gate<br/>single-use token"]
     BRIDGE --> ORDER[("order · demo only")]
 
-    ORDER --> PM["position_manager.py<br/>24/5 supervisor"]
+    ORDER --> PM["position_manager.py<br/>dry-run · not scheduled"]
     PM -->|"protective stop moves + closes only"| ORDER
 
     PM --> STATE[("engine_state.json")]
@@ -352,9 +352,9 @@ scan.
 | 1,791 (one full-universe run) | 4.19 |
 | 5,388 | 4.43 |
 | 9,081 (historical example) | 4.54 |
-| 52,000 (a day at 741 tests x 48 scans) | 4.92 |
-| 265,000 (a week at that rate) | 5.21 |
-| 1,084,000 (a month at that rate) | 5.47 |
+| 13,968 (a day: 291 tests x 48 scans) | 4.63 |
+| 97,776 (a week at that rate) | 5.02 |
+| 419,040 (30 days at that rate) | 5.30 |
 
 The current row is not in this table on purpose: it moves with every scan. Read it
 with `python trials_total.py`, or from `trials_cumulative` and `z_crit_corrected`
@@ -363,8 +363,9 @@ in `tier3_results.json` - the pair the gate actually used.
 This table is an illustrative historical snapshot, not a live trial count.
 Every value is computed by `bonferroni_z()`, not estimated — `python status.py`
 prints the current one. The window is 05:00–17:00 UTC (48 scans/day), but the
-session matrix below narrows the families early, so a day adds 5,000 hypotheses
-rather than the 7,200 a naive 12-hour expansion would.
+session matrix below narrows the families early. The measured scan declares
+291 tests (97 symbols x 3 families), so 48 scans add 13,968 hypotheses a day,
+not the 26,000 a full 180-symbol universe at all three families would.
 
 ```bash
 $ python trials_total.py
@@ -566,6 +567,7 @@ the dashboard/diagnostics, not in static README examples.
 | [DESK.md](DESK.md) | what the four advisory agents may say |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | how to land a change |
 | [SECURITY.md](SECURITY.md) | threat model and disclosure |
+| [docs/audit-2026-11-11.md](docs/audit-2026-11-11.md) | the 29-finding audit, and exactly which findings were applied |
 | [docs/TRIALS.md](docs/TRIALS.md) | how the significance bar is computed |
 | [docs/SIZE-AND-RUIN.md](docs/SIZE-AND-RUIN.md) | whether the account can be multiplied |
 | [docs/LINEAGE.md](docs/LINEAGE.md) | the three attempts, and what each measured |

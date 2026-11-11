@@ -62,6 +62,44 @@ struct AppState {
     /// guard; a local process does not, and every extra POST spawns another
     /// interpreter that fights the funnel lock and churns the terminal.
     last_scan: Arc<std::sync::Mutex<std::time::Instant>>,
+    /// A child is between spawn and exit. The five-second debounce cannot answer
+    /// "is a scan still running" - a scan takes minutes - so the second click
+    /// gets a 409 instead of a second interpreter.
+    scan_running: Arc<std::sync::atomic::AtomicBool>,
+    /// The last child's outcome. `started:true` only ever meant "spawned"; a
+    /// scan that no-oped on the lock in 0.3 s reported success. The exit code is
+    /// the only honest signal, so it is recorded and served.
+    last_run: Arc<std::sync::Mutex<Option<Value>>>,
+    /// Connected sockets. Snapshots are 130-300 KB cloned per client per beat;
+    /// an unbounded count is unbounded local memory.
+    clients: Arc<std::sync::atomic::AtomicUsize>,
+}
+
+/// ISO-8601 UTC, second resolution: the same shape the engine's artifacts use.
+fn now_utc() -> String {
+    let secs = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs())
+        .unwrap_or(0) as i64;
+    let days = secs.div_euclid(86_400);
+    let rem = secs.rem_euclid(86_400);
+    // Civil-from-days, Howard Hinnant's algorithm: no date crate for one stamp.
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let y = yoe + era * 400;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = if m <= 2 { y + 1 } else { y };
+    format!(
+        "{y:04}-{m:02}-{d:02}T{:02}:{:02}:{:02}Z",
+        rem / 3600,
+        (rem % 3600) / 60,
+        rem % 60
+    )
 }
 
 fn idle_since() -> std::time::Instant {
@@ -280,7 +318,7 @@ fn scan_state(root: &Path, tier2: &Value, tier3: &Value, funnel: Option<&Vec<Str
            "scan_id": ledger_id, "reason": reason})
 }
 
-fn build(root: &Path, series: &mut collector::Collector) -> Value {
+fn build(root: &Path, series: &mut collector::Collector, last_scan_run: Value) -> Value {
     let engine_path = newest_state(root);
     let engine = display_engine(read_json(&engine_path));
 
@@ -434,6 +472,9 @@ fn build(root: &Path, series: &mut collector::Collector) -> Value {
         "actions": tail(&root.join("position_manager.log"), TAIL),
         "mcp": mcp,
         "universe": universe(root),
+        // What the button actually did last: `started` means spawned; this says
+        // how it ended, which is the only signal a human can act on.
+        "last_scan_run": last_scan_run,
         "ledger": ledger_doc,
         "series": series.snapshot(),
         "health": json!({
@@ -488,9 +529,17 @@ async fn watch(state: AppState) {
         beats += 1;
         let root = state.root.clone();
         let series = state.series.clone();
+        // Read once per beat: the button's outcome is part of the snapshot the
+        // UI renders, so a scan that ended at exit 2 is visible without a reload.
+        let run = state
+            .last_run
+            .lock()
+            .unwrap_or_else(|e| e.into_inner())
+            .clone()
+            .unwrap_or(Value::Null);
         let built = tokio::task::spawn_blocking(move || {
             let mut guard = series.blocking_lock();
-            serde_json::to_string(&build(&root, &mut guard))
+            serde_json::to_string(&build(&root, &mut guard, run))
         })
         .await;
 
@@ -515,7 +564,9 @@ async fn watch(state: AppState) {
         // "nothing changed" from "the feed died" — and the 5 s freshness
         // watchdog would call a healthy socket stale.
         let changed = body != last;
-        if changed || beats.is_multiple_of(5) {
+        // 4 s, not 5: the client's staleness threshold is 8 s, and an equal
+        // threshold turns a healthy socket into a reconnecting one on jitter.
+        if changed || beats.is_multiple_of(4) {
             last = body.clone();
             *state.current.lock().await = body.clone();
             let _ = state.tx.send(body);
@@ -698,9 +749,20 @@ async fn local_request(State(st): State<AppState>, request: Request, next: Next)
     for (name, value) in [
         (header::CACHE_CONTROL, "no-store"),
         (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
-        (header::CONTENT_SECURITY_POLICY, "frame-ancestors 'none'"),
     ] {
         response.headers_mut().insert(name, value.parse().unwrap());
+    }
+    // `insert` here used to overwrite the report route's own sandbox policy with
+    // `frame-ancestors 'none'`, so the backstop the code argued for was inert on
+    // every response. Only set it when the handler did not.
+    if !response
+        .headers()
+        .contains_key(header::CONTENT_SECURITY_POLICY)
+    {
+        response.headers_mut().insert(
+            header::CONTENT_SECURITY_POLICY,
+            "frame-ancestors 'none'".parse().unwrap(),
+        );
     }
     response
 }
@@ -718,16 +780,32 @@ async fn trigger_scan(State(st): State<AppState>) -> Response {
     // machine it is a tool venv without MetaTrader5). The Windows launcher `py -3`
     // is the portable way to reach the installed 3.x that has the terminal module;
     // ZTT_PYTHON overrides both.
+    // ZTT_PYTHON wins; then the project's own venv, which is the interpreter the
+    // scheduler runs (`start_dashboard.bat` pins it); only then the launcher's
+    // best guess. The guess has no MetaTrader5 on this machine, so a scan started
+    // through it fails closed on import and reports FAILED for the wrong reason.
     let override_python = std::env::var("ZTT_PYTHON").ok();
-    let mut interpreter = Command::new(override_python.clone().unwrap_or_else(|| {
-        if cfg!(windows) {
-            "py".to_string()
-        } else {
-            "python3".to_string()
-        }
-    }));
-    if override_python.is_none() && cfg!(windows) {
+    let venv = if cfg!(windows) {
+        st.root.join(".venv").join("Scripts").join("python.exe")
+    } else {
+        st.root.join(".venv").join("bin").join("python")
+    };
+    let (program, needs_flag) = match override_python {
+        Some(p) => (p, false),
+        None if venv.exists() => (venv.display().to_string(), false),
+        None => ((if cfg!(windows) { "py" } else { "python3" }).to_string(), cfg!(windows)),
+    };
+    let mut interpreter = Command::new(program);
+    if needs_flag {
         interpreter.arg("-3");
+    }
+    use std::sync::atomic::Ordering;
+    if st.scan_running.load(Ordering::SeqCst) {
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({"started": false, "error": "a scan is still running"})),
+        )
+            .into_response();
     }
     {
         let mut last = st.last_scan.lock().unwrap_or_else(|e| e.into_inner());
@@ -741,7 +819,12 @@ async fn trigger_scan(State(st): State<AppState>) -> Response {
         *last = std::time::Instant::now();
     }
     let script = st.root.join("run_funnel.py");
-    if !script.exists() {
+    // An async handler must not block the reactor on a stat call.
+    let probe = script.clone();
+    let exists = tokio::task::spawn_blocking(move || probe.exists())
+        .await
+        .unwrap_or(false);
+    if !exists {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(json!({"started": false, "error": "run_funnel.py not found"})),
@@ -759,10 +842,30 @@ async fn trigger_scan(State(st): State<AppState>) -> Response {
     {
         Ok(mut child) => {
             let pid = child.id();
-            // Without wait() every finished scan is a zombie on Unix, and the
-            // exit status - the only honest "it ran" signal - is discarded.
+            st.scan_running.store(true, Ordering::SeqCst);
+            {
+                let mut run = st.last_run.lock().unwrap_or_else(|e| e.into_inner());
+                *run = Some(json!({"pid": pid, "started_utc": now_utc(), "exit": Value::Null,
+                                   "running": true}));
+            }
+            // Without wait() every finished scan is a zombie on Unix, and the exit
+            // status - the only honest "it ran" signal - is discarded. `started`
+            // only ever meant "spawned": a scan that no-oped on the lock in 0.3 s
+            // reported success to the UI.
+            let running = st.scan_running.clone();
+            let last_run = st.last_run.clone();
             std::thread::spawn(move || {
-                let _ = child.wait();
+                let status = child.wait();
+                running.store(false, Ordering::SeqCst);
+                let exit = status.ok().and_then(|s| s.code());
+                let mut run = last_run.lock().unwrap_or_else(|e| e.into_inner());
+                let mut doc = run.take().unwrap_or_else(|| json!({"pid": pid}));
+                if let Some(obj) = doc.as_object_mut() {
+                    obj.insert("exit".into(), json!(exit));
+                    obj.insert("running".into(), json!(false));
+                    obj.insert("finished_utc".into(), json!(now_utc()));
+                }
+                *run = Some(doc);
             });
             (
                 StatusCode::ACCEPTED,
@@ -779,13 +882,32 @@ async fn trigger_scan(State(st): State<AppState>) -> Response {
 }
 
 async fn ws(ws: WebSocketUpgrade, State(st): State<AppState>) -> impl IntoResponse {
+    // Every client gets its own clone of a 130-300 KB snapshot up to once a
+    // second. A cap is the difference between a monitor and an accidental
+    // memory leak with an open socket attached.
+    const MAX_CLIENTS: usize = 16;
+    if st.clients.load(std::sync::atomic::Ordering::SeqCst) >= MAX_CLIENTS {
+        return (StatusCode::SERVICE_UNAVAILABLE, "too many dashboard clients")
+            .into_response();
+    }
+    st.clients.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     // This socket carries snapshots server->client. Inbound frames are ignored,
     // so their only possible use is to allocate memory: 64 KiB is generous.
     ws.max_message_size(64 * 1024)
         .on_upgrade(move |socket| client(socket, st))
+        .into_response()
 }
 
 async fn client(mut socket: WebSocket, st: AppState) {
+    struct Counted(AppState);
+    impl Drop for Counted {
+        fn drop(&mut self) {
+            self.0
+                .clients
+                .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+        }
+    }
+    let _counted = Counted(st.clone());
     let mut rx = st.tx.subscribe();
     let first = st.current.lock().await.clone();
     if socket.send(Message::Text(first)).await.is_err() {
@@ -860,11 +982,14 @@ async fn main() {
     let mut series = collector::Collector::new();
     let state = AppState {
         tx,
-        current: Arc::new(Mutex::new(build(&root, &mut series).to_string())),
+        current: Arc::new(Mutex::new(build(&root, &mut series, Value::Null).to_string())),
         root: root.clone(),
         port,
         series: Arc::new(Mutex::new(series)),
         last_scan: Arc::new(std::sync::Mutex::new(idle_since())),
+        scan_running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        last_run: Arc::new(std::sync::Mutex::new(None)),
+        clients: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
     };
     tokio::spawn(watch(state.clone()));
 
@@ -1157,11 +1282,14 @@ mod tests {
         let mut series = collector::Collector::new();
         let st = AppState {
             tx,
-            current: Arc::new(Mutex::new(build(&root, &mut series).to_string())),
+            current: Arc::new(Mutex::new(build(&root, &mut series, Value::Null).to_string())),
             root: root.clone(),
             port,
             series: Arc::new(Mutex::new(series)),
             last_scan: Arc::new(std::sync::Mutex::new(idle_since())),
+        scan_running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+        last_run: Arc::new(std::sync::Mutex::new(None)),
+        clients: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         };
         let server = tokio::spawn(async move {
             axum::serve(listener, router(st)).await.unwrap();

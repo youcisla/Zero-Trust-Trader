@@ -55,10 +55,11 @@ standing down — a real feature, but not the one being asked for.
 Two candidate readings of that fact, and they point in opposite directions:
 
 1. *The bar is too strict; lower it and the system trades.* The bar is 4.56
-   because 10,128 hypotheses have been tested. Lowering it does not create an
+   because 10,128 hypotheses had been tested on 2026-11-09. Lowering it does not create an
    edge, it relabels noise as one: `tools/exit_policy_ab.py` and the rr sweep in
    `docs/SIZE-AND-RUIN.md` show every configuration landing 1–10 points below its
-   own breakeven. A 2.68 t-statistic after 10,128 tries is what luck looks like.
+   own breakeven. A 2.68 t-statistic after 10,128 tries is what luck looks like
+   (figures as of 2026-11-09; the live bar is the one in `tier3_results.json`).
 2. *The families are wrong, not the bar.* True, and testable: shares produced the
    first positive-expectancy candidates this project has seen. The work is to
    find a family that survives 4.56 — not to lower it.

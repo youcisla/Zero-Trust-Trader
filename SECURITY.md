@@ -37,7 +37,7 @@ Relevant files:
 | `run_funnel.py` | pre-flight (demo-only), lock, run window |
 | `policy_check.py` | runnable proof that the consent gate fires |
 | `keep_awake.py` | power-state guard, no trading surface |
-| `marketdata.py` | the only module that talks to the terminal |
+| `marketdata.py` | owns the terminal connection, the broker offset and the bar cache |
 
 ## Secrets
 
@@ -60,11 +60,28 @@ Before sharing diagnostics, inspect logs/reports for private trading information
 policy controls. It does not dump private config fields or their paths.
 See [incident and recovery procedure](docs/OPERATIONS.md) for evidence handling.
 
+## Data that leaves this machine
+
+The advisory desk is the only component that calls a third party. It sends the
+scan digest, the candidates and the notes to DeepSeek (`desk.py`, `agent_brief.py`),
+and — when `OPENROUTER_API_KEY` is set — two typed questions to the decision model
+(`desk.jev`). What goes out is artifact text: symbols, statistics, prices and the
+desk's own sentences. No account number, no key, no local path: `desk_store`
+redacts the login and rewrites machine paths before anything is written, and
+`tools/check_public.py` fails the build if one appears in a tracked file.
+
+Nothing else in this tree makes an outbound connection. RSS headlines are fetched
+by the desk only, with DTD-bearing documents refused.
+
 ## Not in scope
 
 - The third-party MCP bridge itself — report upstream
 - Losses resulting from trading decisions; see `DISCLAIMER.md`
 - Broker-side behaviour, execution quality or slippage
+- `policy_check.py`, the runnable proof that the consent gate is armed: it imports
+  `mt5_mcp`, which is not in `requirements.txt` because it is the bridge's own
+  package. It therefore cannot run in CI and is a manual check. That is a known
+  gap, not an oversight: the alternative is vendoring the bridge
 
 ## Supported versions
 

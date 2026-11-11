@@ -1,6 +1,7 @@
 """TIER 2 — vectorised strategy-matrix scan over the Tier 1 universe.
 
-Three families, all evaluated on the LAST CLOSED H1 bar only:
+Three families, all evaluated on the last closed bar of the scan timeframe
+(M15 by default; the funnel passes --tf).
 
   A  donchian   Donchian-20 breakout, gated by EMA50 vs EMA200 trend
   B  rsi        RSI-14 crossing INTO <35 (long) / >65 (short)

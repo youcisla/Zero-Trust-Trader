@@ -19,7 +19,8 @@ from __future__ import annotations
 # imported: importing tier3_deep pulls MetaTrader5 at module load, which would
 # break this module's importability on CI and in tests. A test asserts the two
 # values are equal, so they cannot drift apart silently.
-PERMUTATIONS = 1000
+# The count lives in timemachine_mt5; a second literal is how the two drift.
+from timemachine_mt5 import PERMUTATIONS  # noqa: E402  (1000, CLI-locked)
 
 import argparse
 import atexit

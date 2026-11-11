@@ -550,13 +550,19 @@ def skeptic(results: list[dict], facts: str, key: str, root: Path | None = None,
     if not results:
         return {"agent": "skeptic", "status": "no candidate", "verdict": "no candidate",
                 "reason": "tier 3 has no results on disk"}
-    top = results[0]
+    # Every survivor, not results[0]: on a multi-survivor day the jury heard one
+    # objection about one candidate and decided for the rest.
+    shown = results[:5]
+    blob = json.dumps(shown, indent=1)
+    # The prompt may be trimmed; the guard is given the whole document, so a
+    # figure dropped by the trim is still citable.
     note = chat([{"role": "system", "content": SKEPTIC_SYS},
-                 {"role": "user", "content": "CANDIDATE:\n" + json.dumps(top, indent=1)[:4000]
+                 {"role": "user", "content": "CANDIDATES:\n" + blob[:6000]
                   + "\n\nCONTEXT (do not restate any of it):\n" + facts[-4000:]
-                  + "\n\nAt most 3 reasons, one sentence each."}], key, root=root, meta=meta, **kw)
-    note.setdefault("symbol", top.get("symbol"))
-    return _guard(note, facts + json.dumps(top), "skeptic")
+                  + "\n\nAt most 3 reasons, one sentence each. Name the candidate each"
+                  " reason is about."}], key, root=root, meta=meta, **kw)
+    note.setdefault("symbol", shown[0].get("symbol"))
+    return _guard(note, facts + blob, "skeptic")
 
 
 def chief(facts: str, key: str, root: Path | None = None, meta: dict | None = None, **kw) -> dict:

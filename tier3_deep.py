@@ -22,7 +22,7 @@ from __future__ import annotations
 # at 300 permutations the smallest attainable p-value is 1/301, so the same
 # candidate can clear the bar on one run and miss it on the next. This is not a
 # performance knob - if a scan is too slow, shrink the universe, not the test.
-PERMUTATIONS = 1000
+from timemachine_mt5 import PERMUTATIONS  # noqa: E402  (one literal, one gate)
 
 import argparse
 import json
@@ -172,6 +172,9 @@ def _main() -> int:
         return 1
     trials = minimum if a.trials is None else a.trials
     zc = tm.bonferroni_z(trials)
+    # With --t-gate the statistic is a Student-t, so its critical value is taken
+    # from that distribution per candidate (df = n - 1) and recorded beside the
+    # normal bar rather than silently replacing it.
     if not top:
         # No candidates is a normal outcome, not a failure. It must still be
         # recorded: the scan tested scan_tests hypotheses even though none
@@ -203,7 +206,8 @@ def _main() -> int:
     # broken. Say which number is which.
     print(f"Tier 2 shortlist: {len(top)} | this scan declares {scan_tests} tests "
           f"({src.get('symbols_tested', '?')} symbols x {src.get('strategies_tested', '?')} "
-          f"strategies) | cumulative {trials} | z_crit {zc:.2f} | "
+          f"strategies) | cumulative {trials} | z_crit {zc:.2f}"
+          + (" (t-gate: per-candidate df, shown per row)" if a.t_gate else "") + " | "
           f"permutations {a.permutations} | corr_max {a.corr_max}\n")
 
     md.connect()
@@ -251,6 +255,8 @@ def _main() -> int:
                "trials_declared": scan_tests,
                "trials_cumulative": trials,
                "z_crit_corrected": zc, "permutations": a.permutations,
+               "t_crit_corrected": next((d["significance"].get("t_crit") for d in results
+                                         if d["significance"].get("t_crit")), None),
                "corr_max": a.corr_max, "results": results,
                "passed_both_gates": [d["symbol"] for d in survivors],
                "correlation_filtered": dropped,

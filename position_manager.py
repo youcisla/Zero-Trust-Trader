@@ -463,7 +463,15 @@ def main() -> int:
             # OS ownership survives slow passes without an expiring heartbeat.
             if (HERE / ".ztt-maintenance").exists():
                 return 2
-            doc = run_once(cfg, a.apply, a.session_close)
+            # One exception from the terminal layer used to end supervision
+            # silently: no restart, no alert, a stale trail and no message. A
+            # failed pass is a line in the log; it is not the end of the loop.
+            try:
+                doc = run_once(cfg, a.apply, a.session_close)
+            except Exception as e:  # noqa: BLE001 - the loop outlives any one pass
+                log_line(f"SUPERVISOR PASS FAILED {type(e).__name__}: {e}")
+                time.sleep(a.interval)
+                continue
             try:
                 published = write_state(doc)
             except OSError as e:

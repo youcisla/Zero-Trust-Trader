@@ -45,6 +45,24 @@ GROUPS = ("FX", "Crypto", "Indices", "Commodities", "Shares")
 TRADE_MODE_FULL = 4
 
 
+def rejection(info, age_min: float, days: float, spread_pct: float, a) -> str | None:
+    """Why this symbol is refused, or None when it is kept.
+
+    The four filters of the universe gate, in one place. They used to live inline
+    in the scan loop, which is why the gate that decides what the whole funnel
+    scans had no test at all: nothing could reach it without a terminal.
+    """
+    if info.trade_mode != TRADE_MODE_FULL:
+        return "not_tradable"
+    if age_min > a.max_idle:
+        return "market_closed"
+    if days < a.min_days:
+        return "short_history"
+    if spread_pct > a.max_spread_pct:
+        return "too_wide"
+    return None
+
+
 def newest_universe(directory: Path = HERE) -> Path | None:
     """Newest tier1 artifact, timestamped files first, legacy single file last."""
     stamped = sorted(directory.glob("tier1_universe_*.json"))
@@ -160,8 +178,9 @@ def _main() -> int:
                 excl[cls]["no_spread"] += 1
                 continue
             pct = 100.0 * spread / atr_now
-            if pct > a.max_spread_pct:
-                excl[cls]["too_wide"] += 1
+            reason = rejection(info, age, days, pct, a)
+            if reason:
+                excl[cls][reason] += 1
                 continue
 
             info = mt5.symbol_info(name)

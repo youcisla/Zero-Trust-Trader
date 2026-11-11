@@ -19,12 +19,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
----
-
-NOT FINANCIAL ADVICE. This software connects to a trading terminal and is
-capable of placing orders. It is published for research and educational use.
-Trading involves substantial risk of loss. Nothing in this repository is
-investment advice, and the authors accept no liability for any trading losses.
-Use a demo account. Read DISCLAIMER-style warnings in the source before
-pointing this at anything that holds real money.

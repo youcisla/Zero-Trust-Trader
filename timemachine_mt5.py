@@ -49,6 +49,12 @@ import marketdata as md
 # trades, which is exactly the mismatch this module used to have.
 from position_manager import Cfg, next_stop
 
+# The permutation count, locked at exactly 1000 and rejected at any other value by
+# the CLI: at 300 the smallest attainable p is 1/301, so the same candidate can
+# clear the bar on one run and miss it on the next. One literal, imported by both
+# callers - it used to be typed twice with a test holding the copies equal.
+PERMUTATIONS = 1000
+
 CYCLE = {"M15": 96, "M30": 48, "H1": 24, "H4": 6, "D1": 5}
 HORIZON_DEFAULT = {"M15": 96, "M30": 48, "H1": 24, "H4": 12, "D1": 10}
 
@@ -400,6 +406,83 @@ def scan_bollinger(bars, n, k, k_atr, rr, horizon, sides,
 
 # ---------------------------------------------------------------- stats
 
+def _betacf(a: float, b: float, x: float) -> float:
+    """Continued fraction for the incomplete beta (Lentz, Numerical Recipes)."""
+    tiny = 1e-300
+    qab, qap, qam = a + b, a + 1.0, a - 1.0
+    c, d = 1.0, 1.0 - qab * x / qap
+    if abs(d) < tiny:
+        d = tiny
+    d = 1.0 / d
+    h = d
+    for m in range(1, 201):
+        m2 = 2 * m
+        aa = m * (b - m) * x / ((qam + m2) * (a + m2))
+        d = 1.0 + aa * d
+        if abs(d) < tiny:
+            d = tiny
+        c = 1.0 + aa / c
+        if abs(c) < tiny:
+            c = tiny
+        d = 1.0 / d
+        h *= d * c
+        aa = -(a + m) * (qab + m) * x / ((a + m2) * (qap + m2))
+        d = 1.0 + aa * d
+        if abs(d) < tiny:
+            d = tiny
+        c = 1.0 + aa / c
+        if abs(c) < tiny:
+            c = tiny
+        d = 1.0 / d
+        delta = d * c
+        h *= delta
+        if abs(delta - 1.0) < 3e-14:
+            break
+    return h
+
+
+def _betai(a: float, b: float, x: float) -> float:
+    """Regularised incomplete beta I_x(a, b)."""
+    if x <= 0.0:
+        return 0.0
+    if x >= 1.0:
+        return 1.0
+    lbeta = math.lgamma(a + b) - math.lgamma(a) - math.lgamma(b)
+    bt = math.exp(lbeta + a * math.log(x) + b * math.log1p(-x))
+    if x < (a + 1.0) / (a + b + 2.0):
+        return bt * _betacf(a, b, x) / a
+    return 1.0 - bt * _betacf(b, a, 1.0 - x) / b
+
+
+def student_t_p(t: float, df: int) -> float:
+    """Two-sided p-value of Student-t with `df` degrees of freedom."""
+    if df <= 0:
+        return 1.0
+    return _betai(df / 2.0, 0.5, df / (df + t * t))
+
+
+def student_t_crit(alpha: float, df: int) -> float:
+    """Two-sided critical value: t with P(|T| > t) = alpha.
+
+    The gate compares a Student-t statistic against this, not against a normal
+    quantile: at 25 trades the normal bar's true tail is 26x its nominal value,
+    which made the stated family-wise error fiction at exactly the sample sizes
+    the deep test handles.
+    """
+    if df <= 0:
+        return float("inf")
+    if not 0.0 < alpha < 1.0:
+        raise ValueError("alpha must be in (0, 1)")
+    lo, hi = 0.0, 400.0
+    for _ in range(200):
+        mid = (lo + hi) / 2.0
+        if student_t_p(mid, df) > alpha:
+            lo = mid
+        else:
+            hi = mid
+    return round((lo + hi) / 2.0, 3)
+
+
 def max_drawdown(rs) -> float:
     peak = cum = dd = 0.0
     for r in rs:
@@ -446,17 +529,23 @@ def significance(win_rate: float, n_decided: int, rr: float, rs, n_tests: int,
     z = (win_rate - p0) / se if se else 0.0
     t = _t_from(rs)
     zc = bonferroni_z(n_tests)
+    # Two-sided Bonferroni level, on the reference distribution the statistic
+    # actually has. The normal bar stays in the record for comparison.
+    df = max(1, len(rs) - 1) if rs else 1
+    tc = student_t_crit(0.05 / max(1, n_tests), df) if use_t else None
     gate = t if use_t else z
+    crit = tc if use_t else zc
     finite_returns = bool(rs) and all(math.isfinite(float(x)) for x in rs)
     mean_r = statistics.mean(float(x) for x in rs) if finite_returns else None
     profitable = finite_returns and mean_r > 0
     return {"break_even": round(p0, 4), "z": round(z, 3), "z_crit_naive": 1.96,
             "z_crit_bonferroni": zc, "n_tests": n_tests,
+            "t_crit": tc, "df": df if use_t else None,
             "gate": "t" if use_t else "z",
             "mean_net_R": round(mean_r, 6) if mean_r is not None else None,
             "profitable": profitable,
             "passes_naive": profitable and gate > 1.96,
-            "passes_corrected": profitable and gate > zc,
+            "passes_corrected": profitable and gate > crit,
             "t_stat_R": round(t, 3)}
 
 

@@ -44,9 +44,19 @@ def account_currency() -> str:
     return (info.currency if info else "") or ""
 
 
+class TerminalError(RuntimeError, SystemExit):
+    """The terminal refused to initialise.
+
+    A library must not end the process, so this is catchable as a RuntimeError;
+    it is also a SystemExit because every CLI in this tree has always let an
+    initialisation failure terminate with a one-line message, and that behaviour
+    is the one thing no caller has to change.
+    """
+
+
 def connect() -> None:
     if not mt5.initialize():
-        raise SystemExit(f"mt5.initialize failed: {mt5.last_error()}")
+        raise TerminalError(f"mt5.initialize failed: {mt5.last_error()}")
 
 
 _OFFSET_PROBES = ("BTCUSD", "ETHUSD", "US30", "EURUSD")

@@ -44,7 +44,7 @@ def why_failed(doc: dict) -> str:
     s, pm = doc["significance"], doc.get("permutation") or {}
     gate = s.get("gate", "z")
     z = s.get("t_stat_R") if gate == "t" else s["z"]
-    zc = s["z_crit_bonferroni"]
+    zc = s.get("t_crit") or s["z_crit_bonferroni"]
     if pm and not pm.get("passes", True) and s["passes_corrected"]:
         return (f"cleared the {zc:.2f} {gate} bar but the permutation test says "
                 f"p={pm.get('p_value')} — not better than entering at random")

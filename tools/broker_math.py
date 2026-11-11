@@ -24,7 +24,7 @@ import marketdata as md
 ACCOUNT_EUR = 50.0
 TARGET_MULT = 20.0
 DAYS = 21
-LEVERAGE = 500
+# Leverage is 1:30 on this server (AGENTS.md section 10); no constant here.
 DEFAULT = ("EURUSD", "XAUUSD", "US30", "BTCUSD")
 
 

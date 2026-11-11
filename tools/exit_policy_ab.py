@@ -9,7 +9,8 @@ order carried).
 
 So every published result is "trail only". That is a policy, not a fact about
 the market, and nobody chose it: an order placed through the bridge may carry a
-tp at rr x risk, and `place_and_close.py` does exactly that. This script
+tp at rr x risk, which the bridge supports even though the order path was
+removed from this tree. This script
 measures the difference on the same bars, so the choice is made with numbers.
 
     python tools/exit_policy_ab.py BTCUSD BCHUSD

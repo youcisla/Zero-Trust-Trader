@@ -19,7 +19,7 @@ instead of flattering us.
 | Funnel run 5 (subset, revised families) | 525 | 175 x 3: donchian / rsi 35-65 / bollinger | 0 passed both gates |
 | Funnel run 6 (logging verification) | 525 | same subset, after Tier 3 took over logging | 0 passed both gates |
 
-**Cumulative: 5,106.**
+**Cumulative: 5,107.**
 
 Counted even though the last run was started by hand: the rule is that a run is
 a run. The alternative — discounting runs that did not produce a candidate —
@@ -82,10 +82,10 @@ The first matrix run shortlisted three `rsi` candidates whose samples were
 | RSI 30/70 → 35/65 on H1 | 134 → 204 trades (still short) |
 | RSI 30/70 → 40/60 on H1 | 134 → 273 (still short, and 40/60 is a weak signal) |
 | Move to M15 | **no help** — 133 vs 134, because the scanner advances to the exit bar, so entries are horizon-limited, not bar-limited |
-| **Extend history 5k → 15k H1 bars** | **134 → 616** |
+| **Extend history 5k → 15k M15 bars** | **134 → 616** |
 
 The binding constraint was how many bars the scanner could see, not how loose
-the threshold was. Tier 3 therefore fetches **15,000 H1 bars** while Tier 2 keeps
+the threshold was. Tier 3 therefore fetches **15,000 M15 bars** while Tier 2 keeps
 4,000 — Tier 2 only needs the last bar's indicators, so paying for 15k bars
 across 600 symbols every run would cost ~4x the runtime for nothing.
 
@@ -97,7 +97,7 @@ but it does bias the funnel toward instruments with long histories.
 **Conclusion: this was a history-length constraint, not a threshold constraint.**
 Loosening 30/70 to 35/65 bought +70 trades; extending 5,000 to 15,000 bars
 bought +480. Thresholds only trade signal quality for volume — history *is* the
-sample. **15,000 H1 bars is now the standard deep-test window.** Tier 2 keeps
+sample. **15,000 M15 bars is now the standard deep-test window.** Tier 2 keeps
 4,000 on purpose, because it reads only the last closed bar.
 
 The decisive evidence that the sparsity had been masking nothing: ETHAUD/rsi

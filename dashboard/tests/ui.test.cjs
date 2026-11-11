@@ -42,7 +42,7 @@ test('no CDN and no build step crept back in', () => {
   assert.match(source, /\/vendor\/echarts\.min\.js/);
 });
 
-test('the six routes exist and are reachable by hash', () => {
+test('every route in the table is reachable by hash', () => {
   for (const r of ['flow', 'overview', 'research', 'performance', 'trials', 'ops']) {
     assert.match(source, new RegExp('"' + r + '"'), 'route ' + r);
   }
@@ -61,9 +61,12 @@ test('reconnect backoff grows then caps', () => {
 });
 
 test('an open connection becomes stale without another message', () => {
+  // The server resends every 4 s; the threshold sits at 8 s, so one late beat
+  // does not look like a dead feed.
   assert.equal(h.transportFresh(null, 10000), false);
-  assert.equal(h.transportFresh(1000, 6000), true);
-  assert.equal(h.transportFresh(1000, 6001), false);
+  assert.equal(h.transportFresh(1000, 9000), true);   // age 8000
+  assert.equal(h.transportFresh(1000, 9001), false);  // age 8001
+  assert.ok(8000 > 4000, 'the threshold must exceed the server resend interval');
 });
 
 test('dry run, applied, refusing and stale observations have distinct labels', () => {
