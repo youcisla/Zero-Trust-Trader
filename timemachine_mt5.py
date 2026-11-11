@@ -660,6 +660,36 @@ def entry_start_hour(strategy: str) -> int:
     return min(hours)
 
 
+LOT = 0.01  # the only size this account can afford (docs/SIZE-AND-RUIN.md)
+
+
+def max_loss_at_stop(risk: float, info, lots: float = LOT, currency: str = "") -> dict | None:
+    """What the stop costs in account currency, from the broker's own numbers.
+
+    `trade_tick_value` is account currency per tick per lot, so it is the exact
+    route: ticks = risk / tick_size. When the terminal does not publish it, fall
+    back to contract size (risk x lots x contract size) - the same arithmetic the
+    sizing tools use. None when neither is available: a number invented here would
+    be worse than no number.
+
+    This is the loss AT the stop price. A stop is a plan, not a guarantee: a gap
+    or a fast market fills past it, and no field here claims otherwise.
+    """
+    if not risk or risk <= 0 or lots <= 0 or info is None:
+        return None
+    tick_size = float(getattr(info, "trade_tick_size", 0) or 0)
+    tick_value = float(getattr(info, "trade_tick_value", 0) or 0)
+    contract = float(getattr(info, "trade_contract_size", 0) or 0)
+    if tick_size > 0 and tick_value > 0:
+        amount, basis = (risk / tick_size) * tick_value * lots, "tick_value"
+    elif contract > 0:
+        amount, basis = risk * lots * contract, "contract_size"
+    else:
+        return None
+    return {"amount": round(amount, 2), "currency": currency or "",
+            "lots": lots, "basis": basis, "at": "stop_price"}
+
+
 def analyse(symbol, tf="H1", strategy="donchian", don_n=20, ema_fast=50, ema_slow=200,
             atr_k=1.5, rr=1.5, horizon=None, sides="both", bars_n=5000,
             replays=10000, seed=19, window=2, pool_bars=1500, n_tests=1,
@@ -782,6 +812,11 @@ def analyse(symbol, tf="H1", strategy="donchian", don_n=20, ema_fast=50, ema_slo
             "reference_bid": round(float(tick.bid), 6), "atr14": round(atr_now, 6),
             "proposed_entry": round(ref, 5), "proposed_stop": round(stop, 5),
             "proposed_target": round(target, 5), "risk": round(risk_p, 6),
+            # The one number a human needs before an APPROVED, from the broker's
+            # own contract data rather than from a guess about lot size.
+            "max_loss": max_loss_at_stop(
+                risk_p, md.mt5.symbol_info(symbol), LOT,
+                (md.mt5.account_info().currency if md.mt5.account_info() else "") or ""),
             "donchian_upper": round(float(upper[last]), 6) if not math.isnan(upper[last]) else None,
             "donchian_lower": round(float(lower[last]), 6) if not math.isnan(lower[last]) else None,
         },

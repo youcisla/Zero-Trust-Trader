@@ -52,6 +52,25 @@ class TestTheWinnerPath(unittest.TestCase):
         self.assertEqual(rc, 0, text)
         self.assertIn("ACTION", text.upper())
 
+    def test_the_ticket_states_what_the_stop_costs(self):
+        """A human reads this before typing APPROVED; it must be a number, not a ratio."""
+        doc = proposal()
+        doc["results"][0]["current"]["max_loss"] = {
+            "amount": 243.21, "currency": "EUR", "lots": 0.01,
+            "basis": "contract_size", "at": "stop_price"}
+        rc, text = self._run(doc, f"2026-11-10T14:00:00Z | universe=1 tested=1 total_tests=100 "
+                                  f"trials=100 cumulative=2305 scan_id={doc['scan_id']}")
+        self.assertEqual(rc, 0, text)
+        self.assertIn("Max loss    243.21 EUR", text)
+        self.assertIn("a stop is a plan, not a guarantee", text)
+
+    def test_an_artifact_without_contract_data_says_unknown(self):
+        doc = proposal()   # the fixture's current has no max_loss key
+        rc, text = self._run(doc, f"2026-11-10T14:00:00Z | universe=1 tested=1 total_tests=100 "
+                                  f"trials=100 cumulative=2305 scan_id={doc['scan_id']}")
+        self.assertEqual(rc, 0, text)
+        self.assertIn("Max loss    unknown", text)
+
     def test_evidence_from_another_scan_is_refused(self):
         doc = proposal()
         rc, text = self._run(doc, "2026-11-10T14:00:00Z | universe=1 tested=1 total_tests=100 "

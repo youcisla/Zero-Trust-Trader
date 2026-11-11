@@ -225,8 +225,8 @@ need the **MT5 terminal on Windows** — they read live bars, so they fail with
 `ModuleNotFoundError` on a Linux clone. `check_public.py`, `check_docs.py`,
 `build_public.py`, `run_tests.py` and `export_desk_history.py` are pure stdlib.
 
-Canonical universe figures, dated: **2026-11-10 — 1,712 quoted → 561 tradable at
-14:32 UTC → 248 liquid (210 shares)**. A rebuild counts what the markets that are
+Canonical universe figures, dated: **2026-11-11 — 1,711 quoted → 349 tradable at
+11:28 UTC → 180 liquid (148 shares)**. A rebuild counts what the markets that are
 open at that minute return; the standalone `tier1_universe.py` defaults to
 `--min-days 100`, while the funnel pins 160.
 | `build_public.py` | sanitise a copy into `_publish/`; refuses if it finds a machine path |

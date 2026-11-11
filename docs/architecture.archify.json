@@ -78,7 +78,7 @@
     150,
     62
    ],
-   "tag": "1,712 → 248",
+   "tag": "1,711 → 180",
    "sources": [
     {
      "path": "make_liquid.py",
@@ -99,7 +99,7 @@
     150,
     62
    ],
-   "tag": "248–744 tests/scan",
+   "tag": "180–540 tests/scan",
    "sources": [
     {
      "path": "tier2_patterns.py",
@@ -178,7 +178,7 @@
     150,
     56
    ],
-   "tag": "210 shares",
+   "tag": "148 shares",
    "sources": [
     {
      "path": "make_liquid.py",

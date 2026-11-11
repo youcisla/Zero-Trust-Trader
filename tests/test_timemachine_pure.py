@@ -63,6 +63,42 @@ class TheVerdictLine(unittest.TestCase):
         self.assertIn("luck", line)
 
 
+class MaxLossAtStop(unittest.TestCase):
+    """The number a human reads before typing APPROVED."""
+
+    @staticmethod
+    def info(**kw):
+        import types
+        base = {"trade_tick_size": 0.01, "trade_tick_value": 1.0, "trade_contract_size": 100000}
+        base.update(kw)
+        return types.SimpleNamespace(**base)
+
+    def test_the_tick_value_route_is_exact(self):
+        # 0.24321 of risk / 0.01 tick = 24.321 ticks x 1.0 per lot x 0.01 lot
+        out = tm.max_loss_at_stop(0.24321, self.info(), lots=0.01, currency="EUR")
+        self.assertEqual(out["basis"], "tick_value")
+        self.assertAlmostEqual(out["amount"], 0.24, places=2)
+        self.assertEqual(out["currency"], "EUR")
+
+    def test_it_falls_back_to_contract_size(self):
+        info = self.info(trade_tick_value=0)          # terminal did not publish it
+        out = tm.max_loss_at_stop(0.24321, info, lots=0.01)
+        self.assertEqual(out["basis"], "contract_size")
+        self.assertAlmostEqual(out["amount"], 243.21, places=2)
+
+    def test_it_refuses_to_invent_a_number(self):
+        self.assertIsNone(tm.max_loss_at_stop(0.25, None))
+        self.assertIsNone(tm.max_loss_at_stop(0.25, self.info(trade_tick_size=0,
+                                                              trade_tick_value=0,
+                                                              trade_contract_size=0)))
+        self.assertIsNone(tm.max_loss_at_stop(0, self.info()))
+        self.assertIsNone(tm.max_loss_at_stop(-1, self.info()))
+
+    def test_it_says_which_price_the_loss_belongs_to(self):
+        out = tm.max_loss_at_stop(0.24321, self.info(), lots=0.01)
+        self.assertEqual(out["at"], "stop_price")
+
+
 class Simulate(unittest.TestCase):
     def test_a_target_inside_the_move_is_reached(self):
         # Every bar's high is above entry, so a long target just above entry hits.

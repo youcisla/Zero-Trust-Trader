@@ -29,9 +29,9 @@ a trade-off, it is the product.
 ## 2. The pipeline
 
 ```
-Tier 1  universe filter      1,508 quoted -> 561 tradable, liquid, live at 14:32 UTC
+Tier 1  universe filter      1,711 quoted -> 349 tradable, liquid, live at 11:28 UTC
         liquidity build      every survivor, not a top-N: FX, indices, commodities,
-                             crypto AND shares (248 at the last rebuild, 210 shares)
+                             crypto AND shares (180 at the 2026-11-11 rebuild, 148 shares)
 Tier 2  strategy matrix      3 families x every symbol with fresh bars
 Tier 3  deep test            15k bars, 10k Monte-Carlo paths, BOTH gates
    |
@@ -517,6 +517,7 @@ in any of those four places is the exact thing this repository exists to prevent
 | Server leverage is **1:30**, not 1:500 | At 50 EUR only EURUSD/0.01 is affordable (33.40 EUR of margin, 186 pips to stop-out). XAUUSD needs 183 EUR of margin, US30 234, BTCUSD 333 — they cannot be opened on a small balance at all. Read it from the terminal (`mt5.account_info().leverage`), never assume it |
 | `symbol_info()` before `symbol_select()` | An unselected symbol returns a struct whose `spread` is 0, and a zero spread makes the backtest a cost-free market: BCHUSD measured 372 trades at −0.007R instead of the real 464 at −0.830R. Select first, then read the quote |
 | `--horizon` defaults to **32**, but `HORIZON_DEFAULT["M15"]` is **96** | `analyse()` only falls back to `HORIZON_DEFAULT` when `horizon is None`, so any caller that omits it silently backtests a 24-hour hold while the pipeline measures an 8-hour one. The two produce different trade sets on the same bars |
+| **A stop is a plan, not a guarantee** | `current.max_loss` is the loss AT the stop price, from the broker's own `trade_tick_value` (falling back to contract size). A gap fills past it, so the ticket prints the caveat on the same line as the number rather than in a footnote nobody reads. `None` when the terminal publishes neither figure — an invented number is worse than no number |
 | **The live exit path has no take-profit** | `_resolve_live` walks stop, trailing, break-even, session close and horizon — never `target`. `target` counts 0 in every record, and `rr` is inert there. That is deliberate (`position_manager` sets no TP), and it is why a 24% win rate is not a bad score: the wins are whatever the trail banks, not a fixed 1.5R. `tools/exit_policy_ab.py` measures the alternative |
 | **The universe is smaller than "everything"** | Three caps, not one. `--top` (after dedupe), `--pool` (**before** it), and `--max-idle 150` in tier 1. Both caps default to **0 = everything measured** in `run_funnel.py`; `make_liquid.py` still defaults to `--top 120 --pool 150` when called by hand, which asks "is this market open *right now*". A rebuild run at 14:04 UTC excluded 1,070 US shares as `market_closed` because the session had not opened; the liquidity stage then measured 254 of the 381 tier 1 returned, deduped 66 correlation-clones, and kept 188. Rebuild after 14:30 UTC for the US and after 07:00 for Europe; the union across sessions is not reachable in one pass |
 | **A diagnostic `--top` overwrites the universe** | `make_liquid.py --top 1` wrote a one-symbol universe over 188 and the next scan reported `universe=1 tested=1` as though the market had narrowed to EURUSD. The writer now refuses to replace a universe with less than half of it unless `--force`, and `tests/test_make_liquid_guard.py` fails if that inequality leaves the file |

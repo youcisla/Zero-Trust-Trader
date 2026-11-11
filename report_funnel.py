@@ -132,6 +132,13 @@ def main() -> int:
         print("   Exit policy protective trailing / break-even / session / horizon; no take-profit")
         print(f"   Risk        {c['risk']} per unit at {d['tier2'].get('class')} "
               f"spread {d['tier2'].get('spread_pct_atr')}% of ATR")
+        ml = c.get("max_loss")
+        if ml:
+            print(f"   Max loss    {ml['amount']:.2f} {ml['currency']} at the stop "
+                  f"({ml['lots']} lot, {ml['basis']}) — a stop is a plan, not a "
+                  f"guarantee: a gap fills past it")
+        else:
+            print("   Max loss    unknown — this artifact carries no contract size")
         gate = s.get("gate", "z")
         metric = s.get("t_stat_R") if gate == "t" else s["z"]
         print(f"   Evidence    {gate}={metric:+.2f} vs corrected {zc:.2f} | "
