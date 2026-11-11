@@ -47,13 +47,14 @@ jobs:
         run: python tools/run_tests.py
       - name: Correctness lint
         run: python -m ruff check --no-cache .
-      # The floor is the measured number on the day it was introduced (53%), not
-      # an aspiration: a bar nobody chose is a bar that gets lowered silently.
+      # Measured in CI at 60% on 2026-11-11; the floor sits two points below so a
+      # refactor that deletes covered code does not fail the build, and a drop below
+      # it is a real regression rather than noise.
       - name: Branch coverage, with a floor
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.14'
         run: |
           python -m coverage run --branch --source=. --omit="tests/*,tools/*,dashboard/*" -m unittest discover -s tests
-          python -m coverage report --include="*.py" --omit="tests/*,tools/*" --fail-under=52
+          python -m coverage report --include="*.py" --omit="tests/*,tools/*" --fail-under=58
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.14'
         with:

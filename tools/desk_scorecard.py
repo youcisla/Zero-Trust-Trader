@@ -30,15 +30,16 @@ def _rows(con: sqlite3.Connection, sql: str) -> list[tuple]:
 
 def _verdicts(con: sqlite3.Connection) -> list[dict]:
     out = []
-    for run_id, payload in _rows(
-            con, "select r.id, a.payload from answers a join runs r on r.id = a.run_id"
+    for run_id, payload, ts in _rows(
+            con, "select r.id, a.payload, r.generated_utc from answers a"
+                 " join runs r on r.id = a.run_id"
                  " where a.role='jury' and a.status='ok' order by a.id"):
         try:
             doc = json.loads(payload)
         except (TypeError, ValueError):
             continue
         out.append({"run": run_id, "verdict": doc.get("verdict"), "why": doc.get("why") or "",
-                    "ts": con.execute("select generated_utc from runs where id=?", (run_id,)).fetchone()[0]})
+                    "ts": ts})
     return out
 
 

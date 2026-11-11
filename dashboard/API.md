@@ -34,7 +34,7 @@ a user-authentication boundary; the same user must protect the producer files.
 | `/vendor/react-dom.production.min.js` | Embedded JavaScript | No runtime CDN |
 | `/vendor/htm.umd.js` | Embedded JavaScript | No runtime CDN |
 | `/vendor/echarts.min.js` | Embedded chart library, sha256 in `web/vendor/PROVENANCE.json` | No runtime CDN |
-| `POST /api/scan` | **The only write in this process.** Spawns `run_funnel.py --window-utc 05:00-17:00 --t-gate` with no other argument | 503 if the script is missing; the funnel's own lock, window and demo pre-flight still decide whether anything runs |
+| `POST /api/scan` | **The only write in this process.** Spawns `run_funnel.py --window-utc 05:00-17:00 --t-gate` with no other argument | 429 within 5 s of a previous POST; 503 if the script is missing; the funnel's own lock, window and demo pre-flight still decide whether anything runs |
 
 Unknown log names return 404. Routes support only read methods; there are no
 order, settings, file-write or command messages. Axum provides normal HEAD

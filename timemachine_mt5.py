@@ -814,9 +814,8 @@ def analyse(symbol, tf="H1", strategy="donchian", don_n=20, ema_fast=50, ema_slo
             "proposed_target": round(target, 5), "risk": round(risk_p, 6),
             # The one number a human needs before an APPROVED, from the broker's
             # own contract data rather than from a guess about lot size.
-            "max_loss": max_loss_at_stop(
-                risk_p, md.mt5.symbol_info(symbol), LOT,
-                (md.mt5.account_info().currency if md.mt5.account_info() else "") or ""),
+            "max_loss": max_loss_at_stop(risk_p, md.symbol_info(symbol), LOT,
+                                         md.account_currency()),
             "donchian_upper": round(float(upper[last]), 6) if not math.isnan(upper[last]) else None,
             "donchian_lower": round(float(lower[last]), 6) if not math.isnan(lower[last]) else None,
         },

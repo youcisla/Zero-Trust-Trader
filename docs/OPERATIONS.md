@@ -14,7 +14,9 @@ install through that interpreter. The portable Windows launchers call
 launchers were not modified: their human owner must check interpreter selection
 and account-pin propagation before using them with a registered task.
 
-The scanner reads `MT5_EXPECTED_LOGIN` from its process environment, not `.env`.
+The scanner reads `MT5_EXPECTED_LOGIN` at call time: an exported value wins, and a
+`.env` beside the tree is the fallback. The launchers pin it; the dashboard button
+and the scheduler inherit it.
 Its value must be the numeric demo login selected by a human. The actual terminal
 must also satisfy the server-name and explicit demo-mode checks. Missing settings
 must stay a refusal. `ZTT_LEDGER_KEY` and `DEEPSEEK_API_KEY` are loaded by their

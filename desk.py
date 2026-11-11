@@ -93,8 +93,8 @@ def _post(payload: dict, key: str, url: str = DEFAULT_URL, timeout: int = 90) ->
         method="POST",
     )
     try:
-        # Hard cap: a desk role must not hold the run for 90 s. The cap is in the
-        # call, not in a silent min() the caller cannot see.
+        # Hard cap: a desk role must not hold the run for 90 s. The caller's timeout
+        # can only lower it, which is the point - the ceiling is not negotiable.
         with urllib.request.build_opener(_NoRedirect()).open(req, timeout=min(timeout, 30)) as r:
             raw = r.read(MAX_RESPONSE + 1)
             if len(raw) > MAX_RESPONSE:
@@ -600,7 +600,10 @@ def run(root: Path, feeds: list[str] | None = None, model: str | None = None) ->
     # `meta` after the loop is the jury's call, or {} if the jury errored - so
     # "what model actually served" used to be empty or last-caller-biased even
     # when three roles answered. Derive it from every role's metadata instead.
-    served = next((item.get("model") for item in role_meta.values() if item.get("model")), None)
+    # One answer, not the first role's: if the four calls were served by different
+    # models, "served" has no single value and the per-role map below is the record.
+    models = {m for item in role_meta.values() if (m := item.get("model"))}
+    served = models.pop() if len(models) == 1 else None
     notes["model_returned"] = served
     notes["usage"] = next((item.get("usage") for item in role_meta.values()
                            if item.get("usage")), None)

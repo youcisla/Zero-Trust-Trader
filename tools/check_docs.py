@@ -129,12 +129,13 @@ def check(root: Path) -> tuple[list[str], list[str]]:
     #    outside the repo: advisory, because CI cannot see or fix it.
     memo = (root / MEMOIRE).resolve()
     if liquid and memo.exists():
-        words = {248: "deux cent quarante-huit"}.get(liquid.get("count"))
+        # The digits, never a word map: a `{248: "deux cent quarante-huit"}` lookup
+        # silently skipped this check for every other count, which is how it stopped
+        # firing the day the universe became 180.
         body = memo.read_text(encoding="utf-8")
-        if words and words not in body and str(liquid.get("count")) not in body:
-            notes.append(
-                f"mémoire does not mention {liquid.get('count')} symbols "
-                f"(neither digits nor '{words}')")
+        count = liquid.get("count")
+        if count and str(count) not in body:
+            notes.append(f"mémoire does not mention {count} symbols")
     elif not memo.exists():
         notes.append("mémoire not checked out beside the repo — its numbers were not verified")
 

@@ -220,6 +220,7 @@ scheduled — they answer a question on demand.
 | `check_docs.py` | refuse to ship a README, a map or a mémoire that describe the tree as it was |
 | `export_desk_history.py` | publish the desk's answers as `docs/desk-history.jsonl`; the live SQLite stays local |
 | `desk_scorecard.py` | what the desk decided, how often a note survived the guard, and the escalation rate — `--since` splits it at the moment of a change; reads `desk_history.sqlite` read-only |
+| `build_public.py` | sanitise a copy into `_publish/`; refuses if it finds a machine path |
 
 `batch_backtest.py`, `broker_math.py`, `vol_dispersion.py` and `exit_policy_ab.py`
 need the **MT5 terminal on Windows** — they read live bars, so they fail with
@@ -230,7 +231,6 @@ Canonical universe figures, dated: **2026-11-11 — 1,711 quoted → 349 tradabl
 11:28 UTC → 180 liquid (148 shares)**. A rebuild counts what the markets that are
 open at that minute return; the standalone `tier1_universe.py` defaults to
 `--min-days 100`, while the funnel pins 160.
-| `build_public.py` | sanitise a copy into `_publish/`; refuses if it finds a machine path |
 
 ### On TradingView
 
@@ -350,10 +350,13 @@ scan.
 | 1,791 (one full-universe run) | 4.19 |
 | 5,388 | 4.43 |
 | 9,081 (historical example) | 4.54 |
-| **16,292 (today, 10 Nov 2026, 248 symbols)** | **4.67** |
 | 52,000 (a day at 741 tests x 48 scans) | 4.92 |
 | 265,000 (a week at that rate) | 5.21 |
 | 1,084,000 (a month at that rate) | 5.47 |
+
+The current row is not in this table on purpose: it moves with every scan. Read it
+with `python trials_total.py`, or from `trials_cumulative` and `z_crit_corrected`
+in `tier3_results.json` - the pair the gate actually used.
 
 This table is an illustrative historical snapshot, not a live trial count.
 Every value is computed by `bonferroni_z()`, not estimated — `python status.py`

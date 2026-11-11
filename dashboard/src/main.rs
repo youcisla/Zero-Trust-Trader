@@ -155,8 +155,6 @@ fn resolve_audit(root: &Path) -> Option<PathBuf> {
     .find(|p| !p.as_os_str().is_empty() && p.exists())
 }
 
-/// Null when the file is absent or mid-write: the snapshot must never fail
-/// because a producer was between `open()` and `write()`.
 /// Keep only the fields the UI reads, and cap the arrays it renders.
 ///
 /// `null` passes through untouched: a missing artifact must stay "unknown", not
@@ -181,6 +179,8 @@ fn trim_stage(doc: &Value, keep: &[&str], arrays: &[&str], cap: usize) -> Value 
     Value::Object(out)
 }
 
+/// Null when the file is absent or mid-write: the snapshot must never fail
+/// because a producer was between `open()` and `write()`.
 fn read_json(path: &Path) -> Value {
     read_bounded(path, JSON_LIMIT)
         .ok()
@@ -342,7 +342,9 @@ fn build(root: &Path, series: &mut collector::Collector) -> Value {
             "stood_down",
             "results",
         ],
-        &["results"],
+        // `results` is the shortlist, bounded by --shortlist, and the UI derives its
+        // length from the array - capping it would report 20 for a longer run.
+        &[],
         20,
     );
     let agent = read_json(&root.join("agent_notes.json"));

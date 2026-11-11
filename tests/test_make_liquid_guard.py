@@ -10,7 +10,13 @@ import sys
 import unittest
 from pathlib import Path
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path[:0] = [str(Path(__file__).resolve().parents[1]), str(Path(__file__).resolve().parent)]
+import _mt5stub  # noqa: E402
+
+# make_liquid imports marketdata, which imports MetaTrader5 - Windows-only. Install
+# the stub first, or this module only collects when another test happened to run
+# before it in alphabetical order.
+_mt5stub.install()
 import make_liquid  # noqa: E402
 
 

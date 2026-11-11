@@ -38,8 +38,9 @@ run, and no scheduled task passes `--apply`.
 
 ## 3. The measurement that blocks full automation
 
-**10,128 cumulative trials. The bar stands at z = 4.56. Nothing has ever
-cleared it.** The best candidates found today, with shares in the universe:
+**29,999 cumulative trials. The bar stands at z = 4.79. Nothing has ever
+cleared it.** (Measured 11 Nov 2026; the figure moves with every scan — read it
+from `tier3_results.json`, not from here.) The best candidates found today, with shares in the universe:
 
 | candidate | n | win | avg R | t | p | gate |
 | --- | --- | --- | --- | --- | --- | --- |

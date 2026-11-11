@@ -29,6 +29,21 @@ TIMEFRAMES = {
 TF_SECONDS = {"M15": 900, "M30": 1800, "H1": 3600, "H4": 14400, "D1": 86400}
 
 
+def symbol_info(symbol: str):
+    """Contract facts for sizing (tick size/value, contract size).
+
+    The connection, the broker offset and the bar cache live here; a module that
+    needs one read-only fact asks for it rather than reaching for `mt5` itself.
+    """
+    return mt5.symbol_info(symbol)
+
+
+def account_currency() -> str:
+    """The account's currency, or "" when the terminal will not say."""
+    info = mt5.account_info()
+    return (info.currency if info else "") or ""
+
+
 def connect() -> None:
     if not mt5.initialize():
         raise SystemExit(f"mt5.initialize failed: {mt5.last_error()}")

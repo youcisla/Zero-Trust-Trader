@@ -52,7 +52,7 @@ dashboard/                   read-only viewer (Rust), tails files, never writes
 | `tier2_patterns.py` | 3-family matrix, correlation dedupe, `total_tests` |
 | `tier3_deep.py` | deep test, **owns** the `funnel_history.log` line |
 | `timemachine_mt5.py` | strategy engines, `bonferroni_z`, `permutation_test` |
-| `marketdata.py` | the only module that talks to the terminal |
+| `marketdata.py` | owns the terminal connection, the broker offset and the bar cache; `symbol_info()` and `account_currency()` are the read-only facts other modules ask it for |
 | `position_manager.py` | continuous supervision of open positions |
 | `trials_total.py` | cumulative trial count (feeds the significance bar) |
 | `status.py` | read-only diagnostic: terminal, policy, tasks, universe |
