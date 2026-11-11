@@ -5,11 +5,16 @@ until this was fixed; at 25 trades the stated family-wise error was 26 times the
 real one. These pin the quantiles against published tables, so a future change to
 the incomplete beta cannot quietly move the bar.
 """
+import sys
 import unittest
+from pathlib import Path
 
-from tests._mt5stub import install
+ROOT = Path(__file__).resolve().parent.parent
+sys.path[:0] = [str(ROOT), str(ROOT / "tests")]
 
-install()
+import _mt5stub  # noqa: E402
+
+_mt5stub.install()
 
 import timemachine_mt5 as tm  # noqa: E402
 

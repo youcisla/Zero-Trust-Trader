@@ -6,16 +6,18 @@ re-derives each figure from the function the gate uses, so drift fails the build
 instead of surviving until someone recomputes it by hand.
 """
 import re
+import sys
 import unittest
 from pathlib import Path
 
-from tests._mt5stub import install
+ROOT = Path(__file__).resolve().parents[1]
+sys.path[:0] = [str(ROOT), str(ROOT / "tests")]
 
-install()
+import _mt5stub  # noqa: E402
+
+_mt5stub.install()
 
 import timemachine_mt5 as tm  # noqa: E402
-
-ROOT = Path(__file__).resolve().parents[1]
 
 
 class TheReadmeBarTable(unittest.TestCase):

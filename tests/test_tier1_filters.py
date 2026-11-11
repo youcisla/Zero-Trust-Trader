@@ -5,12 +5,17 @@ test at all: a regression in any of its four checks passed the whole suite and a
 green CI, because nothing could reach the loop without a trading terminal.
 """
 import argparse
+import sys
 import unittest
+from pathlib import Path
 from types import SimpleNamespace
 
-from tests._mt5stub import install
+ROOT = Path(__file__).resolve().parent.parent
+sys.path[:0] = [str(ROOT), str(ROOT / "tests")]
 
-install()
+import _mt5stub  # noqa: E402
+
+_mt5stub.install()
 
 import tier1_universe as t1  # noqa: E402
 
