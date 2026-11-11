@@ -793,7 +793,10 @@ async fn trigger_scan(State(st): State<AppState>) -> Response {
     let (program, needs_flag) = match override_python {
         Some(p) => (p, false),
         None if venv.exists() => (venv.display().to_string(), false),
-        None => ((if cfg!(windows) { "py" } else { "python3" }).to_string(), cfg!(windows)),
+        None => (
+            (if cfg!(windows) { "py" } else { "python3" }).to_string(),
+            cfg!(windows),
+        ),
     };
     let mut interpreter = Command::new(program);
     if needs_flag {
@@ -845,8 +848,10 @@ async fn trigger_scan(State(st): State<AppState>) -> Response {
             st.scan_running.store(true, Ordering::SeqCst);
             {
                 let mut run = st.last_run.lock().unwrap_or_else(|e| e.into_inner());
-                *run = Some(json!({"pid": pid, "started_utc": now_utc(), "exit": Value::Null,
-                                   "running": true}));
+                *run = Some(
+                    json!({"pid": pid, "started_utc": now_utc(), "exit": Value::Null,
+                                   "running": true}),
+                );
             }
             // Without wait() every finished scan is a zombie on Unix, and the exit
             // status - the only honest "it ran" signal - is discarded. `started`
@@ -887,7 +892,10 @@ async fn ws(ws: WebSocketUpgrade, State(st): State<AppState>) -> impl IntoRespon
     // memory leak with an open socket attached.
     const MAX_CLIENTS: usize = 16;
     if st.clients.load(std::sync::atomic::Ordering::SeqCst) >= MAX_CLIENTS {
-        return (StatusCode::SERVICE_UNAVAILABLE, "too many dashboard clients")
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "too many dashboard clients",
+        )
             .into_response();
     }
     st.clients.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
@@ -982,7 +990,9 @@ async fn main() {
     let mut series = collector::Collector::new();
     let state = AppState {
         tx,
-        current: Arc::new(Mutex::new(build(&root, &mut series, Value::Null).to_string())),
+        current: Arc::new(Mutex::new(
+            build(&root, &mut series, Value::Null).to_string(),
+        )),
         root: root.clone(),
         port,
         series: Arc::new(Mutex::new(series)),
@@ -1282,14 +1292,16 @@ mod tests {
         let mut series = collector::Collector::new();
         let st = AppState {
             tx,
-            current: Arc::new(Mutex::new(build(&root, &mut series, Value::Null).to_string())),
+            current: Arc::new(Mutex::new(
+                build(&root, &mut series, Value::Null).to_string(),
+            )),
             root: root.clone(),
             port,
             series: Arc::new(Mutex::new(series)),
             last_scan: Arc::new(std::sync::Mutex::new(idle_since())),
-        scan_running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
-        last_run: Arc::new(std::sync::Mutex::new(None)),
-        clients: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+            scan_running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            last_run: Arc::new(std::sync::Mutex::new(None)),
+            clients: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
         };
         let server = tokio::spawn(async move {
             axum::serve(listener, router(st)).await.unwrap();
