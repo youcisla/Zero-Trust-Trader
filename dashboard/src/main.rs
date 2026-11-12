@@ -1507,10 +1507,8 @@ mod tests {
         )
         .unwrap();
         // The interpreter the launcher would pick is not on every runner (the
-        // Windows image has no `py -3`), so the test names one explicitly. Only
-        // this test spawns, and the guard keeps the env write honest.
-        static ENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        let _guard = ENV.lock().unwrap();
+        // Windows image has no `py -3`), so the test names one explicitly. This is
+        // the only test that spawns, and it is the only reader of the variable.
         let Some(interp) = ["python3", "python", "py"].into_iter().find(|p| {
             std::process::Command::new(p)
                 .arg("--version")
@@ -1547,6 +1545,7 @@ mod tests {
                 break;
             }
         }
+        std::env::remove_var("ZTT_PYTHON");
         let run = st.last_run.lock().unwrap().clone().unwrap();
         assert_eq!(
             run["exit"],
