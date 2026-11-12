@@ -387,12 +387,32 @@ test('the stylesheet uses the scale it defines', () => {
   // time, so the rule is mechanical: a size is a token or it is not.
   const html = fs.readFileSync(path.join(__dirname, '../web/index.html'), 'utf8');
   const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
-  const literals = [...css.matchAll(/font-size:\s*([0-9.]+px)/g)].map((m) => m[1]);
+  const literals = [...css.matchAll(/font-size:\s*([0-9.]+px)/g)].map((m) => m[1])
+    .concat([...html.matchAll(/fontSize:\s*"([0-9.]+)px"/g)].map((m) => m[1]));
   assert.deepEqual(literals, [], 'every font-size is a var(--tN) token');
-  const pale = css.match(/#(?:c8ffe8|ffd9dd|ffe6c2|17453a|155a44|5c2026|5a4218)/g);
-  assert.equal(pale, null, 'the pale inks and dark borders are tokens');
+  // Each may appear once - in its own definition - and nowhere else. A rule that
+  // hard-codes #155a44 is how three semantic colours become seven brand colours.
+  const raw = [...css.matchAll(/(--[a-z-]+):(#[0-9a-f]{6})/g)]
+    .filter((m) => ["#c8ffe8", "#ffd9dd", "#ffe6c2", "#155a44", "#5c2026", "#5a4218"].includes(m[2]));
+  assert.equal(raw.length, 6, 'the six semantic colours are declared once each');
+  const quoted = raw.filter((m) => !/^--(neon|red|amber)-(ink|line)$/.test(m[1]));
+  assert.deepEqual(quoted, [], 'they are named for what they mean');
   const steps = [...css.matchAll(/--t(\d):([0-9]+)px/g)].map((m) => Number(m[2]));
   assert.ok(steps.length >= 6, 'the scale has at least six steps');
   const sorted = [...steps].sort((a, b) => a - b);
   assert.deepEqual(steps, sorted, 'the scale ascends in order');
+});
+
+test('the eight routes are the eight the shell renders, and old links still land', () => {
+  const html = fs.readFileSync(path.join(__dirname, '../web/index.html'), 'utf8');
+  const routes = [...html.matchAll(/\["(\w+)", "([^"]+)", "(\d)"\]/g)].map((m) => ({k: m[1], n: m[2], key: m[3]}));
+  assert.equal(routes.length, 8, 'eight routes, not seven');
+  assert.deepEqual(routes.map((r) => r.key), ['1','2','3','4','5','6','7','8'], 'keys ascend without a gap');
+  for (const r of routes) {
+    assert.ok(html.includes('route === "' + r.k + '"'), r.k + ' has a render branch');
+  }
+  // A bookmark from before the rename is not a 404.
+  const legacy = ['flow', 'overview', 'performance', 'heatmap'];
+  assert.ok(/const LEGACY = \{[^}]*flow: "pipeline"/.test(html), 'the old names map to new ones');
+  for (const old of legacy) assert.ok(html.includes(old + ': "'), old + ' redirects');
 });

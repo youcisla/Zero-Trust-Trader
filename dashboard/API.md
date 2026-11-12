@@ -24,7 +24,8 @@ a user-authentication boundary; the same user must protect the producer files.
 | --- | --- | --- |
 | `/` | Embedded dashboard HTML | Subject to local Host/Origin policy |
 | `/architecture` | Embedded generated architecture HTML | Built with the binary |
-| `/api/snapshot` | Cached JSON snapshot | Missing or invalid producer data is null/unknown |
+| `/api/meta` | The contract: `schema_version`, the single write, and the four capabilities that are false (`execution`, `approval`, `sizing`, remote bind) | — |
+| `/api/snapshot` | Cached JSON snapshot, stamped with `schema_version` (currently **1**) | Missing or invalid producer data is null/unknown |
 
 `alerts[]` carries `{id, severity, message, since_ts}`. `severity` is one of
 **`error`**, **`warn`**, **`info`** — nothing else. `error` is red, `warn` amber,
@@ -41,7 +42,7 @@ node suite asserts the three it maps.
 | `/vendor/react-dom.production.min.js` | Embedded JavaScript | No runtime CDN |
 | `/vendor/htm.umd.js` | Embedded JavaScript | No runtime CDN |
 | `/vendor/echarts.min.js` | Embedded chart library, sha256 in `web/vendor/PROVENANCE.json` | No runtime CDN |
-| `POST /api/scan` | **The only write in this process.** Spawns `run_funnel.py --window-utc 05:00-17:00 --t-gate` with no other argument | 202 with `pid`; **409** while a scan is alive; **429** within 5 s of a successful spawn; **503** if the script is missing; **500** if the interpreter cannot be spawned. A 409 does **not** consume the 5 s debounce; a failed spawn does not either. The funnel's own lock, window and demo pre-flight still decide whether anything runs |
+| `POST /api/scan` | **The only write in this process.** Every outcome carries a `code`: `started`, `scan_running`, `debounced`, `script_missing`, `spawn_failed`. Spawns `run_funnel.py --window-utc 05:00-17:00 --t-gate` with no other argument | 202 with `pid`; **409** while a scan is alive; **429** within 5 s of a successful spawn; **503** if the script is missing; **500** if the interpreter cannot be spawned. A 409 does **not** consume the 5 s debounce; a failed spawn does not either. The funnel's own lock, window and demo pre-flight still decide whether anything runs |
 
 Unknown log names return 404. Routes support only read methods; there are no
 order, settings, file-write or command messages. Axum provides normal HEAD

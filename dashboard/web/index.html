@@ -22,9 +22,9 @@
     --ink:#e8f0f2; --dim:#8b9bab; --faint:#5b6a79;
     --neon:#00ffa3; --neon-dim:rgba(0,255,163,.12);
     /* text on a dim wash, and the line around it: three pairs, not seven hexes */
-    --neon-ink:var(--neon-ink); --neon-line:var(--neon-line);
-    --red-ink:var(--red-ink); --red-line:var(--red-line);
-    --amber-ink:var(--amber-ink); --amber-line:var(--amber-line);
+    --neon-ink:#c8ffe8; --neon-line:#155a44;
+    --red-ink:#ffd9dd; --red-line:#5c2026;
+    --amber-ink:#ffe6c2; --amber-line:#5a4218;
     --cyan:#22d3ee; --cyan-dim:rgba(34,211,238,.12);
     --magenta:#f472b6; --magenta-dim:rgba(244,114,182,.12);
     --amber:#ffb454; --amber-dim:rgba(255,180,84,.12);
@@ -34,8 +34,8 @@
     --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px; --s7:48px;
     --font-ui:ui-sans-serif,-apple-system,"Segoe UI",Inter,system-ui,sans-serif;
     --font-mono:ui-monospace,"SF Mono","Cascadia Mono",Menlo,Consolas,monospace;
-    /* Six steps, and nothing between them: 9.5 / 10.5 / 11.5 / 12.5 were four
-       half-steps doing the work of two. */
+    /* Eight steps, 10 to 28, nothing between them: 9.5 / 10.5 / 11.5 / 12.5 were
+       four half-steps doing the work of two. */
     --t0:10px; --t1:11px; --t2:12px; --t3:13px; --t4:15px; --t5:18px; --t6:22px; --t7:28px;
     --chip-y:3px; --chip-x:9px;
     --r:10px; --r-sm:7px;
@@ -104,6 +104,8 @@
   .pill.down{color:var(--red);border-color:var(--red-line);background:var(--red-dim)}
   .pill.tz{color:var(--faint)}
   .pill.bell{border-color:var(--line2);color:var(--dim);cursor:pointer}
+  .pill.ghost{border-color:transparent;color:var(--faint);cursor:pointer;background:none}
+  .pill.ghost:hover{color:var(--ink);border-color:var(--line2)}
   .pill.bell.has{color:var(--amber);border-color:var(--amber-line);background:var(--amber-dim)}
   .copy{font-size:var(--t1);padding:var(--chip-y) var(--chip-x);border:1px solid var(--line2);border-radius:var(--r-sm);
     background:var(--surface2);color:var(--dim)}
@@ -207,6 +209,41 @@
   .hero.band .stats span{display:block;font-size:var(--t0);letter-spacing:.09em;text-transform:uppercase;color:var(--faint)}
   .hero.band .stats b{font-size:var(--t3);font-weight:600}
 
+  .scrim{position:fixed;inset:0;background:rgba(2,4,7,.62);backdrop-filter:blur(2px);
+    display:flex;align-items:flex-start;justify-content:center;padding-top:12vh;z-index:80}
+  .palette{width:min(560px,92vw);background:var(--surface2);border:1px solid var(--line2);
+    border-radius:var(--r);box-shadow:0 24px 64px rgba(0,0,0,.55);overflow:hidden}
+  .pinput{width:100%;background:transparent;border:0;border-bottom:1px solid var(--line);
+    color:var(--ink);font:var(--t3) var(--font-ui);padding:var(--s3) var(--s4);outline:none}
+  .plist{max-height:46vh;overflow:auto;padding:var(--s1)}
+  .pitem{display:flex;justify-content:space-between;gap:var(--s3);width:100%;text-align:left;
+    background:none;border:0;border-radius:var(--r-sm);color:var(--ink);font:var(--t2) var(--font-ui);
+    padding:var(--s2) var(--s3);cursor:pointer}
+  .pitem.on{background:var(--surface3);box-shadow:inset 0 0 0 1px var(--line2)}
+  .pitem .phint{color:var(--faint);font:var(--t0) var(--font-mono)}
+  .pfoot{border-top:1px solid var(--line);padding:var(--s2) var(--s4);color:var(--faint);font-size:var(--t0)}
+  /* Light is for glances, dark is for duration: the same tokens, re-pointed.
+     Contrast targets AA against --surface, not against the page. */
+  :root[data-theme="light"]{
+    --bg:#f6f7f9; --bg-grid:rgba(17,24,32,.03);
+    --surface:#ffffff; --surface2:#f1f3f6; --surface3:#e9edf2;
+    --line:#dfe4ea; --line2:#c2ccd8;
+    --ink:#111820; --dim:#4a5765; --faint:#66727f;
+    --neon:#0a7d5a; --neon-dim:rgba(10,125,90,.10); --neon-ink:#065f46; --neon-line:#a7d9c6;
+    --cyan:#0e7490; --cyan-dim:rgba(14,116,144,.10);
+    --magenta:#a21caf; --magenta-dim:rgba(162,28,175,.10);
+    --amber:#9a5b00; --amber-dim:rgba(154,91,0,.10); --amber-ink:#7a4700; --amber-line:#e6c89a;
+    --red:#b42318; --red-dim:rgba(180,35,24,.10); --red-ink:#8f1c14; --red-line:#f0b4ae;
+  }
+  /* Compact is for scanning many rows; it never changes type size, only air. */
+  :root[data-density="compact"] .card .body{padding:var(--s2)}
+  :root[data-density="compact"] .card header{padding:6px var(--s2)}
+  :root[data-density="compact"] table td,:root[data-density="compact"] table th{padding:2px var(--s2)}
+  :root[data-density="compact"] .cmdstrip .cell{padding:4px var(--s2)}
+  .foot{display:flex;align-items:center;gap:var(--s3);padding:6px var(--s4);
+    border-top:1px solid var(--line);color:var(--faint);font-size:var(--t0);flex:0 0 auto}
+  .foot .foot-rule{color:var(--dim)}
+  .foot .spacer{flex:1}
   .kpi{display:flex;flex-direction:column;gap:2px}
   .kpi .k{font-size:var(--t0);letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
   .kpi .v{font-size:var(--t5);font-weight:600;font-family:var(--font-mono);font-variant-numeric:tabular-nums}
@@ -248,15 +285,15 @@
   .num{font-family:var(--font-mono);font-variant-numeric:tabular-nums;text-align:right}
 
   /* ---- verdict hero --------------------------------------------------- */
-  .hero{border:1px solid #3a2330;border-left:3px solid var(--magenta);border-radius:var(--r);
-    background:linear-gradient(90deg,rgba(244,114,182,.08),rgba(244,114,182,.01) 60%,transparent);
+  .hero{border:1px solid var(--line2);border-left:3px solid var(--cyan);border-radius:var(--r);
+    background:linear-gradient(90deg,rgba(34,211,238,.06),transparent 60%);
     padding:var(--s4) var(--s5);display:flex;align-items:center;gap:var(--s5);flex-wrap:wrap}
-  .hero.up{border-color:#11523d;border-left-color:var(--neon);
-    background:linear-gradient(90deg,rgba(0,255,163,.09),rgba(0,255,163,.01) 60%,transparent)}
+  .hero.up{border-color:var(--neon-line);border-left-color:var(--neon);
+    background:linear-gradient(90deg,var(--neon-dim),transparent 60%)}
   .hero.pending{border-color:var(--amber-line);border-left-color:var(--amber);
     background:linear-gradient(90deg,rgba(255,180,84,.08),transparent 60%)}
   .hero .tag{font-family:var(--font-mono);font-size:var(--t0);letter-spacing:.1em;text-transform:uppercase;
-    padding:2px 8px;border-radius:99px;border:1px solid currentColor;color:var(--magenta)}
+    padding:2px 8px;border-radius:99px;border:1px solid currentColor;color:var(--cyan)}
   .hero.up .tag{color:var(--neon)}
   .hero.pending .tag{color:var(--amber)}
   .hero h2{margin:0;font-size:var(--t5);font-weight:600;letter-spacing:-.015em}
@@ -1249,7 +1286,7 @@ function Inspector({id, d, onClose}) {
             ? num0(d.universe.count) + " symbols, rebuilt " + (d.universe.generated_utc ? localize(d.universe.generated_utc) : "—")
             : "No universe file on disk."}</p>
           ${(d.universe && d.universe.symbols || []).slice(0, 24).map((s) => html`
-            <div key=${s.symbol} className="rowline" style=${{display: "flex", gap: "8px", fontSize: "11.5px"}}>
+            <div key=${s.symbol} className="rowline" style=${{display: "flex", gap: "8px", fontSize: "var(--t1)"}}>
               <span className="mono" style=${{width: "110px"}}>${s.symbol}</span>
               <span className="l-faint" style=${{width: "54px"}}>${s.class}</span>
               <span className="mono l-dim">${num2(s.spread_pct_atr)}% of ATR</span>
@@ -1291,14 +1328,14 @@ function Inspector({id, d, onClose}) {
         return html`<div>
           <p className="l-dim">A human types APPROVED in the terminal; the bridge issues a single-use
           token with an idempotency key. Nothing on this screen can approve, size or place anything.</p>
-          ${(d.mcp || []).slice(-8).reverse().map((l, i) => html`<div key=${i} className="mono l-faint" style=${{fontSize: "10.5px"}}>${l}</div>`)}
+          ${(d.mcp || []).slice(-8).reverse().map((l, i) => html`<div key=${i} className="mono l-faint" style=${{fontSize: "var(--t0)"}}>${l}</div>`)}
         </div>`;
       case "supervisor":
         return html`<div>
           <p className="l-dim">${protectionLabel(d, d.engine_age_s, true)}</p>
           <p className="l-faint">Trails stops, moves to break-even, closes at session end. It cannot open,
           enlarge or reverse a position.</p>
-          ${(d.actions || []).slice(-10).reverse().map((l, i) => html`<div key=${i} className="mono l-faint" style=${{fontSize: "10.5px"}}>${l}</div>`)}
+          ${(d.actions || []).slice(-10).reverse().map((l, i) => html`<div key=${i} className="mono l-faint" style=${{fontSize: "var(--t0)"}}>${l}</div>`)}
         </div>`;
       default:
         return null;
@@ -1387,14 +1424,104 @@ function Desk({agent, compact}) {
 function History({h}) {
   if (!h || !h.runs || !h.runs.length) return html`<${Empty} text="no stored desk runs yet" cmd="python desk_store.py --history 20" />`;
   return html`<div>${h.runs.map((r, i) => html`<div key=${i} style=${{borderTop: i ? "1px solid #1c2430" : "0", paddingTop: "6px", marginTop: "6px"}}>
-    <div className="l-faint mono" style=${{fontSize: "10.5px"}}>${localize(r.generated_utc)} · ${r.status}</div>
+    <div className="l-faint mono" style=${{fontSize: "var(--t0)"}}>${localize(r.generated_utc)} · ${r.status}</div>
     <div style=${{display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: "6px", marginTop: "4px"}}>
-      ${Object.keys(r.roles || {}).map((k) => html`<div key=${k} style=${{fontSize: "11px"}}>
-        <div className="l-faint" style=${{fontSize: "9.5px", textTransform: "uppercase", letterSpacing: ".06em"}}>${k}</div>
+      ${Object.keys(r.roles || {}).map((k) => html`<div key=${k} style=${{fontSize: "var(--t1)"}}>
+        <div className="l-faint" style=${{fontSize: "var(--t0)", textTransform: "uppercase", letterSpacing: ".06em"}}>${k}</div>
         <div title=${String(r.roles[k].headline || "")}>${String(r.roles[k].headline || "—").slice(0, 70)}</div>
       </div>`)}
     </div>
   </div>`)}</div>`;
+}
+
+/* ---- The palette ------------------------------------------------------ */
+/** Ctrl/Cmd+K, and `?` for the list. Nothing in here can approve, size or trade:
+ * the actions are navigation, a research scan, and copies of what is on screen.
+ */
+let PALETTE_OPEN = (_mode) => {};
+const COMMANDS = [
+  ["Run research scan", "POST /api/scan", () => fetch("/api/scan", {method: "POST"})],
+  ["Copy recent logs", "", () => navigator.clipboard.writeText(document.body.innerText.slice(0, 8000))],
+  ["Open latest report", "sandboxed page", () => { location.href = "/api/report/latest"; }],
+  ["Open architecture map", "sandboxed page", () => { location.href = "/architecture"; }],
+];
+
+function Palette({mode, onClose}) {
+  const [q, setQ] = useState("");
+  const [sel, setSel] = useState(0);
+  const input = useRef(null);
+  useEffect(() => { if (input.current) input.current.focus(); }, []);
+  const items = ROUTES.map(([k, label, key]) => ({label: "Go to " + label, hint: "press " + key, run: () => { location.hash = "#/" + k; }}))
+    .concat(COMMANDS.map(([label, hint, run]) => ({label, hint, run})));
+  const shown = items.filter((it) => !q || it.label.toLowerCase().includes(q.toLowerCase()));
+  const go = (it) => { if (!it) return; it.run(); onClose(); };
+  return html`<div className="scrim" onClick=${onClose} role="presentation">
+    <div className="palette" role="dialog" aria-modal="true" aria-label="Command palette" onClick=${(e) => e.stopPropagation()}
+      onKeyDown=${(e) => {
+        if (e.key === "Escape") { e.stopPropagation(); onClose(); }
+        if (e.key === "ArrowDown") { e.preventDefault(); setSel((i) => Math.min(i + 1, shown.length - 1)); }
+        if (e.key === "ArrowUp") { e.preventDefault(); setSel((i) => Math.max(i - 1, 0)); }
+        if (e.key === "Enter") { e.preventDefault(); go(shown[sel]); }
+      }}>
+      <input className="pinput" placeholder=${mode === "help" ? "shortcuts — 1-8 routes, ? this list, Esc close" : "jump to a page, or run something…"}
+        value=${q} onInput=${(e) => { setQ(e.target.value); setSel(0); }} aria-label="command" ref=${input} />
+      <div className="plist" role="listbox">
+        ${shown.length ? shown.map((it, i) => html`<button key=${it.label} role="option" aria-selected=${i === sel}
+          className=${"pitem" + (i === sel ? " on" : "")} onMouseEnter=${() => setSel(i)} onClick=${() => go(it)}>
+          <span>${it.label}</span><span className="phint">${it.hint}</span></button>`)
+          : html`<div className="pitem" style=${{color: "var(--faint)"}}>nothing matches</div>`}
+      </div>
+      <div className="pfoot">Monitor only — nothing here can approve, size or trade.</div>
+    </div>
+  </div>`;
+}
+
+/* ---- Desk ------------------------------------------------------------ */
+/** The advisory layer, on its own page, under its own rule.
+ *
+ * The desk reads the findings and argues about them. It cannot gate, size,
+ * approve or execute, and the page says so before it says anything else - the
+ * first thing a reader should learn about a model's opinion here is that it is
+ * only an opinion.
+ */
+function DeskPage({d, data}) {
+  const agent = (data && data.agent) || null;
+  const jev = (agent && agent.jev) || {};
+  const att = ((jev.answers || {}).attention || {});
+  const grounded = ((jev.answers || {}).grounded || {});
+  const hist = (data && data.desk_history) || null;
+  return html`<div className="contents">
+    <div className="hero band">
+      <span className="tag">advisory</span>
+      <div>
+        <h2>It explains. It never gates.</h2>
+        <div className="sub">No pass, fail, size or approval depends on anything on this page.</div>
+      </div>
+      <div className="stats">
+        <div><span>model</span><b className="mono">${(agent && agent.model) || "—"}</b></div>
+        <div><span>status</span><b className="mono">${(agent && agent.status) || "not run"}</b></div>
+        <div><span>jev</span><b className="mono">${jev.status || "not run"}</b></div>
+      </div>
+    </div>
+    <div className="grid g21">
+      <${Card} title="The four-role chain" note="scout frames, skeptic attacks, chief decides, jury reports">
+        <${Desk} agent=${agent} compact=${false} />
+      <//>
+      <${Card} title="Decision model" note=${jev.model || "typesafe/jev-1.14"}>
+        ${jev.status === "ok" ? html`
+          <div className="kv"><span>attention</span><b>${att.choice || "—"} ${att.probability == null ? "" : num0(att.probability * 100) + "%"}</b></div>
+          <div className="kv"><span>grounded</span><b>${grounded.choice == null ? "—" : String(grounded.choice)}</b></div>
+          <div className="kv"><span>confidence</span><b>${att.confidence == null ? "—" : num0(att.confidence * 100) + "%"}</b></div>`
+          : html`<div className="kv"><span>status</span><b>${jev.status || "not run"}</b></div>
+            <div className="why clamp2">${jev.reason || "no decision-model call has been recorded yet"}</div>
+            <div className="l-faint" style=${{marginTop: "6px", fontSize: "var(--t0)"}}>
+              It answers typed questions only — ${(jev.would_ask || ["attention", "grounded"]).join(", ")} — and nothing here is read back as a gate.</div>`}
+      <//>
+    </div>
+    <${Card} title="History" note="every stored run, newest first">
+      <${History} h=${hist} />
+    <//>
+  </div>`;
 }
 
 /* ---- Overview -------------------------------------------------------- */
@@ -1446,8 +1573,8 @@ function GateGauge({d, data}) {
       <div className="k">bar over the last ${Math.min(trend.length, 40)} scans</div>
       ${pts ? html`<svg viewBox="0 0 160 34" preserveAspectRatio="none" aria-label="bar over time">
         <polyline points=${pts} fill="none" stroke="#ffb454" stroke-width="1.4" /></svg>`
-        : html`<div className="l-faint" style=${{fontSize: "10px"}}>one scan on record</div>`}
-      <div className="l-faint mono" style=${{fontSize: "10px"}}>${num2(tLo)} → ${num2(tHi)}</div>
+        : html`<div className="l-faint" style=${{fontSize: "var(--t0)"}}>one scan on record</div>`}
+      <div className="l-faint mono" style=${{fontSize: "var(--t0)"}}>${num2(tLo)} → ${num2(tHi)}</div>
     </div>
     <div className="gate-note">
       <span className=${"badge " + (best && best.v >= bar ? "pass" : "")}>
@@ -1489,9 +1616,9 @@ function Overview({d, data, range, setRange}) {
             ${dayDelta == null ? "—" : signed(dayDelta)}</span><span className="h">${range} window</span></div>
           <div className="kpi"><span className="k">positions</span><span className="v">${data && data.positions == null ? "—" : num0(data && data.positions)}</span></div>
           <div className="kpi"><span className="k">heartbeat</span><span className="v">${fmtDur(d.age)}</span></div>
-          <div className="kpi"><span className="k">mode</span><span className="h" style=${{fontSize: "13px"}}>${d.protection}</span></div>
+          <div className="kpi"><span className="k">mode</span><span className="h" style=${{fontSize: "var(--t3)"}}>${d.protection}</span></div>
         </div>
-        <div className="l-faint" style=${{marginTop: "10px", fontSize: "11px"}}>
+        <div className="l-faint" style=${{marginTop: "10px", fontSize: "var(--t1)"}}>
           ${acct.server || "no server"} · ${acct.leverage ? "1:" + acct.leverage : "leverage unknown"} ·
           AutoTrading is off in the terminal and no code path here enables it
         </div>
@@ -1603,7 +1730,7 @@ function Research({d, data}) {
             <td>${cells(g.perm, g.passesPerm)}</td>
             <td className=${"num " + ((g.avgR || 0) >= 0 ? "l-good" : "l-bad")}>${signed(g.avgR, 3)}</td></tr>`)}
           </tbody></table>` : html`<${Empty} text="no candidate was deep-tested in the current scan" />`}
-        <div className="l-faint" style=${{fontSize: "11px", marginTop: "8px"}}>
+        <div className="l-faint" style=${{fontSize: "var(--t1)", marginTop: "8px"}}>
           Cleared a naive 1.96 and failed the corrected bar? That is exactly what the best of N draws
           produces by luck — saying so is the product's voice.
         </div>
@@ -1639,7 +1766,7 @@ function Research({d, data}) {
           })}
         <//>`)}
       </div>
-      <div className="l-faint" style=${{fontSize: "11px", marginTop: "6px"}}>
+      <div className="l-faint" style=${{fontSize: "var(--t1)", marginTop: "6px"}}>
         Empty cells are hours with no scan. They are not zero-test hours — the ledger has no row for them.
       </div>
     <//>
@@ -1678,12 +1805,12 @@ function Research({d, data}) {
                 k === "target" ? C.neon : k === "stop" ? C.red : k === "session" ? C.cyan :
                 k === "horizon" ? C.amber : "#2a313b"}}></div>`)}
           </div>
-          <div className="l-faint" style=${{fontSize: "10.5px"}}>
+          <div className="l-faint" style=${{fontSize: "var(--t0)"}}>
             ${buckets.map(([k, v]) => k + " " + (v || 0)).join(" · ")} = ${num0(h.occurrences)}
             ${mc.p_target != null ? " · MC p_target " + pct(mc.p_target) + " p_stop " + pct(mc.p_stop) : ""}
           </div>
-          ${mc.limitations ? html`<div className="l-warn" style=${{fontSize: "10.5px"}}>${mc.limitations}</div>` : null}
-          ${r.current ? html`<div className="mono l-dim" style=${{fontSize: "10.5px", marginTop: "3px"}}>
+          ${mc.limitations ? html`<div className="l-warn" style=${{fontSize: "var(--t0)"}}>${mc.limitations}</div>` : null}
+          ${r.current ? html`<div className="mono l-dim" style=${{fontSize: "var(--t0)", marginTop: "3px"}}>
             entry ${num2(r.current.proposed_entry)} · stop ${num2(r.current.proposed_stop)} · target ${num2(r.current.proposed_target)}</div>` : null}
         </div>`;
       }) : html`<${Empty} text=${results.length
@@ -1740,7 +1867,7 @@ function Performance({d, data}) {
                      ["horizon", h.horizon, C.amber], ["neither", h.neither, "#2a313b"]];
           const tot = b.reduce((a, x) => a + (x[1] || 0), 0) || 1;
           return html`<div key=${r.symbol + r.strategy} style=${{marginBottom: "9px"}}>
-            <div className="mono" style=${{fontSize: "11.5px"}}>${r.symbol} <span className="l-faint">${r.strategy}</span></div>
+            <div className="mono" style=${{fontSize: "var(--t1)"}}>${r.symbol} <span className="l-faint">${r.strategy}</span></div>
             <div style=${{display: "flex", height: "9px", borderRadius: "4px", overflow: "hidden", marginTop: "3px"}}>
               ${b.map(([k, v, c]) => html`<div key=${k} title=${k + " " + (v || 0)} style=${{width: ((v || 0) / tot * 100) + "%", background: c}}></div>`)}
             </div>
@@ -1821,7 +1948,7 @@ function Trials({d, data}) {
       <${Card} title="What-if · mirror" note="mirror of timemachine_mt5.bonferroni_z — exploration only">
         <table><tbody>${whatIf.map((n) => html`<tr key=${n}>
           <td className="num mono">${num0(n)}</td><td className="num mono l-dim">${num2(bonferroniMirror(n))}</td></tr>`)}</tbody></table>
-        <div className="l-faint" style=${{fontSize: "10.5px", marginTop: "6px"}}>
+        <div className="l-faint" style=${{fontSize: "var(--t0)", marginTop: "6px"}}>
           The authoritative bar is the one the engine wrote into the ledger and tier 3.
         </div>
       <//>
@@ -1857,7 +1984,7 @@ function Trials({d, data}) {
         </tr>`)}</tbody></table>`
         : html`<${Empty} text=${d.rows.length ? "no row matches that filter" : "no scan has run on this tree yet"}
             cmd=${d.rows.length ? null : "python run_funnel.py"} />`}
-      <div className="l-faint" style=${{fontSize: "10.5px", padding: "6px 12px"}}>
+      <div className="l-faint" style=${{fontSize: "var(--t0)", padding: "6px 12px"}}>
         A <b>!</b> means the row carries no sig= segment. This page reports presence only — verification
         happens in status.py.
       </div>
@@ -1876,7 +2003,7 @@ function Ops({d, data}) {
       ${alerts.length ? html`<div style=${{display: "flex", flexDirection: "column", gap: "6px"}}>
         ${alerts.map((a) => html`<div key=${a.id} className="rowline" style=${{display: "flex", gap: "8px", alignItems: "baseline"}}>
           <span className=${"badge " + (a.severity === "error" ? "bad" : a.severity === "warn" ? "warn" : "info")}>${a.severity}</span>
-          <span>${a.message}</span><span className="l-faint mono" style=${{marginLeft: "auto", fontSize: "10.5px"}}>${a.id}</span>
+          <span>${a.message}</span><span className="l-faint mono" style=${{marginLeft: "auto", fontSize: "var(--t0)"}}>${a.id}</span>
         </div>`)}</div>` : html`<${Empty} text="nothing to report — every tracked file is present and fresh" />`}
     <//>
     <${Card} title="Files" note="age is mtime; absent is not zero">
@@ -1906,7 +2033,7 @@ function Ops({d, data}) {
     <${Card} title="Desk history" note="the last runs, from the tracked database">
       <${History} h=${data.desk_history} />
     <//>
-    <div className="l-faint" style=${{fontSize: "11px"}}>
+    <div className="l-faint" style=${{fontSize: "var(--t1)"}}>
       What this page cannot see: policy values, Task Scheduler state and the terminal itself.
       <code>python status.py</code> is the authoritative read for those.
     </div>
@@ -1929,7 +2056,7 @@ function FlowPage({d, data}) {
   return html`<div className="contents">
     <${FlowCanvas} d=${view || {}} sel=${sel} onSelect=${setSel}
       frozen=${!!frozen} onFreeze=${() => setFrozen(frozen ? null : {data: data || null, at: new Date()})} />
-    ${frozen ? html`<div className="l-warn" style=${{fontSize: "11px"}}>
+    ${frozen ? html`<div className="l-warn" style=${{fontSize: "var(--t1)"}}>
       frozen — held snapshot from ${frozen.at.toLocaleTimeString()}; the engine keeps running.
     </div>` : null}
     <div className="grid g2">
@@ -1982,17 +2109,17 @@ function Layers({data}) {
       <div className="kv"><span>tests this scan</span><b>${num0(prog.tests)}</b></div>
       <div className="kv"><span>cumulative trials</span><b>${num0(t3.trials_cumulative)}</b></div>
       <div className="kv"><span>bar (corrected)</span><b>${num2(sig.z_crit_bonferroni)}</b></div>
-      <div className="l-faint" style=${{fontSize: "11px", marginTop: "8px"}}>
+      <div className="l-faint" style=${{fontSize: "var(--t1)", marginTop: "8px"}}>
         The gate is passed or it is not. Nothing in this card was written by a model.
       </div>
     <//>
     <${Card} title=${"2 · Desk · " + (agent.model || "no model recorded")} note=${agent.model || "no notes"}>
       ${jury.status === "ok" ? html`<div className="kv"><span>verdict</span><b>${jury.verdict || "—"}</b></div>
         <div className="why clamp2" title=${jury.why || ""}>${jury.why || ""}</div>
-        ${(jury.conditions || []).length ? html`<div className="l-faint" style=${{fontSize: "11px", marginTop: "6px"}}>
+        ${(jury.conditions || []).length ? html`<div className="l-faint" style=${{fontSize: "var(--t1)", marginTop: "6px"}}>
           action: ${(jury.conditions || []).join(" · ").slice(0, 220)}</div>` : null}`
         : html`<${Empty} text=${jury.reason || "the desk has not run since this page was opened"} cmd="python agent_brief.py" />`}
-      <div className="l-faint" style=${{fontSize: "11px", marginTop: "8px"}}>
+      <div className="l-faint" style=${{fontSize: "var(--t1)", marginTop: "8px"}}>
         Generative: it reasons, writes the sentence, and may not size or approve.
       </div>
     <//>
@@ -2005,7 +2132,7 @@ function Layers({data}) {
         <div className="bar"><i style=${{width: Math.round(100 * ((att.probabilities || {})[att.choice] || 0)) + "%"}}></i></div>`
         : html`<div className="kv"><span>status</span><b>${jev.status || "not run"}</b></div>
           <div className="why clamp2">${jev.reason || "no decision-model call has been recorded yet"}</div>
-          <div className="l-faint" style=${{fontSize: "11px", marginTop: "6px"}}>
+          <div className="l-faint" style=${{fontSize: "var(--t1)", marginTop: "6px"}}>
             It would answer two typed questions — ${(jev.would_ask || ["attention", "grounded"]).join(", ")} —
             with a label and probabilities, and no prose. Put OPENROUTER_API_KEY in .env; it is advisory and can never
             gate, size or approve.</div>`}
@@ -2148,36 +2275,44 @@ function Heatmap({d, data}) {
   </div>`;
 }
 
+/* The eight routes, in the order an operator reads them: what was decided, how it
+   was decided, on what evidence, over what universe, against which bar, on what
+   account, with what advice, and what is broken. */
 const ROUTES = [
-  ["flow", "Flow", "1"], ["overview", "Overview", "2"], ["research", "Research", "3"],
-  ["performance", "Performance", "4"], ["trials", "Trials", "5"], ["ops", "Ops", "6"],
-  ["heatmap", "Heatmap", "7"],
+  ["command", "Command", "1"], ["pipeline", "Pipeline", "2"], ["research", "Research", "3"],
+  ["universe", "Universe", "4"], ["trials", "Trials", "5"], ["account", "Account", "6"],
+  ["desk", "Desk", "7"], ["ops", "Operations", "8"],
 ];
 const SUBS = {
-  flow: "nine stages, and where the funnel stopped",
-  overview: "is it alive, what did it decide, what do I hold",
+  command: "is it alive, what did it decide, what do I hold",
+  pipeline: "nine stages, and where the funnel stopped",
   research: "what was tested, and why it was refused",
-  performance: "what the account and the candidates did",
+  universe: "every symbol in the liquid universe, one measured number each",
   trials: "every hypothesis ever tested, and the bar it set",
+  account: "what the account and the candidates did",
+  desk: "the advisory chain - it explains, it never gates",
   ops: "health, alerts, and the raw files",
-  heatmap: "every symbol, three layers, and what each one said",
 };
+/* Old links keep working: a bookmark from last week is not a 404. */
+const LEGACY = {flow: "pipeline", overview: "command", performance: "account", heatmap: "universe"};
 
 const ICONS = {
-  flow: "M4 6h6v4H4zM14 6h6v4h-6zM9 12h6v4H9zM4 18h6v2H4zM14 18h6v2h-6",
-  overview: "M4 13h6V4H4zM14 20h6v-9h-6zM4 20h6v-4H4zM14 8h6V4h-6",
+  command: "M4 13h6V4H4zM14 20h6v-9h-6zM4 20h6v-4H4zM14 8h6V4h-6",
+  pipeline: "M4 6h6v4H4zM14 6h6v4h-6zM9 12h6v4H9zM4 18h6v2H4zM14 18h6v2h-6",
   research: "M4 19V5m0 14h16M8 15l3-4 3 2 5-6",
-  performance: "M4 16l5-6 4 3 7-9",
+  universe: "M4 4h16v4H4zM4 10h16v4H4zM4 16h16v4H4z",
   trials: "M4 18V9m4 9V6m4 12v-7m4 7V4m4 14v-5",
+  account: "M4 16l5-6 4 3 7-9",
+  desk: "M12 3a4 4 0 110 8 4 4 0 010-8zM4 21c0-4 3.6-6 8-6s8 2 8 6",
   ops: "M12 8a4 4 0 100 8 4 4 0 000-8zM12 2v3M12 19v3M2 12h3M19 12h3",
-  heatmap: "M4 4h16v4H4zM4 10h16v4H4zM4 16h16v4H4z",
 };
 
 function useRoute() {
   // An unknown hash used to render an empty <main> with the topbar saying "Flow".
   const read = () => {
-    const h = location.hash.replace(/^#\/?/, "") || "flow";
-    return ROUTES.some(([k]) => k === h) ? h : "flow";
+    const raw = location.hash.replace(/^#\/?/, "") || "command";
+    const h = LEGACY[raw] || raw;
+    return ROUTES.some(([k]) => k === h) ? h : "command";
   };
   const [route, setRoute] = useState(read);
   useEffect(() => {
@@ -2188,7 +2323,23 @@ function useRoute() {
   return route;
 }
 
+const pref = (k, d) => { try { return localStorage.getItem(k) || d; } catch { return d; } };
+const setPref = (k, v) => { try { localStorage.setItem(k, v); } catch { /* private mode: the toggle still works this session */ } };
+
 function App() {
+  const [theme, setTheme] = useState(() => pref("ztt.theme", "dark"));
+  const [density, setDensity] = useState(() => pref("ztt.density", "comfortable"));
+  useEffect(() => { document.documentElement.dataset.theme = theme; }, [theme]);
+  useEffect(() => { document.documentElement.dataset.density = density; }, [density]);
+  const toggleTheme = () => { const next = theme === "light" ? "dark" : "light"; setTheme(next); setPref("ztt.theme", next); };
+  const toggleDensity = () => { const next = density === "compact" ? "comfortable" : "compact"; setDensity(next); setPref("ztt.density", next); };
+  const [palette, setPalette] = useState(null); // null | "cmd" | "help"
+  useEffect(() => {
+    // mode "close" is Escape; the same mode twice toggles; a different one switches.
+    PALETTE_OPEN = (mode) =>
+      setPalette((p) => (mode === "close" ? null : p === mode ? null : mode || "cmd"));
+    return () => { PALETTE_OPEN = () => {}; };
+  }, []);
   const [data, setData] = useState(null);
   // connecting | live | reconnecting — "down" is not a state we can prove while
   // a retry is in flight, so the page says what it is doing.
@@ -2309,9 +2460,14 @@ function App() {
     try {
       const r = await fetch("/api/scan", {method: "POST"});
       const body = await r.json().catch(() => ({}));
-      if (!r.ok) setErr(body.error || "scan refused (" + r.status + ")");
-    } catch (e) { setErr("scan request failed"); }
-    setTimeout(() => setRunning(false), 6000);
+      // The refusal carries a code now, so the message says which refusal it was.
+      if (!r.ok) {
+        setErr((body.error || "scan refused") + (body.code ? " · " + body.code : "") + " (" + r.status + ")");
+        setRunning(false); // refused: nothing is running
+      }
+      // A 202 leaves this true. The snapshot's last_scan_run says when it ends -
+      // a six-second timer cannot know, and it lied for two minutes last week.
+    } catch (e) { setErr("scan request failed"); setRunning(false); }
   }, []);
 
   const d = derive(data, up, elapsed);
@@ -2360,6 +2516,10 @@ function App() {
         ${data && data.engine && data.engine.ok === false ? html`<span className="pill down" title=${data.engine.error || ""}>engine refusing</span>` : null}
         ${err ? html`<span className="pill down">${err}</span>` : null}
         <span className="pill tz" title="Files are UTC; times are shown in your zone">${TZ}</span>
+        <button className="pill ghost" onClick=${toggleTheme} title="dark for duration, light for glances"
+          aria-label="toggle theme">${theme === "light" ? "◐ dark" : "◑ light"}</button>
+        <button className="pill ghost" onClick=${toggleDensity} title="compact rows, same type size"
+          aria-label="toggle density">${density === "compact" ? "⇕ comfy" : "⇕ compact"}</button>
         <button className=${"copy " + allState} onClick=${copyAll} aria-live="polite">
           ${allState === "done" ? "copied ✓" : allState === "fail" ? "copy failed" : "copy recent logs"}</button>
       </div>
@@ -2391,22 +2551,38 @@ function App() {
       </div>
 
       <main className="page">
-        ${route === "flow" ? html`<${FlowPage} d=${d} data=${data} />` : null}
-        ${route === "overview" ? html`<${Overview} d=${d} data=${data} range=${range} setRange=${setRange} />` : null}
+        ${route === "pipeline" ? html`<${FlowPage} d=${d} data=${data} />` : null}
+        ${route === "command" ? html`<${Overview} d=${d} data=${data} range=${range} setRange=${setRange} />` : null}
         ${route === "research" ? html`<${Research} d=${d} data=${data} />` : null}
-        ${route === "performance" ? html`<${Performance} d=${d} data=${data} />` : null}
+        ${route === "account" ? html`<${Performance} d=${d} data=${data} />` : null}
         ${route === "trials" ? html`<${Trials} d=${d} data=${data} />` : null}
         ${route === "ops" ? html`<${Ops} d=${d} data=${data} />` : null}
-        ${route === "heatmap" ? html`<${Heatmap} d=${d} data=${data} />` : null}
+        ${route === "universe" ? html`<${Heatmap} d=${d} data=${data} />` : null}
+        ${route === "desk" ? html`<${DeskPage} d=${d} data=${data} />` : null}
       </main>
+      ${palette ? html`<${Palette} mode=${palette} onClose=${() => setPalette(null)} />` : null}
+      <footer className="foot">
+        <span className="mono">${data && data.ts ? localize(new Date(data.ts * 1000).toISOString()) : "—"}</span>
+        <span>schema v${(data && data.schema_version) || 1}</span>
+        <span className="spacer"></span>
+        <span className="foot-rule">Monitor only — no execution authority.</span>
+      </footer>
     </div>
   </div>`;
 }
 
-// Keyboard 1–6, ignored while typing in a field.
+// Keys 1-8, Ctrl/Cmd+K, and `?` - ignored while typing in a field.
 document.addEventListener("keydown", (e) => {
-  if (e.target && /^(INPUT|TEXTAREA|SELECT)$/.test(e.target.tagName)) return;
+  const el = e.target;
+  if (el && (/^(INPUT|TEXTAREA|SELECT)$/.test(el.tagName) || el.isContentEditable)) return;
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+    e.preventDefault();
+    PALETTE_OPEN("cmd");
+    return;
+  }
   if (e.metaKey || e.ctrlKey || e.altKey) return;
+  if (e.key === "?") { e.preventDefault(); PALETTE_OPEN("help"); return; }
+  if (e.key === "Escape") { PALETTE_OPEN("close"); return; }
   const hit = ROUTES.find((r) => r[2] === e.key);
   if (hit) location.hash = "#/" + hit[0];
 });

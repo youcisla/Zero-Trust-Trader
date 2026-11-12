@@ -83,15 +83,30 @@ Rules that follow from this:
 - **The launchers are local-only.** `run_funnel.local.cmd` and
   `run_rebuild.local.cmd` pin `MT5_EXPECTED_LOGIN` and are excluded through
   `.git/info/exclude`; the tracked `run_funnel.cmd` stays portable and sanitised.
-- **The seven pages answer seven questions.** `#/flow` (default) is the nine-stage canvas
-  — scheduler, pre-flight, tier 1, tier 2, correlation dedupe, tier 3, verdict,
-  consent, supervisor — with per-edge counts and a click-to-inspect drawer.
-  `#/overview` is "is it alive, what did it decide, what do I hold";
-  `#/research` is the gate-margin and trials-activity evidence; `#/performance` is
-  equity, drawdown and outcomes; `#/trials` is the accounting that sets the bar;
-  `#/ops` is health, alerts and the raw files; `#/heatmap` is every symbol in the universe as one
-measured number, with the engine, the desk and the decision model side by side. Keys `1`–`7` switch
-between them.
+- **The eight pages answer eight questions, in reading order.** `#/command`
+  (default) is "is it alive, what did it decide, what do I hold". `#/pipeline` is
+  the nine-stage canvas — scheduler, pre-flight, tier 1, tier 2, correlation
+  dedupe, tier 3, verdict, consent, supervisor — with per-edge counts and a
+  click-to-inspect drawer. `#/research` is the gate margin and the candidates;
+  `#/universe` is every symbol as one measured number; `#/trials` is the
+  accounting that sets the bar; `#/account` is equity, drawdown and outcomes;
+  `#/desk` is the advisory chain under its own rule ("it explains, it never
+  gates"); `#/ops` is health, alerts and the raw files. Keys `1`–`8` switch
+  between them, `?` lists them, `Ctrl/Cmd+K` opens the palette. `#/flow`,
+  `#/overview`, `#/performance` and `#/heatmap` redirect: a bookmark from last
+  week is not a 404.
+- **A refusal is calm.** `STAND_DOWN` is the system working, so its band is
+  neutral/teal, never red or magenta. Magenta is the *advisory* hue and nothing
+  else. `PROPOSAL` is amber — human review required, not an executable order —
+  and only `FAILED` is red.
+- **Two switches, one file.** `◑ light` and `⇕ compact` persist in
+  `localStorage`; light re-points the same token block (dark for duration, light
+  for glances) and compact changes air, never type size.
+- **The footer is the boundary in one line.** "Monitor only — no execution
+  authority", beside the snapshot timestamp and `schema_version`.
+- **`/api/meta` is the contract, not decoration.** It names the one write and
+  four capabilities that are false (`execution`, `approval`, `sizing`, remote
+  bind). A test asserts they stay false.
 - **One strip, one place per number.** `CmdStrip` sits under the top bar on every
   route and carries verdict, bar, best candidate, gap, trials, equity, positions,
   the last scan's exit code and the engine age. Nothing else in the chrome may

@@ -514,6 +514,9 @@ fn build(root: &Path, series: &mut collector::Collector, last_scan_run: Value) -
     );
 
     json!({
+        // Bumped whenever a field changes meaning or disappears. Additive fields do
+        // not bump it: a client that does not know a key is already correct.
+        "schema_version": SCHEMA_VERSION,
         "ts": SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),
         "engine": engine,
         "engine_age_s": age_secs(&engine_path),
@@ -929,7 +932,8 @@ async fn trigger_scan(State(st): State<AppState>) -> Response {
         );
         return (
             StatusCode::CONFLICT,
-            Json(json!({"started": false, "error": "a scan is still running"})),
+            Json(json!({"started": false, "error": "a scan is still running",
+                        "code": "scan_running", "status": 409})),
         )
             .into_response();
     }
@@ -946,7 +950,8 @@ async fn trigger_scan(State(st): State<AppState>) -> Response {
             );
             return (
                 StatusCode::TOO_MANY_REQUESTS,
-                Json(json!({"started": false, "error": "scan already starting"})),
+                Json(json!({"started": false, "error": "scan already starting",
+                                "code": "debounced", "status": 429})),
             )
                 .into_response();
         }
@@ -965,7 +970,8 @@ async fn trigger_scan(State(st): State<AppState>) -> Response {
         );
         return (
             StatusCode::SERVICE_UNAVAILABLE,
-            Json(json!({"started": false, "error": "run_funnel.py not found"})),
+            Json(json!({"started": false, "error": "run_funnel.py not found",
+                        "code": "script_missing", "status": 503})),
         )
             .into_response();
     }
@@ -1023,7 +1029,7 @@ async fn trigger_scan(State(st): State<AppState>) -> Response {
             });
             (
                 StatusCode::ACCEPTED,
-                Json(json!({"started": true, "pid": pid})),
+                Json(json!({"started": true, "pid": pid, "code": "started"})),
             )
                 .into_response()
         }
@@ -1035,7 +1041,8 @@ async fn trigger_scan(State(st): State<AppState>) -> Response {
             );
             (
                 StatusCode::INTERNAL_SERVER_ERROR,
-                Json(json!({"started": false, "error": e.to_string()})),
+                Json(json!({"started": false, "error": e.to_string(),
+                        "code": "spawn_failed", "status": 500})),
             )
                 .into_response()
         }
@@ -1188,11 +1195,38 @@ async fn main() {
     }
 }
 
+/// Additive fields do not bump this; a field that changes meaning or disappears does.
+const SCHEMA_VERSION: u32 = 1;
+
+/// What a client can ask before it trusts anything else: the protocol, this
+/// process, and the capabilities it is allowed to assume.
+async fn meta(State(st): State<AppState>) -> Response {
+    Json(json!({
+        "schema_version": SCHEMA_VERSION,
+        "product": "Zero-Trust Console",
+        "mode": "monitor",
+        "writes": ["POST /api/scan"],
+        "port": st.port,
+        "root_label": "the tree the monitor was launched in",
+        "capabilities": {
+            "scan": true,
+            "logs": true,
+            "report": true,
+            "architecture": true,
+            "execution": false,
+            "approval": false,
+            "sizing": false,
+        },
+    }))
+    .into_response()
+}
+
 fn router(state: AppState) -> Router {
     Router::new()
         .route("/", get(index))
         .route("/architecture", get(architecture))
         .route("/api/snapshot", get(snapshot))
+        .route("/api/meta", get(meta))
         .route("/api/scan", post(trigger_scan))
         .route("/api/logs/:which", get(full_log))
         .route("/api/report/latest", get(latest_report))
@@ -1502,6 +1536,24 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn the_client_can_ask_what_this_process_is_allowed_to_do() {
+        // /api/meta is the one place a client learns the contract and the boundary:
+        // a schema version it can refuse, and four false capabilities it must not
+        // assume. If this ever reports execution: true, the redesign went wrong.
+        let root = fixture_dir("meta");
+        let (port, _st) = serve(&root).await;
+        let body = http_request(port, "/api/meta", headers(port)).await;
+        assert!(body.starts_with("HTTP/1.1 200"), "{body}");
+        assert!(body.contains("\"schema_version\":1"), "{body}");
+        assert!(body.contains("\"execution\":false"), "{body}");
+        assert!(body.contains("\"approval\":false"), "{body}");
+        assert!(
+            body.contains("POST /api/scan"),
+            "the only write is named: {body}"
+        );
+    }
+
+    #[tokio::test]
     async fn a_scan_that_runs_is_refused_twice_and_its_exit_code_is_recorded() {
         // D2, end to end and in CI: the exit code of the child - the only honest
         // "it ran" - travels from the wait thread into last_scan_run, and a second
@@ -1555,10 +1607,19 @@ mod tests {
         );
 
         let second = trigger_scan(axum::extract::State(st.clone())).await;
+        let status = second.status();
+        let body = axum::body::to_bytes(second.into_body(), 4096)
+            .await
+            .unwrap_or_default();
         assert_eq!(
-            second.status(),
+            status,
             StatusCode::CONFLICT,
             "a live child refuses a second"
+        );
+        assert!(
+            String::from_utf8_lossy(&body).contains("scan_running"),
+            "the refusal names itself: {}",
+            String::from_utf8_lossy(&body)
         );
 
         for _ in 0..60 {

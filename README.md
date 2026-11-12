@@ -249,19 +249,21 @@ is also the data we can defend.
 
 ![Zero-Trust Trader dashboard](docs/dashboard.png)
 
-A Rust (Axum) server streaming to a React UI: seven pages behind one design
-language. The default page is a **nine-stage flow canvas** (scheduler, pre-flight,
-tier 1, tier 2, correlation dedupe, tier 3, verdict, consent, supervisor) with
-live per-edge counts, a click-to-inspect drawer, zoom/pan/minimap and a ledger
-replay. Behind it: a verdict hero, an equity and drawdown series collected in
-memory, gate-margin and trials-activity heatmaps, a `#/heatmap` market map — a
+A Rust (Axum) server streaming to a React UI: eight pages behind one design
+language, in the order an operator reads them. `#/command` opens with the verdict,
+the trust state and the gate; `#/pipeline` is the **nine-stage canvas** (scheduler,
+pre-flight, tier 1, tier 2, correlation dedupe, tier 3, verdict, consent,
+supervisor) with live per-edge counts, a click-to-inspect drawer, zoom/pan/minimap
+and a ledger replay; `#/universe` is a market map — a
 treemap of every symbol in the universe, area by asset class, colour by one
 measured number, green and red reserved for a long or a short — with the engine,
 the desk and the decision model side by side beneath it, a command strip under the top bar that carries the verdict, the bar, the gap to it,
 the best candidate, trials and equity on every page, an outcome mix, the cumulative-trials burn-up with a what-if mirror of the bar, the
-full parsed ledger, the desk's four-agent chain with every stored answer and what
-each role spent in tokens, and an
-alert rail derived on the server. The screenshot is the real thing running
+full parsed ledger, `#/desk` — the four-agent chain with every stored answer and
+what each role spent in tokens, under the rule it lives by ("it explains, it never
+gates") — and an alert rail derived on the server. Keys `1`–`8`, `?` for the list,
+`Ctrl/Cmd+K` for the palette; `#/flow`, `#/overview`, `#/performance` and
+`#/heatmap` redirect to their new names. The screenshot is the real thing running
 against the demo account.
 
 ```bash
