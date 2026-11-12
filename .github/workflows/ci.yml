@@ -55,7 +55,7 @@ jobs:
         run: |
           python -m coverage run --branch --source=. --omit="tests/*,tools/*,dashboard/*" -m unittest discover -s tests
           python -m coverage report --include="*.py" --omit="tests/*,tools/*" --fail-under=58
-      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.14'
         with:
           node-version-file: .nvmrc
