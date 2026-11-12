@@ -92,6 +92,17 @@ Rules that follow from this:
   `#/ops` is health, alerts and the raw files; `#/heatmap` is every symbol in the universe as one
 measured number, with the engine, the desk and the decision model side by side. Keys `1`–`7` switch
 between them.
+- **One strip, one place per number.** `CmdStrip` sits under the top bar on every
+  route and carries verdict, bar, best candidate, gap, trials, equity, positions,
+  the last scan's exit code and the engine age. Nothing else in the chrome may
+  repeat one of those values - the top bar carries alerts, the zone and the log
+  copy, and nothing else. A number that appears twice is a number that can
+  disagree with itself.
+- **The gate is a picture, not a sentence.** `GateGauge` draws the bar as a dashed
+  line, the best candidate as a marker, the bar's own history from the ledger, and
+  `n = (bar / edge)^2` for three edge sizes - the same arithmetic as the README's
+  "566 trades at +0.20R", and `bonferroniMirror()` is the one source for every bar
+  the UI shows.
 - **The equity series is memory, not history.** `collector.rs` samples the resolved
   engine state once per second into three ring buffers (2 h @ 1 s, 48 h @ 30 s,
   14 d @ 5 min) and downsamples with LTTB on the way out. Nothing is persisted and

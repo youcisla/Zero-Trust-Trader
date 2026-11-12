@@ -366,3 +366,17 @@ test('API.md states the numbers the code implements', () => {
 function h_source() {
   return fs.readFileSync(path.join(__dirname, '../web/index.html'), 'utf8');
 }
+
+test('the page is valid JavaScript before anything else is true', () => {
+  // A blank screen with 109 KB of HTML behind it: one escaped backtick in a
+  // template literal. Every other test loads a fragment with new Function, which
+  // cannot see a syntax error outside the fragment it happens to read.
+  const vm = require('node:vm');
+  const html = fs.readFileSync(path.join(__dirname, '../web/index.html'), 'utf8');
+  const blocks = [...html.matchAll(/<script(?![^>]*\bsrc=)[^>]*>([\s\S]*?)<\/script>/g)].map((m) => m[1]);
+  assert.ok(blocks.length >= 1, 'the app script is inline');
+  for (const [i, js] of blocks.entries()) {
+    assert.doesNotThrow(() => new vm.Script(js, {filename: 'index.inline.' + i + '.js'}),
+      'inline script ' + i + ' parses');
+  }
+});

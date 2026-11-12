@@ -151,6 +151,55 @@
   .badge.warn{color:var(--amber);border-color:#5a4218;background:var(--amber-dim)}
   .badge.bad{color:var(--red);border-color:#5c2026;background:var(--red-dim)}
   .badge.info{color:var(--cyan);border-color:#14454f;background:var(--cyan-dim)}
+  /* The command strip: one row, nine cells, tabular figures. It replaces the
+     habit of putting the same four numbers in a card on every page. */
+  .cmdstrip{display:flex;align-items:stretch;flex-wrap:wrap;gap:0;border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg,rgba(0,255,163,.03),transparent)}
+  .cmdstrip .dot{width:7px;height:7px;border-radius:50%;background:var(--red);margin:0 var(--s3)}
+  .cmdstrip .dot.live{background:var(--neon);box-shadow:0 0 8px var(--neon)}
+  .cmdstrip .cell{display:flex;align-items:baseline;gap:6px;padding:6px var(--s2);
+    border-right:1px solid var(--line);white-space:nowrap;flex:0 0 auto}
+  .cmdstrip .cell:last-child{border-right:0}
+  .cmdstrip .k{font:600 9px/1 var(--font-ui);letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+  .cmdstrip .v{font:600 13px/1 var(--font-mono);font-variant-numeric:tabular-nums;color:var(--ink)}
+  .cmdstrip .good .v{color:var(--neon)} .cmdstrip .bad .v{color:var(--red)}
+  .cmdstrip .warn .v{color:var(--amber)} .cmdstrip .mute .v{color:var(--dim)}
+
+  /* The gate gauge: the bar as a dashed line, the best candidate as a marker. */
+  .gauge{position:relative;height:74px;margin:6px 0 0}
+  .gauge .track{position:absolute;left:0;right:0;top:26px;height:8px;border-radius:2px;
+    background:linear-gradient(90deg,rgba(34,211,238,.10),rgba(34,211,238,.22))}
+  .gauge .fill{height:100%;border-radius:2px;background:linear-gradient(90deg,rgba(34,211,238,.35),rgba(34,211,238,.75))}
+  .gauge .barline{position:absolute;top:12px;bottom:18px;width:0;border-left:2px dashed var(--amber)}
+  .gauge .barline span{position:absolute;top:-12px;left:4px;font:600 10px var(--font-mono);color:var(--amber)}
+  .gauge .marker{position:absolute;top:16px}
+  .gauge .marker i{display:block;width:12px;height:12px;margin-left:-6px;border-radius:50%;
+    background:var(--ink);box-shadow:0 0 0 3px rgba(232,240,242,.12)}
+  .gauge .marker span{position:absolute;top:16px;left:-28px;width:96px;text-align:center;
+    font:600 10px var(--font-mono);color:var(--ink);white-space:nowrap}
+  .gauge .axis{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:space-between;
+    font:10px var(--font-mono);color:var(--faint)}
+  .gate-trend{display:flex;flex-direction:column;gap:2px;border-top:1px solid var(--line);
+    margin-top:var(--s2);padding-top:var(--s2)}
+  .gate-trend svg{width:100%;height:34px;display:block}
+  .gate-trend .k{font:600 9px var(--font-ui);letter-spacing:.09em;text-transform:uppercase;color:var(--faint)}
+  .gate-note{display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap;
+    border-top:1px solid var(--line);margin-top:var(--s2);padding-top:var(--s2)}
+  .gate-note .need{font:11px var(--font-mono);color:var(--dim)}
+  .gate-note .need b{color:var(--ink);font-size:13px}
+  .gate-note .need i{color:var(--faint)}
+
+  /* The verdict band. It used to be a 180px billboard above the fold; the strip
+     above it already carries trials and the bar, so this is a row. */
+  .hero.band{display:flex;align-items:center;gap:var(--s3);padding:10px var(--s3);
+    min-height:0;border-radius:4px}
+  .hero.band h2{font-size:15px;margin:0;letter-spacing:0}
+  .hero.band .sub{font-size:11px;margin-top:2px}
+  .hero.band .stats{display:flex;gap:var(--s4);margin-left:auto}
+  .hero.band .stats>div{text-align:right}
+  .hero.band .stats span{display:block;font-size:9px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint)}
+  .hero.band .stats b{font-size:13px;font-weight:600}
+
   .kpi{display:flex;flex-direction:column;gap:2px}
   .kpi .k{font-size:10px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
   .kpi .v{font-size:var(--t5);font-weight:600;font-family:var(--font-mono);font-variant-numeric:tabular-nums}
@@ -295,6 +344,14 @@
   .clamp2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
   .g3 .card .body{padding:var(--s3)}
   .g3 .card h2{font-size:11px}
+  /* Density is the requirement, not a failure: 28px rows, figures that align by
+     column, and no cell that grows to fill space it has nothing to put in. */
+  .card header{padding:var(--s2) var(--s3);border-bottom:1px solid var(--line)}
+  .card header h2,.card header h3{font-size:11px;letter-spacing:.06em;text-transform:uppercase}
+  .card .note{font-size:10.5px}
+  .card .body{padding:var(--s3)}
+  table td,table th{padding:4px var(--s2);font-variant-numeric:tabular-nums}
+  .num,.money,.mono{font-variant-numeric:tabular-nums}
   .legend{display:flex;gap:var(--s3);flex-wrap:wrap;color:var(--faint);font-size:10.5px;align-items:center}
   .legend i{width:8px;height:8px;border-radius:2px;display:inline-block;margin-right:4px}
 
@@ -689,6 +746,46 @@ const esc = (v) => String(v == null ? "" : v).replace(/[&<>"']/g,
 /* ====================================================================== */
 
 /* ---- tiny components ------------------------------------------------ */
+
+/** One row that answers "is it alive, how far from a pass, what do I hold".
+ *
+ * It sits under the top bar on every route, because the four questions it answers
+ * are the same on every route. Everything in it is a value the snapshot already
+ * carries - nothing here is derived twice, and an unknown stays a dash.
+ */
+function CmdStrip({d, data, up, lastRun}) {
+  const results = (data && data.tier3 && data.tier3.results) || [];
+  const best = results.reduce((a, r) => {
+    const s = (r && r.significance) || {};
+    const v = s.gate === "t" ? s.t_stat_R : s.z != null ? s.z : s.t_stat_R;
+    const n = Number(v);
+    if (v == null || !Number.isFinite(n)) return a;
+    return !a || n > a.v ? {v: n, symbol: r.symbol || "?"} : a;
+  }, null);
+  const bar = d.bar == null ? null : Number(d.bar);
+  const gap = bar != null && best ? Number((bar - best.v).toFixed(2)) : null;
+  const cells = [
+    {k: "verdict", v: d.verdict || "—", tone: d.verdict === "PROPOSAL" ? "good" : d.verdict ? "mute" : "",
+     h: d.verdict === "PROPOSAL" ? "both gates cleared" : d.verdict ? "refused" : "no scan on disk"},
+    {k: "bar", v: bar == null ? "—" : num2(bar), h: "Bonferroni z"},
+    {k: "best", v: best ? signed(best.v) : "—", h: best ? best.symbol : "no candidate"},
+    {k: "gap", v: gap == null ? "—" : gap > 0 ? "-" + num2(gap) : "+" + num2(-gap),
+     tone: gap != null && gap <= 0 ? "good" : "", h: "to the bar"},
+    {k: "trials", v: d.cumulative == null ? "—" : num0(d.cumulative), h: "cumulative"},
+    {k: "equity", v: money(data && data.equity, data && data.currency), h: "live"},
+    {k: "positions", v: data && data.positions == null ? "—" : num0(data && data.positions), h: "open"},
+    {k: "scan", v: lastRun ? (lastRun.running ? "running" : "exit " + (lastRun.exit == null ? "?" : lastRun.exit)) : "—",
+     tone: lastRun && !lastRun.running && lastRun.exit === 0 ? "good" : lastRun && !lastRun.running ? "bad" : "",
+     h: lastRun && lastRun.started_utc ? lastRun.started_utc.slice(11, 19) + "Z" : "not started here"},
+    {k: "engine", v: fmtDur(d.age), tone: d.age == null ? "" : d.age > 120 ? "warn" : "good", h: "heartbeat"},
+  ];
+  return html`<div className="cmdstrip" role="status" aria-label="system state">
+    <span className=${"dot " + (up ? "live" : "dead")} title=${up ? "socket connected" : "socket down"}></span>
+    ${cells.map((c) => html`<span key=${c.k} className=${"cell " + (c.tone || "")} title=${c.h}>
+      <b className="k">${c.k}</b><span className="v">${c.v}</span>
+    </span>`)}
+  </div>`;
+}
 
 function Card({title, note, flush, children, className}) {
   return html`<section className=${"card " + (className || "")}>
@@ -1224,13 +1321,15 @@ function VerdictHero({d}) {
   const sub = d.stoodDown === false ? "cleared both gates; a human still has to approve it"
     : d.stoodDown === true ? "Standing down is the system working: nothing cleared both gates."
     : "The artifacts on disk do not belong to an unexpired, coherent scan.";
-  return html`<div className=${"hero " + tone} aria-live="polite">
+  // One row, not a billboard. The strip above already carries trials and the bar;
+  // what belongs here is the sentence, and the day's work beside it.
+  return html`<div className=${"hero band " + tone} aria-live="polite">
     <span className="tag">${d.stoodDown === false ? "edge" : d.stoodDown === true ? "verdict" : "pending"}</span>
     <div><h2>${title}</h2><div className="sub">${sub}</div></div>
     <div className="stats">
-      <div><span>trials</span><b className="mono">${num0(d.cumulative)}</b></div>
-      <div><span>bar</span><b className="mono">${d.bar == null ? "—" : num2(d.bar)}</b></div>
       <div><span>today</span><b className="mono">${d.today.scans == null ? "—" : d.today.scans + " scans"}</b></div>
+      <div><span>tests</span><b className="mono">${d.today.tests == null ? "—" : num0(d.today.tests)}</b></div>
+      <div><span>passed</span><b className="mono">${d.today.passed == null ? "—" : num0(d.today.passed)}</b></div>
     </div>
   </div>`;
 }
@@ -1293,6 +1392,68 @@ function History({h}) {
 
 /* ---- Overview -------------------------------------------------------- */
 
+/** The one picture this repository exists to draw: the bar, the best candidate,
+ * and the trade count a pass would need.
+ *
+ * `n = (bar / edge)^2` is the t-statistic solved for n with unit dispersion - the
+ * same arithmetic the README's 566-trade sentence uses, which is why the numbers
+ * agree. Edge is shown for three multiples so nobody has to guess which to read.
+ */
+function GateGauge({d, data}) {
+  const results = (data && data.tier3 && data.tier3.results) || [];
+  const best = results.reduce((a, r) => {
+    const s = (r && r.significance) || {};
+    const v = s.gate === "t" ? s.t_stat_R : s.z != null ? s.z : s.t_stat_R;
+    const n = Number(v);
+    if (v == null || !Number.isFinite(n)) return a;
+    return !a || n > a.v ? {v: n, symbol: r.symbol || "?", trades: (r.history || {}).occurrences} : a;
+  }, null);
+  const bar = d.bar == null ? null : Number(d.bar);
+  if (bar == null) {
+    return html`<${Card} title="Gate" note="no scan on disk"><${Empty} text="no scan has written a bar yet" /></${Card}>`;
+  }
+  const span = Math.max(bar, best ? best.v : 0, 1) * 1.12;
+  const at = (v) => Math.max(0, Math.min(100, (v / span) * 100));
+  const need = (edge) => Math.pow(bar / edge, 2);
+  // The same mirror the Trials page uses, so the two cannot disagree about a bar.
+  const trend = (d.rows || []).slice(0, 40)
+    .map((r) => (r && r.cumulative != null ? bonferroniMirror(r.cumulative) : null))
+    .filter((v) => v != null).reverse();
+  const tLo = trend.length ? Math.min.apply(null, trend) : 0;
+  const tHi = trend.length ? Math.max.apply(null, trend) : 1;
+  // Points built as a string: a nested template literal inside an html`` block
+  // is exactly the escaping that shipped a blank page once.
+  const pts = trend.length > 1
+    ? trend.map((v, i) => ((i / (trend.length - 1)) * 158 + 1).toFixed(1) + ","
+        + (32 - ((v - tLo) / ((tHi - tLo) || 1)) * 28).toFixed(1)).join(" ")
+    : "";
+  return html`<${Card} title="Gate · how far" note=${"bar " + num2(bar) + " · Bonferroni over " + num0(d.cumulative || 0) + " trials"}>
+    <div className="gauge">
+      <div className="track"><div className="fill" style=${{width: at(best ? best.v : 0) + "%"}}></div></div>
+      <div className="barline" style=${{left: at(bar) + "%"}}><span>${num2(bar)}</span></div>
+      ${best ? html`<div className="marker" style=${{left: at(best.v) + "%"}} title=${`${best.symbol} at ${num2(best.v)}`}>
+        <i></i><span>${best.symbol} ${signed(best.v)}</span></div>` : null}
+      <div className="axis"><span>0</span><span>${num2(span / 2)}</span><span>${num2(span)}</span></div>
+    </div>
+    <div className="gate-trend">
+      <div className="k">bar over the last ${Math.min(trend.length, 40)} scans</div>
+      ${pts ? html`<svg viewBox="0 0 160 34" preserveAspectRatio="none" aria-label="bar over time">
+        <polyline points=${pts} fill="none" stroke="#ffb454" stroke-width="1.4" /></svg>`
+        : html`<div className="l-faint" style=${{fontSize: "10px"}}>one scan on record</div>`}
+      <div className="l-faint mono" style=${{fontSize: "10px"}}>${num2(tLo)} → ${num2(tHi)}</div>
+    </div>
+    <div className="gate-note">
+      <span className=${"badge " + (best && best.v >= bar ? "pass" : "")}>
+        ${best ? (best.v >= bar ? "clears the bar" : "short by " + num2(bar - best.v)) : "nothing tested"}
+      </span>
+      <span className="l-faint">a pass needs</span>
+      ${[0.10, 0.15, 0.20].map((e) => html`<span key=${e} className="need">
+        <b>${num0(Math.ceil(need(e)))}</b> trades <i>at +${e.toFixed(2)}R</i></span>`)}
+      <span className="l-faint">with unit dispersion · n = (bar / edge)²</span>
+    </div>
+  <//>`;
+}
+
 function Overview({d, data, range, setRange}) {
   const series = (data && data.series) || null;
   const points = series && series.equity ? series.equity[range] : null;
@@ -1301,6 +1462,7 @@ function Overview({d, data, range, setRange}) {
   const dayDelta = points && points.length > 1 ? points[points.length - 1][1] - points[0][1] : null;
   return html`<div className="contents">
     <${VerdictHero} d=${d} />
+    <${GateGauge} d=${d} data=${data} />
     <div className="grid g21">
       <${Card} title=${"Equity · " + range} note=${series && series.since_ts
           ? "in-memory since " + localize(new Date(series.since_ts * 1000).toISOString()) + " — the collector keeps no files"
@@ -2187,18 +2349,15 @@ function App() {
         <span className="spacer"></span>
         <button className=${"pill bell" + (alerts.length ? " has" : "")} onClick=${() => { location.hash = "#/ops"; }}
           aria-label=${alerts.length + " alerts"}>◔ ${alerts.length}</button>
-        <span className=${"pill " + (up ? "live" : link === "reconnecting" ? "stale" : "down")} aria-live="polite"
-          title="the browser socket to this dashboard — not the engine heartbeat">
-          <span className="dot"></span>${up ? "socket live" : link === "reconnecting" ? "reconnecting" : "connecting"}</span>
-        ${d.age != null && d.age > 30 ? html`<span className="pill stale">${fmtDur(d.age)} stale</span>` : null}
         ${data && !data.engine ? html`<span className="pill down">engine state missing</span>` : null}
         ${data && data.engine && data.engine.ok === false ? html`<span className="pill down" title=${data.engine.error || ""}>engine refusing</span>` : null}
         ${err ? html`<span className="pill down">${err}</span>` : null}
         <span className="pill tz" title="Files are UTC; times are shown in your zone">${TZ}</span>
         <button className=${"copy " + allState} onClick=${copyAll} aria-live="polite">
           ${allState === "done" ? "copied ✓" : allState === "fail" ? "copy failed" : "copy recent logs"}</button>
-        <div className="equity mono"><b>${money(data && data.equity, data && data.currency)}</b><span>equity</span></div>
       </div>
+
+      <${CmdStrip} d=${d} data=${data} up=${up} lastRun=${lastRun} />
 
       <div className="progress">
         <button className=${"runbtn" + (running || scanLive ? " armed" : "")}
