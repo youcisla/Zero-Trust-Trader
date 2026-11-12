@@ -568,6 +568,7 @@ the dashboard/diagnostics, not in static README examples.
 | [CONTRIBUTING.md](CONTRIBUTING.md) | how to land a change |
 | [SECURITY.md](SECURITY.md) | threat model and disclosure |
 | [docs/audit-2026-11-11.md](docs/audit-2026-11-11.md) | the 29-finding audit, and exactly which findings were applied |
+| [docs/audit-2026-11-12-dashboard.md](docs/audit-2026-11-12-dashboard.md) | the dashboard-only audit: 16 findings, and their disposition |
 | [docs/TRIALS.md](docs/TRIALS.md) | how the significance bar is computed |
 | [docs/SIZE-AND-RUIN.md](docs/SIZE-AND-RUIN.md) | whether the account can be multiplied |
 | [docs/LINEAGE.md](docs/LINEAGE.md) | the three attempts, and what each measured |

@@ -1,8 +1,16 @@
 """The sweep's ranking is the only thing standing between a number and a claim."""
 
+import sys
 import unittest
+from pathlib import Path
 
-from tools.batch_backtest import corrected_bar, rank, summarise
+# The repo root goes on sys.path explicitly: `tools/` is a namespace package, so
+# `import tools.batch_backtest` worked only when the runner happened to have the
+# root first. An ambient PYTHONPATH shadowing it made discovery fail.
+ROOT = Path(__file__).resolve().parents[1]
+sys.path[:0] = [str(ROOT), str(ROOT / "tests")]
+
+from tools.batch_backtest import corrected_bar, rank, summarise  # noqa: E402
 
 
 class TestSummarise(unittest.TestCase):

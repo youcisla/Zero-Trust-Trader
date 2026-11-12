@@ -14,6 +14,12 @@ install through that interpreter. The portable Windows launchers call
 launchers were not modified: their human owner must check interpreter selection
 and account-pin propagation before using them with a registered task.
 
+The dashboard writes `dashboard_heartbeat.json` every five seconds and one row per
+scan POST to `dashboard_scan.jsonl`; `python status.py` reports the first and the
+last is the record of who started what. It is registered as `HermesMT5Dashboard`
+with restart-on-failure, so killing it returns within a minute -- the matrix
+below is what it says when it answers.
+
 The scanner reads `MT5_EXPECTED_LOGIN` at call time: an exported value wins, and a
 `.env` beside the tree is the fallback. The launchers pin it; the dashboard button
 and the scheduler inherit it.

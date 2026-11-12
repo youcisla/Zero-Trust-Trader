@@ -25,7 +25,14 @@ a user-authentication boundary; the same user must protect the producer files.
 | `/` | Embedded dashboard HTML | Subject to local Host/Origin policy |
 | `/architecture` | Embedded generated architecture HTML | Built with the binary |
 | `/api/snapshot` | Cached JSON snapshot | Missing or invalid producer data is null/unknown |
-| `/ws` | Current snapshot, then the snapshot on change (checked at 1 Hz), resent at least every 5 s so a quiet tree cannot be mistaken for a dead feed; protocol ping every 15 s; age advances in the browser | Invalid origin is 403; standard upgrade validation still applies |
+
+`alerts[]` carries `{id, severity, message, since_ts}`. `severity` is one of
+**`error`**, **`warn`**, **`info`** — nothing else. `error` is red, `warn` amber,
+`info` neutral; a severity outside that set renders as `info`, which is why the
+desk-failure alert says `error` rather than a fourth word the client would have
+to learn. Both sides are pinned: `health.rs` asserts the word it emits and the
+node suite asserts the three it maps.
+| `/ws` | Current snapshot, then the snapshot on change (checked at 1 Hz), resent at least every 4 s so a quiet tree cannot be mistaken for a dead feed; protocol ping every 15 s; age advances in the browser. The client calls the transport stale after 8 s, so one late beat is not a reconnect. At most 16 sockets at once | Invalid origin is 403; a 17th client is 503 `too many dashboard clients`; standard upgrade validation still applies |
 | `/api/logs/funnel` | Recent complete lines from the final bounded 4 MB window | 404 missing, 503 unreadable |
 | `/api/logs/actions` | Same contract for supervisor actions | 404 missing, 503 unreadable |
 | `/api/logs/audit` | Same contract for the resolved audit log | 404 missing, 503 unreadable |
@@ -34,7 +41,7 @@ a user-authentication boundary; the same user must protect the producer files.
 | `/vendor/react-dom.production.min.js` | Embedded JavaScript | No runtime CDN |
 | `/vendor/htm.umd.js` | Embedded JavaScript | No runtime CDN |
 | `/vendor/echarts.min.js` | Embedded chart library, sha256 in `web/vendor/PROVENANCE.json` | No runtime CDN |
-| `POST /api/scan` | **The only write in this process.** Spawns `run_funnel.py --window-utc 05:00-17:00 --t-gate` with no other argument | 429 within 5 s of a previous POST; 503 if the script is missing; the funnel's own lock, window and demo pre-flight still decide whether anything runs |
+| `POST /api/scan` | **The only write in this process.** Spawns `run_funnel.py --window-utc 05:00-17:00 --t-gate` with no other argument | 202 with `pid`; **409** while a scan is alive; **429** within 5 s of a successful spawn; **503** if the script is missing; **500** if the interpreter cannot be spawned. A 409 does **not** consume the 5 s debounce; a failed spawn does not either. The funnel's own lock, window and demo pre-flight still decide whether anything runs |
 
 Unknown log names return 404. Routes support only read methods; there are no
 order, settings, file-write or command messages. Axum provides normal HEAD
@@ -80,8 +87,9 @@ does not verify the ledger HMAC, establish a market edge, or authorize execution
 The report route is explicitly a historical document view.
 
 The browser also treats a snapshot as unavailable until a valid message arrives.
-After five seconds without a valid heartbeat it shows stale transport even if
-the socket remains open; displayed engine age continues increasing locally.
+After eight seconds without a valid heartbeat it shows stale transport even if
+the socket remains open (the server resends every 4 s, so one late beat is not a
+reconnect); displayed engine age continues increasing locally.
 Position supervision labels distinguish refusal, stale/unknown observation,
 confirmed flatness, dry run and apply-enabled observation. Apply enabled is not a
 claim that every protective action succeeded, or that terminal AutoTrading is
@@ -160,6 +168,11 @@ Notes that matter for a client:
 ## Environment
 
 `ZTT_ROOT` points the server at the engine's tree (set by `start_dashboard.bat`;
-the raw `.exe` would inherit `System32`). `ZTT_PYTHON` overrides the interpreter
-used to spawn a scan — `py -3` on Windows, `python3` elsewhere. Neither is a
-setting the UI can change.
+the raw `.exe` would inherit `System32`). Neither is a setting the UI can change.
+
+The interpreter that runs a scan is resolved in this order: `ZTT_PYTHON`, then the
+project's own `.venv` (`.venv/Scripts/python.exe` on Windows, `.venv/bin/python`
+elsewhere), then `py -3` / `python3` as a last guess. The launcher's guess has no
+`MetaTrader5` on this machine, which is why the venv comes first: a scan started
+through the guess fails closed on import and reports `FAILED` for the wrong
+reason.

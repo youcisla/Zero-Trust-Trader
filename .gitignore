@@ -78,3 +78,7 @@ dashboard/web/architecture.*.json
 
 # tools/batch_backtest.py writes a ranked artifact per run
 sweep_*.json
+# The monitor's own records: what a human triggered, and that it is alive.
+dashboard_scan.jsonl
+dashboard_heartbeat.json
+dashboard_heartbeat.json.tmp

@@ -186,7 +186,7 @@ pub fn alerts(
                 .unwrap_or("no reason recorded");
             push(
                 "desk_error",
-                "bad",
+                "error",
                 format!("the desk's model call failed — {why}"),
             );
         }
@@ -277,7 +277,7 @@ mod tests {
             .iter()
             .find(|x| x["id"] == "desk_error")
             .expect("the failure must surface");
-        assert_eq!(hit["severity"], "bad");
+        assert_eq!(hit["severity"], "error");
         assert!(hit["message"].as_str().unwrap().contains("401"));
     }
 

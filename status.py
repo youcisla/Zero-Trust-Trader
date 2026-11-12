@@ -16,6 +16,7 @@ import subprocess
 import sys
 import time
 import tomllib
+from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 
@@ -227,6 +228,30 @@ def verdict_block() -> None:
           f"z bar {doc.get('z_crit_corrected')})")
 
 
+def dashboard_block() -> None:
+    """The monitor's own age.
+
+    The one pane whose job is to show stale data instead of lying could itself die
+    silently at logon and nothing would say so. The dashboard writes a heartbeat
+    every five seconds; this is the human CLI that notices when it stops.
+    """
+    section("dashboard")
+    beat = HERE / "dashboard_heartbeat.json"
+    if not beat.exists():
+        print("  no heartbeat yet - the monitor has not run since this tree was checked out")
+        return
+    try:
+        doc = json.loads(beat.read_text(encoding="utf-8"))
+        age = (datetime.now(timezone.utc)
+               - datetime.strptime(doc["ts"], "%Y-%m-%dT%H:%M:%SZ").replace(tzinfo=timezone.utc))
+        mins = age.total_seconds() / 60.0
+        state = "live" if mins < 1 else f"SILENT for {mins:.0f} min"
+        print(f"  {doc.get('ts')}  pid {doc.get('pid')}  {state}  "
+              f"({doc.get('clients', 0)} client(s))")
+    except (OSError, ValueError, KeyError) as e:
+        print(f"  heartbeat unreadable: {e}")
+
+
 def main() -> int:
     terminal_block()
     config_block()
@@ -235,6 +260,7 @@ def main() -> int:
     trials_block()
     universe_block()
     verdict_block()
+    dashboard_block()
     return 0
 
 

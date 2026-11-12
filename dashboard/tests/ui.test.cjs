@@ -17,7 +17,7 @@ const helpers = source.split('// BEGIN fixture-tested state helpers')[1]
 const EXPORTS = ['scanCurrent', 'transportFresh', 'protectionLabel', 'parseFunnel', 'lastFunnel',
   'ledgerRows', 'pipeline', 'edgeCounts', 'edgeStates', 'computeDrawdown', 'bonferroniMirror',
   'sessionState', 'derive', 'fmtDur', 'fmtTok', 'todayStats', 'num2', 'signed', 'backoffMs',
-  'heatFrac', 'heatRgb', 'HEAT_METRICS'];
+  'heatFrac', 'heatRgb', 'HEAT_METRICS', 'esc'];
 
 function load() {
   return vm.runInNewContext(helpers + '\n({' + EXPORTS.join(',') + '})', {});
@@ -42,11 +42,21 @@ test('no CDN and no build step crept back in', () => {
   assert.match(source, /\/vendor\/echarts\.min\.js/);
 });
 
-test('every route in the table is reachable by hash', () => {
-  for (const r of ['flow', 'overview', 'research', 'performance', 'trials', 'ops']) {
-    assert.match(source, new RegExp('"' + r + '"'), 'route ' + r);
+test('every route in the table is reachable by hash, and every route has an icon', () => {
+  // Derived from the source, not typed: the previous version of this test
+  // hardcoded six routes and its new name promised a guarantee it never checked,
+  // so the seventh route shipped with an empty <svg> and the suite stayed green.
+  const routes = [...source.match(/const ROUTES = \[([\s\S]*?)\n\];/)[1].matchAll(/\["(\w+)",\s*"([^"]+)",\s*"(\d)"\]/g)]
+    .map((m) => ({key: m[1], label: m[2], keycap: m[3]}));
+  assert.ok(routes.length >= 7, 'the table parsed: ' + routes.length);
+  const icons = [...source.match(/const ICONS = \{([\s\S]*?)\n\};/)[1].matchAll(/(\w+):/g)].map((m) => m[1]);
+  for (const r of routes) {
+    assert.ok(icons.includes(r.key), 'route "' + r.key + '" has an icon');
+    assert.match(source, new RegExp('route === "' + r.key + '"'), 'route "' + r.key + '" renders');
   }
+  assert.equal(new Set(routes.map((r) => r.keycap)).size, routes.length, 'every route has its own key');
 });
+
 
 /* ---- transport & honesty -------------------------------------------- */
 
@@ -306,3 +316,53 @@ test('the cost ramp is sequential and never borrows green or red', () => {
     assert.ok(!(r > 200 && g < 90), 'no red stop: ' + c);
   }
 });
+
+/* ---- contracts the page states --------------------------------------- */
+
+test('esc defuses the payloads that reach innerHTML', () => {
+  // The heatmap tooltip is the one place the UI builds HTML by hand. This is the
+  // line the XSS defence rests on, so it sits in the fixture-tested block.
+  assert.equal(h.esc("<script>alert(1)</script>"), "&lt;script&gt;alert(1)&lt;/script&gt;");
+  assert.equal(h.esc('a & b'), 'a &amp; b');
+  assert.equal(h.esc('"quoted"'), '&quot;quoted&quot;');
+  assert.equal(h.esc("it's"), 'it&#39;s');
+  assert.equal(h.esc(null), '');
+  assert.equal(h.esc(undefined), '');
+  const payload = "<img src=x onerror=\"fetch('/api/scan',{method:'POST'})\">";
+  assert.equal(h.esc(payload),
+    "&lt;img src=x onerror=&quot;fetch(&#39;/api/scan&#39;,{method:&#39;POST&#39;})&quot;&gt;");
+});
+
+test('one severity vocabulary, and it is documented', () => {
+  // The server said "bad" for a desk failure and the client - which knows error,
+  // warn and info - painted it cyan INFO. Both sides passed their own tests.
+  const api = fs.readFileSync(path.join(__dirname, '../API.md'), 'utf8');
+  assert.match(api, /severity.*\b(error|warn|info)\b/i, 'API.md defines the enum');
+  for (const tone of ['error', 'warn', 'info']) {
+    assert.match(source + api, new RegExp(tone), 'the vocabulary names ' + tone);
+  }
+  assert.doesNotMatch(source, /severity === "bad"/, 'no client branch speaks "bad"');
+});
+
+test('API.md states the numbers the code implements', () => {
+  // API.md drifted inside the very commit that built the README's number gate:
+  // 5 s where the code said 8, a POST failure column missing the 409 the same
+  // commit added, and a resolution order omitting the .venv that was the fix.
+  const api = fs.readFileSync(path.join(__dirname, '../API.md'), 'utf8');
+  const main = fs.readFileSync(path.join(__dirname, '../src/main.rs'), 'utf8');
+  // the client's threshold and the server's resend must match the doc
+  assert.match(h_source(), /<= 8000/, 'the client threshold is 8 s');
+  assert.match(api, /eight seconds/i, 'the doc says eight seconds');
+  assert.match(main, /is_multiple_of\(4\)/, 'the server resends every 4 s');
+  assert.match(api, /every 4 s/, 'the doc says 4 s');
+  // the failure column names every status the handler can return
+  for (const code of ['202', '409', '429', '503', '500']) {
+    assert.match(api, new RegExp(code), 'API.md documents ' + code);
+  }
+  assert.match(api, /\.venv/, 'API.md documents the venv-first resolution');
+  assert.match(main, /\.venv/, 'the code resolves the venv');
+});
+
+function h_source() {
+  return fs.readFileSync(path.join(__dirname, '../web/index.html'), 'utf8');
+}

@@ -75,6 +75,34 @@ struct AppState {
     clients: Arc<std::sync::atomic::AtomicUsize>,
 }
 
+/// Append one line to the monitor's own journal. Not the engine's ledger: a
+/// second writer there would break its accounting, so this file is the
+/// dashboard's and holds only what the dashboard did.
+fn journal(root: &Path, row: Value) {
+    use std::io::Write;
+    let path = root.join("dashboard_scan.jsonl");
+    let Ok(f) = std::fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(path)
+    else {
+        return; // a journal that cannot be written must not fail a scan
+    };
+    let _ = writeln!(&f, "{row}");
+}
+
+/// A stable digest of the embedded diagram, computed once per process.
+fn architecture_etag() -> &'static String {
+    static TAG: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+    TAG.get_or_init(|| {
+        use std::hash::{Hash, Hasher};
+        let body = include_str!("../web/architecture.html");
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        body.hash(&mut h);
+        format!("\"{}:{:x}\"", body.len(), h.finish())
+    })
+}
+
 /// ISO-8601 UTC, second resolution: the same shape the engine's artifacts use.
 fn now_utc() -> String {
     let secs = SystemTime::now()
@@ -219,11 +247,41 @@ fn trim_stage(doc: &Value, keep: &[&str], arrays: &[&str], cap: usize) -> Value 
 
 /// Null when the file is absent or mid-write: the snapshot must never fail
 /// because a producer was between `open()` and `write()`.
+/// Parsed documents, keyed by path, invalidated by (mtime, len).
+///
+/// The watch loop rebuilds the snapshot every second and re-parsed every input
+/// each beat. A stat costs microseconds; parsing two megabytes of JSON does not.
+type JsonCache =
+    std::sync::Mutex<std::collections::HashMap<PathBuf, (std::time::SystemTime, u64, Value)>>;
+
+fn json_cache() -> &'static JsonCache {
+    static CACHE: std::sync::OnceLock<JsonCache> = std::sync::OnceLock::new();
+    CACHE.get_or_init(|| std::sync::Mutex::new(std::collections::HashMap::new()))
+}
+
 fn read_json(path: &Path) -> Value {
-    read_bounded(path, JSON_LIMIT)
+    let stamp = std::fs::metadata(path)
+        .ok()
+        .and_then(|m| m.modified().ok().map(|t| (t, m.len())));
+    if let Some(stamp) = stamp {
+        if let Ok(cache) = json_cache().lock() {
+            if let Some((t, len, doc)) = cache.get(path) {
+                if *t == stamp.0 && *len == stamp.1 {
+                    return doc.clone();
+                }
+            }
+        }
+    }
+    let doc = read_bounded(path, JSON_LIMIT)
         .ok()
         .and_then(|s| serde_json::from_str(&s).ok())
-        .unwrap_or(Value::Null)
+        .unwrap_or(Value::Null);
+    if let Some(stamp) = stamp {
+        if let Ok(mut cache) = json_cache().lock() {
+            cache.insert(path.to_path_buf(), (stamp.0, stamp.1, doc.clone()));
+        }
+    }
+    doc
 }
 
 fn read_bounded(path: &Path, limit: u64) -> std::io::Result<String> {
@@ -566,6 +624,17 @@ async fn watch(state: AppState) {
         let changed = body != last;
         // 4 s, not 5: the client's staleness threshold is 8 s, and an equal
         // threshold turns a healthy socket into a reconnecting one on jitter.
+        if beats.is_multiple_of(5) {
+            // The monitor's own liveness, written where status.py can read it.
+            // Nothing restarts it yet; nothing can report a death it cannot see.
+            let beat = json!({"ts": now_utc(), "pid": std::process::id(),
+                              "clients": state.clients.load(std::sync::atomic::Ordering::SeqCst)});
+            let tmp = state.root.join("dashboard_heartbeat.json.tmp");
+            let path = state.root.join("dashboard_heartbeat.json");
+            if std::fs::write(&tmp, beat.to_string()).is_ok() {
+                let _ = std::fs::rename(&tmp, &path);
+            }
+        }
         if changed || beats.is_multiple_of(4) {
             last = body.clone();
             *state.current.lock().await = body.clone();
@@ -589,7 +658,10 @@ async fn latest_report(State(st): State<AppState>) -> impl IntoResponse {
                 // only, so this policy never bites - and forbids the day it does.
                 (
                     header::CONTENT_SECURITY_POLICY,
-                    "default-src 'none'; style-src 'unsafe-inline'; sandbox",
+                    // `frame-ancestors` too: the middleware only fills an absent
+                    // policy, so this page was the one HTML a foreign site could
+                    // frame - an inconsistent edge of a deliberate rule.
+                    "default-src 'none'; style-src 'unsafe-inline'; frame-ancestors 'none'; sandbox",
                 ),
             ],
             body,
@@ -696,8 +768,24 @@ async fn full_log(AxumPath(which): AxumPath<String>, State(st): State<AppState>)
 /// The Archify diagram of this pipeline, committed as a static artifact.
 /// Embedded rather than read from disk: it is a build input, and a monitor that
 /// serves a missing diagram as a blank page would be the same lie as a zero.
-async fn architecture() -> Html<&'static str> {
-    Html(include_str!("../web/architecture.html"))
+async fn architecture() -> impl IntoResponse {
+    // The diagram is 798 KB of generator output with four script blocks. It used
+    // to run with the whole origin's authority, one route away from the report
+    // page that was given a sandbox for exactly this reason. `sandbox
+    // allow-scripts` (no allow-same-origin) puts it in an opaque origin: its
+    // viewer still pans and exports, and any fetch it made to /api/snapshot
+    // arrives with Origin: null, which local_headers refuses.
+    (
+        [
+            (header::CONTENT_TYPE, "text/html; charset=utf-8"),
+            (
+                header::CONTENT_SECURITY_POLICY,
+                "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; \
+                 font-src data:; img-src data:; sandbox allow-scripts",
+            ),
+        ],
+        Html(include_str!("../web/architecture.html")),
+    )
 }
 
 async fn index() -> Html<&'static str> {
@@ -745,9 +833,23 @@ async fn local_request(State(st): State<AppState>, request: Request, next: Next)
     if !local_headers(request.headers(), st.port, request.uri().path() == "/ws") {
         return (StatusCode::FORBIDDEN, "local Host and Origin required").into_response();
     }
+    let path = request.uri().path().to_string();
+    let inm = request
+        .headers()
+        .get(header::IF_NONE_MATCH)
+        .and_then(|v| v.to_str().ok())
+        .map(str::to_owned);
     let mut response = next.run(request).await;
+    let cache = if path.starts_with("/vendor/") {
+        // Hash-pinned bytes, verified against PROVENANCE.json in CI: they cannot
+        // change without the manifest changing, so `no-store` on them was 1.15 MB
+        // re-sent per reload for no reason.
+        "public, max-age=31536000, immutable"
+    } else {
+        "no-store"
+    };
     for (name, value) in [
-        (header::CACHE_CONTROL, "no-store"),
+        (header::CACHE_CONTROL, cache),
         (header::X_CONTENT_TYPE_OPTIONS, "nosniff"),
     ] {
         response.headers_mut().insert(name, value.parse().unwrap());
@@ -755,6 +857,16 @@ async fn local_request(State(st): State<AppState>, request: Request, next: Next)
     // `insert` here used to overwrite the report route's own sandbox policy with
     // `frame-ancestors 'none'`, so the backstop the code argued for was inert on
     // every response. Only set it when the handler did not.
+    if path == "/architecture" {
+        let tag = architecture_etag();
+        response
+            .headers_mut()
+            .insert(header::ETAG, tag.parse().unwrap());
+        if inm.as_deref() == Some(tag.as_str()) {
+            *response.status_mut() = StatusCode::NOT_MODIFIED;
+            *response.body_mut() = axum::body::Body::empty();
+        }
+    }
     if !response
         .headers()
         .contains_key(header::CONTENT_SECURITY_POLICY)
@@ -790,9 +902,13 @@ async fn trigger_scan(State(st): State<AppState>) -> Response {
     } else {
         st.root.join(".venv").join("bin").join("python")
     };
+    let venv_probe = venv.clone();
+    let venv_present = tokio::task::spawn_blocking(move || venv_probe.exists())
+        .await
+        .unwrap_or(false);
     let (program, needs_flag) = match override_python {
         Some(p) => (p, false),
-        None if venv.exists() => (venv.display().to_string(), false),
+        None if venv_present => (venv.display().to_string(), false),
         None => (
             (if cfg!(windows) { "py" } else { "python3" }).to_string(),
             cfg!(windows),
@@ -804,6 +920,11 @@ async fn trigger_scan(State(st): State<AppState>) -> Response {
     }
     use std::sync::atomic::Ordering;
     if st.scan_running.load(Ordering::SeqCst) {
+        journal(
+            &st.root,
+            json!({"ts": now_utc(), "event": "post", "outcome": 409,
+                                 "reason": "a scan is still running"}),
+        );
         return (
             StatusCode::CONFLICT,
             Json(json!({"started": false, "error": "a scan is still running"})),
@@ -811,15 +932,19 @@ async fn trigger_scan(State(st): State<AppState>) -> Response {
             .into_response();
     }
     {
-        let mut last = st.last_scan.lock().unwrap_or_else(|e| e.into_inner());
+        let last = st.last_scan.lock().unwrap_or_else(|e| e.into_inner());
         if last.elapsed() < Duration::from_secs(5) {
+            journal(
+                &st.root,
+                json!({"ts": now_utc(), "event": "post", "outcome": 429,
+                                     "reason": "inside the 5 s debounce"}),
+            );
             return (
                 StatusCode::TOO_MANY_REQUESTS,
                 Json(json!({"started": false, "error": "scan already starting"})),
             )
                 .into_response();
         }
-        *last = std::time::Instant::now();
     }
     let script = st.root.join("run_funnel.py");
     // An async handler must not block the reactor on a stat call.
@@ -828,6 +953,11 @@ async fn trigger_scan(State(st): State<AppState>) -> Response {
         .await
         .unwrap_or(false);
     if !exists {
+        journal(
+            &st.root,
+            json!({"ts": now_utc(), "event": "post", "outcome": 503,
+                                 "reason": "run_funnel.py not found"}),
+        );
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             Json(json!({"started": false, "error": "run_funnel.py not found"})),
@@ -846,6 +976,14 @@ async fn trigger_scan(State(st): State<AppState>) -> Response {
         Ok(mut child) => {
             let pid = child.id();
             st.scan_running.store(true, Ordering::SeqCst);
+            journal(
+                &st.root,
+                json!({"ts": now_utc(), "event": "start", "pid": pid}),
+            );
+            // Stamped only after the spawn succeeded: a 503 (script missing) used
+            // to consume the debounce, so a corrected retry answered 429 when
+            // nothing had started.
+            *st.last_scan.lock().unwrap_or_else(|e| e.into_inner()) = std::time::Instant::now();
             {
                 let mut run = st.last_run.lock().unwrap_or_else(|e| e.into_inner());
                 *run = Some(
@@ -859,12 +997,17 @@ async fn trigger_scan(State(st): State<AppState>) -> Response {
             // reported success to the UI.
             let running = st.scan_running.clone();
             let last_run = st.last_run.clone();
+            let journal_root = st.root.clone();
             std::thread::spawn(move || {
                 let status = child.wait();
                 running.store(false, Ordering::SeqCst);
                 let exit = status.ok().and_then(|s| s.code());
                 let mut run = last_run.lock().unwrap_or_else(|e| e.into_inner());
                 let mut doc = run.take().unwrap_or_else(|| json!({"pid": pid}));
+                journal(
+                    &journal_root,
+                    json!({"ts": now_utc(), "event": "exit", "pid": pid, "exit": exit}),
+                );
                 if let Some(obj) = doc.as_object_mut() {
                     obj.insert("exit".into(), json!(exit));
                     obj.insert("running".into(), json!(false));
@@ -878,11 +1021,18 @@ async fn trigger_scan(State(st): State<AppState>) -> Response {
             )
                 .into_response()
         }
-        Err(e) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            Json(json!({"started": false, "error": e.to_string()})),
-        )
-            .into_response(),
+        Err(e) => {
+            journal(
+                &st.root,
+                json!({"ts": now_utc(), "event": "post", "outcome": 500,
+                                     "reason": e.to_string()}),
+            );
+            (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                Json(json!({"started": false, "error": e.to_string()})),
+            )
+                .into_response()
+        }
     }
 }
 
@@ -901,7 +1051,16 @@ async fn ws(ws: WebSocketUpgrade, State(st): State<AppState>) -> impl IntoRespon
     st.clients.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
     // This socket carries snapshots server->client. Inbound frames are ignored,
     // so their only possible use is to allocate memory: 64 KiB is generous.
+    let failed = st.clone();
     ws.max_message_size(64 * 1024)
+        .on_failed_upgrade(move |_| {
+            // The count is incremented before the 101 is written. Without this,
+            // sixteen clients that die inside that window brick the monitor for
+            // every later client until the process restarts.
+            failed
+                .clients
+                .fetch_sub(1, std::sync::atomic::Ordering::SeqCst);
+        })
         .on_upgrade(move |socket| client(socket, st))
         .into_response()
 }
@@ -1272,6 +1431,182 @@ mod tests {
         })
         .await
         .unwrap()
+    }
+
+    /// Start the real router on an ephemeral port against `root`.
+    async fn serve(root: &Path) -> (u16, AppState) {
+        let listener = tokio::net::TcpListener::bind((std::net::Ipv4Addr::LOCALHOST, 0))
+            .await
+            .unwrap();
+        let port = listener.local_addr().unwrap().port();
+        let (tx, _) = broadcast::channel(2);
+        let mut series = collector::Collector::new();
+        let st = AppState {
+            tx,
+            current: Arc::new(Mutex::new(
+                build(root, &mut series, Value::Null).to_string(),
+            )),
+            root: root.to_path_buf(),
+            port,
+            series: Arc::new(Mutex::new(series)),
+            last_scan: Arc::new(std::sync::Mutex::new(idle_since())),
+            scan_running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            last_run: Arc::new(std::sync::Mutex::new(None)),
+            clients: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
+        };
+        let state = st.clone();
+        tokio::spawn(async move {
+            axum::serve(listener, router(st)).await.unwrap();
+        });
+        (port, state)
+    }
+
+    fn headers(port: u16) -> String {
+        format!("Host: localhost:{port}\r\nOrigin: http://localhost:{port}\r\n")
+    }
+
+    #[tokio::test]
+    async fn a_route_that_sets_its_own_csp_keeps_it() {
+        // D1, the fix that had no test: the middleware inserted its default on
+        // every response, so the report route's sandbox was overwritten on every
+        // request and the backstop the comment argued for never ran.
+        let root = fixture_dir("csp");
+        std::fs::write(root.join("reports.tmp"), "").unwrap();
+        let report_dir = root.join("reports");
+        std::fs::create_dir(&report_dir).unwrap();
+        std::fs::write(
+            report_dir.join("scan_1.html"),
+            "<!doctype html><p>report</p>",
+        )
+        .unwrap();
+        let (port, _st) = serve(&root).await;
+
+        let report = http_request(port, "/api/report/latest", headers(port)).await;
+        assert!(
+            report.to_ascii_lowercase().contains("sandbox")
+                && report.contains("default-src 'none'"),
+            "the report kept its own policy: {report}"
+        );
+        assert!(report.contains("frame-ancestors 'none'"), "{report}");
+
+        // and the default still fills in where nothing was declared
+        let ui = http_request(port, "/", headers(port)).await;
+        assert!(ui.contains("frame-ancestors 'none'"), "{ui}");
+        assert!(!ui.to_ascii_lowercase().contains("sandbox;"), "{ui}");
+    }
+
+    #[tokio::test]
+    async fn a_scan_that_runs_is_refused_twice_and_its_exit_code_is_recorded() {
+        // D2, end to end and in CI: the exit code of the child - the only honest
+        // "it ran" - travels from the wait thread into last_scan_run, and a second
+        // POST while it lives is refused.
+        let root = fixture_dir("scan");
+        std::fs::write(
+            root.join("run_funnel.py"),
+            "import time\ntime.sleep(1.0)\nraise SystemExit(7)\n",
+        )
+        .unwrap();
+        let (port, st) = serve(&root).await;
+
+        let first = http_request(port, "/", headers(port)).await; // warm the router
+        assert!(first.starts_with("HTTP/1.1 200"));
+
+        let (tx, _) = broadcast::channel(1);
+        let state = AppState { tx, ..st.clone() };
+        let _ = state;
+        let res = trigger_scan(axum::extract::State(st.clone())).await;
+        assert_eq!(
+            res.status(),
+            StatusCode::ACCEPTED,
+            "the first POST starts one"
+        );
+
+        let second = trigger_scan(axum::extract::State(st.clone())).await;
+        assert_eq!(
+            second.status(),
+            StatusCode::CONFLICT,
+            "a live child refuses a second"
+        );
+
+        for _ in 0..60 {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            if !st.scan_running.load(std::sync::atomic::Ordering::SeqCst) {
+                break;
+            }
+        }
+        let run = st.last_run.lock().unwrap().clone().unwrap();
+        assert_eq!(
+            run["exit"],
+            json!(7),
+            "the child's exit code is recorded: {run}"
+        );
+        assert_eq!(run["running"], json!(false), "{run}");
+        // and the journal survived, because the snapshot is memory only
+        let journal = std::fs::read_to_string(root.join("dashboard_scan.jsonl")).unwrap();
+        assert!(journal.contains("\"outcome\":409"), "{journal}");
+        assert!(journal.contains("\"exit\":7"), "{journal}");
+    }
+
+    #[tokio::test]
+    async fn the_seventeenth_socket_is_refused_and_a_closed_one_frees_its_slot() {
+        let root = fixture_dir("ws");
+        let (port, st) = serve(&root).await;
+        // Blocking sockets, so they run on a blocking thread: a read inside the
+        // async test body would stall the reactor that has to answer it.
+        let (sockets, refused) = tokio::task::spawn_blocking(move || {
+            use std::io::{Read, Write};
+            let base = format!(
+                "GET /ws HTTP/1.1\r\nHost: localhost:{port}\r\nOrigin: http://localhost:{port}\r\n\
+                 Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\n\
+                 Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n"
+            );
+            let mut sockets = Vec::new();
+            for _ in 0..16 {
+                let mut s = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+                s.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+                s.write_all(base.as_bytes()).unwrap();
+                let mut buf = [0u8; 64];
+                let n = s.read(&mut buf).unwrap();
+                let head = String::from_utf8_lossy(&buf[..n]).to_string();
+                // The 101 can arrive in two segments; the status line is enough
+                // to prove the upgrade, and reading the rest would block.
+                assert!(head.starts_with("HTTP/1.1 101"), "{head}");
+                sockets.push(s);
+            }
+            let mut probe = std::net::TcpStream::connect(("127.0.0.1", port)).unwrap();
+            probe
+                .set_read_timeout(Some(Duration::from_secs(5)))
+                .unwrap();
+            write!(
+                probe,
+                "GET /ws HTTP/1.1\r\nHost: localhost:{port}\r\nOrigin: http://localhost:{port}\r\n\
+                 Upgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Version: 13\r\n\
+                 Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==\r\n\r\n"
+            )
+            .unwrap();
+            let mut out = String::new();
+            let _ = probe.read_to_string(&mut out);
+            (sockets, out)
+        })
+        .await
+        .unwrap();
+
+        assert!(
+            refused.starts_with("HTTP/1.1 503") && refused.contains("too many dashboard clients"),
+            "{refused}"
+        );
+        drop(sockets);
+        for _ in 0..60 {
+            if st.clients.load(std::sync::atomic::Ordering::SeqCst) == 0 {
+                break;
+            }
+            tokio::time::sleep(Duration::from_millis(100)).await;
+        }
+        assert_eq!(
+            st.clients.load(std::sync::atomic::Ordering::SeqCst),
+            0,
+            "every closed socket gave its slot back"
+        );
     }
 
     #[tokio::test]

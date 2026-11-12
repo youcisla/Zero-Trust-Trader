@@ -679,6 +679,12 @@ const heatRgb = (frac) => {
   return `rgb(${c[0]},${c[1]},${c[2]})`;
 };
 
+// React escapes everything it renders; an ECharts tooltip is a string, so the two
+// places that build HTML by hand escape it here. The heatmap tooltip interpolated
+// a symbol and a strategy straight from an engine file into innerHTML.
+const esc = (v) => String(v == null ? "" : v).replace(/[&<>"']/g,
+  (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
+
 // END fixture-tested state helpers
 /* ====================================================================== */
 
@@ -690,12 +696,6 @@ function Card({title, note, flush, children, className}) {
     <div className=${"body " + (flush ? "flush" : "")}>${children}</div>
   </section>`;
 }
-// React escapes everything it renders; an ECharts tooltip is a string, so the two
-// places that build HTML by hand escape it here. The heatmap tooltip interpolated
-// a symbol and a strategy straight from an engine file into innerHTML.
-const esc = (v) => String(v == null ? "" : v).replace(/[&<>"']/g,
-  (c) => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;"}[c]));
-
 const Badge = ({tone, children}) => html`<span className=${"badge " + (tone || "")}>${children}</span>`;
 const Dim = ({children}) => html`<span className="l-faint">${children}</span>`;
 
@@ -1817,7 +1817,7 @@ function Layers({data}) {
         The gate is passed or it is not. Nothing in this card was written by a model.
       </div>
     <//>
-    <${Card} title="2 · Desk · deepseek" note=${agent.model || "no notes"}>
+    <${Card} title=${"2 · Desk · " + (agent.model || "no model recorded")} note=${agent.model || "no notes"}>
       ${jury.status === "ok" ? html`<div className="kv"><span>verdict</span><b>${jury.verdict || "—"}</b></div>
         <div className="why clamp2" title=${jury.why || ""}>${jury.why || ""}</div>
         ${(jury.conditions || []).length ? html`<div className="l-faint" style=${{fontSize: "11px", marginTop: "6px"}}>
@@ -2001,6 +2001,7 @@ const ICONS = {
   performance: "M4 16l5-6 4 3 7-9",
   trials: "M4 18V9m4 9V6m4 12v-7m4 7V4m4 14v-5",
   ops: "M12 8a4 4 0 100 8 4 4 0 000-8zM12 2v3M12 19v3M2 12h3M19 12h3",
+  heatmap: "M4 4h16v4H4zM4 10h16v4H4zM4 16h16v4H4z",
 };
 
 function useRoute() {
@@ -2149,7 +2150,6 @@ function App() {
   const health = (data && data.health) || {};
   const lastRun = data && data.last_scan_run;
   const scanLive = !!(lastRun && lastRun.running);
-  const version = data ? data.ts : 0;
 
   return html`<div className="app">
     <aside className="side">
