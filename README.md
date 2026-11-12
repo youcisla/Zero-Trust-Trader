@@ -267,7 +267,9 @@ gates") — and an alert rail derived on the server. Keys `1`–`8`, `?` for the
 against the demo account.
 
 ```bash
-cd dashboard && cargo run --release        # http://localhost:8787
+python run_funnel.py --preflight               # 0.04 s: switch, chain, terminal, bars
+python position_manager.py --watch-until-flat   # dry run until flat, then exit 0
+cd dashboard && cargo run --release             # http://localhost:8787
 ```
 
 **Controls.** The ledger is 400 rows, so it is filtered and paged in the browser —

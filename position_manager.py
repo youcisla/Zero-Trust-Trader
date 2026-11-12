@@ -50,6 +50,7 @@ MAGIC = 20261105
 class Cfg:
     """Tunables. Defaults are deliberately conservative."""
     be_r: float = 1.0          # move to break-even once profit >= 1R
+    be_lock_r: float = 0.0     # lock this much MORE than flat: spread + n x risk
     trail_k: float = 2.0       # trail at 2 x ATR
     initial_k: float = 2.0     # seed a stop at 2 x ATR when one is missing
     min_step_atr: float = 0.10 # ignore micro-adjustments (broker spam / requotes)
@@ -81,9 +82,10 @@ def next_stop(side: int, entry: float, sl: float, price: float, atr: float,
     """
     if (side not in (-1, 1) or not all(math.isfinite(x) for x in
             (entry, sl, price, atr, spread, cfg.be_r, cfg.trail_k,
-             cfg.initial_k, cfg.min_step_atr)) or
+             cfg.initial_k, cfg.min_step_atr, cfg.be_lock_r)) or
             entry <= 0 or price <= 0 or sl < 0 or spread < 0 or
-            cfg.be_r < 0 or cfg.trail_k <= 0 or cfg.initial_k <= 0 or cfg.min_step_atr < 0):
+            cfg.be_r < 0 or cfg.be_lock_r < 0 or cfg.trail_k <= 0 or
+            cfg.initial_k <= 0 or cfg.min_step_atr < 0):
         return None, "invalid risk inputs"
     if atr <= 0:
         return None, "no atr"
@@ -102,8 +104,10 @@ def next_stop(side: int, entry: float, sl: float, price: float, atr: float,
     candidates = [trail]
     moved = (price - entry) * side
     if moved >= cfg.be_r * risk:
-        # +spread so "break-even" is actually flat after costs, not before them
-        candidates.append(entry + side * spread)
+        # +spread so "break-even" is actually flat after costs, not before them;
+        # be_lock_r locks past flat, because a stop that only recovers the spread
+        # is a scratch, and a scratch still pays for the next one out of capital.
+        candidates.append(entry + side * (spread + cfg.be_lock_r * risk))
 
     new = max(candidates) if side > 0 else min(candidates)
 
@@ -413,6 +417,12 @@ def release_lock(path: Path | None = None) -> None:
     process_lock.release(path or LOCK)
 
 
+def flat_confirmed(doc: dict) -> bool:
+    """An empty list is "confirmed flat". None is "we could not ask" - and a
+    supervisor that treats blind as flat stops watching a live position."""
+    return doc.get("positions") == []
+
+
 def log_line(text: str) -> None:
     stamp = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     with LOG.open("a", encoding="utf-8") as fh:
@@ -427,10 +437,15 @@ def main() -> int:
     ap.add_argument("--session-close", default=None, metavar="HH:MM",
                     help="UTC time to flatten (e.g. 20:45); omit to disable")
     ap.add_argument("--be-r", type=float, default=1.0)
+    ap.add_argument("--be-lock-r", type=float, default=0.0,
+                    help="lock this many R beyond flat at break-even (default 0 = flat after spread)")
+    ap.add_argument("--watch-until-flat", action="store_true",
+                    help="keep passing until the position closes, then exit 0")
     ap.add_argument("--trail-k", type=float, default=2.0)
     a = ap.parse_args()
 
     if (a.interval <= 0 or not math.isfinite(a.be_r) or a.be_r < 0 or
+            not math.isfinite(a.be_lock_r) or a.be_lock_r < 0 or
             not math.isfinite(a.trail_k) or a.trail_k <= 0):
         ap.error("interval/trail-k must be positive and be-r nonnegative")
     if a.session_close:
@@ -442,7 +457,7 @@ def main() -> int:
     if (HERE / ".ztt-maintenance").exists():
         print("REFUSED: maintenance in progress; no terminal connection or actions")
         return 2
-    cfg = Cfg(be_r=a.be_r, trail_k=a.trail_k)
+    cfg = Cfg(be_r=a.be_r, trail_k=a.trail_k, be_lock_r=a.be_lock_r)
 
     a.apply, why = apply_allowed(a.apply)
     if not a.apply:
@@ -480,6 +495,14 @@ def main() -> int:
                 log_line(f"SUPERVISOR PASS FAILED {type(e).__name__}: {e}")
                 time.sleep(a.interval)
                 continue
+            # `--watch-until-flat`: stop as soon as the broker says the position is
+            # closed. An empty list is "confirmed flat"; None is "we could not ask",
+            # and a supervisor that treats blind as flat is a supervisor that stops
+            # watching a live position.
+            if a.watch_until_flat and flat_confirmed(doc):
+                log_line("FLAT — watch-until-flat satisfied, exiting 0")
+                print("flat: no open position. Supervisor exiting 0.")
+                return 0
             if doc.get("killed"):
                 # A human stopped it. Publish what happened, then leave: the
                 # supervisor is not allowed to argue with `touch KILL_SWITCH`,

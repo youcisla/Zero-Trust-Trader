@@ -231,6 +231,53 @@ def session_strategies(now: datetime) -> tuple[str, ...]:
     return ()
 
 
+def preflight_report() -> int:
+    """Five seconds, no lock, no scan: can this tree run at all right now?
+
+    Every refusal here is one the 35-minute pass would hit anyway, later and at
+    the cost of the whole run. It reads; it never writes.
+    """
+    import kill_switch
+    import trials_total
+
+    t0 = time.monotonic()
+    why = kill_switch.active()
+    if why:
+        print(f"PREFLIGHT REFUSED  kill switch active ({why})")
+        return kill_switch.EXIT_KILLED
+
+    status, detail = trials_total.verify()
+    print(f"trials     {status}{(' — ' + detail) if detail else ''}")
+    if status != "ok":
+        print("PREFLIGHT REFUSED  the trial chain does not verify; nothing can be counted")
+        return 1
+
+    try:
+        import marketdata as md
+    except Exception as e:  # noqa: BLE001 - the terminal module is optional off-machine
+        print(f"terminal   unavailable: {type(e).__name__}: {e}")
+        return 1
+    if not md.mt5.initialize():
+        print(f"terminal   not running: {md.mt5.last_error()}")
+        return 1
+    term = md.mt5.terminal_info()
+    acct = md.mt5.account_info()
+    server = getattr(term, "name", None) or "?"
+    problems = preflight_check(term, acct)
+    offset = md.broker_offset()
+    print(f"terminal   {server} · login {getattr(acct, 'login', '?')} · "
+          f"broker offset {offset:+d}s")
+    # One symbol, one bar: enough to prove the closed-bar path works.
+    bars = md.fetch("EURUSD", "H1", 5)
+    print(f"bars       {'5 closed EURUSD H1' if bars is not None else 'none — closed-bar path refused'}")
+    for p_ in problems:
+        print(f"PROBLEM    {p_}")
+    secs = time.monotonic() - t0
+    ok = not problems and bars is not None
+    print(f"{'PREFLIGHT OK' if ok else 'PREFLIGHT REFUSED'}  {secs:.2f}s")
+    return 0 if ok else 1
+
+
 def main() -> int:
     try:
         return _main()
@@ -251,6 +298,9 @@ def _main() -> int:
         return kill_switch.EXIT_KILLED
     ap = argparse.ArgumentParser()
     load_env()
+    ap.add_argument("--preflight", action="store_true",
+                    help="five-second readiness check (kill switch, trial chain, terminal, "
+                         "clock, session) and exit; does not scan")
     ap.add_argument("--rebuild", action="store_true",
                     help="run Tier 1 then rebuild liquid_universe.json, then exit "
                          "(no trade scan). This is the only mode that pays the "
@@ -284,6 +334,9 @@ def _main() -> int:
                          "unreachable and the binomial only measures who lost more slowly.")
     ap.add_argument("--lock-max-age-min", type=float, default=120.0)
     a = ap.parse_args()
+
+    if a.preflight:
+        return preflight_report()
 
     if a.at_utc and not a.plan_only:
         ap.error("--at-utc is available only with --plan-only")
