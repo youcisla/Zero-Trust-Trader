@@ -61,7 +61,7 @@ struct AppState {
     /// When POST /api/scan last started a scan. The button has a client-side
     /// guard; a local process does not, and every extra POST spawns another
     /// interpreter that fights the funnel lock and churns the terminal.
-    last_scan: Arc<std::sync::Mutex<std::time::Instant>>,
+    last_scan: Arc<std::sync::Mutex<LastScan>>,
     /// A child is between spawn and exit. The five-second debounce cannot answer
     /// "is a scan still running" - a scan takes minutes - so the second click
     /// gets a 409 instead of a second interpreter.
@@ -130,11 +130,13 @@ fn now_utc() -> String {
     )
 }
 
-fn idle_since() -> std::time::Instant {
-    std::time::Instant::now()
-        .checked_sub(Duration::from_secs(3600))
-        .unwrap_or_else(std::time::Instant::now)
-}
+/// `None` means no scan has started in this process.
+///
+/// It used to be `now - 1h`, which is only expressible while the machine has been
+/// up for an hour: `checked_sub` underflows on a fresh boot, and the fallback made
+/// "never scanned" indistinguishable from "scanned a moment ago" - the first click
+/// of the day answered 429.
+type LastScan = Option<std::time::Instant>;
 
 fn tail(path: &Path, n: usize) -> Option<Vec<String>> {
     // Reads a bounded window from the end instead of the whole file. The ledger
@@ -933,7 +935,10 @@ async fn trigger_scan(State(st): State<AppState>) -> Response {
     }
     {
         let last = st.last_scan.lock().unwrap_or_else(|e| e.into_inner());
-        if last.elapsed() < Duration::from_secs(5) {
+        if last
+            .map(|t| t.elapsed() < Duration::from_secs(5))
+            .unwrap_or(false)
+        {
             journal(
                 &st.root,
                 json!({"ts": now_utc(), "event": "post", "outcome": 429,
@@ -983,7 +988,8 @@ async fn trigger_scan(State(st): State<AppState>) -> Response {
             // Stamped only after the spawn succeeded: a 503 (script missing) used
             // to consume the debounce, so a corrected retry answered 429 when
             // nothing had started.
-            *st.last_scan.lock().unwrap_or_else(|e| e.into_inner()) = std::time::Instant::now();
+            *st.last_scan.lock().unwrap_or_else(|e| e.into_inner()) =
+                Some(std::time::Instant::now());
             {
                 let mut run = st.last_run.lock().unwrap_or_else(|e| e.into_inner());
                 *run = Some(
@@ -1155,7 +1161,7 @@ async fn main() {
         root: root.clone(),
         port,
         series: Arc::new(Mutex::new(series)),
-        last_scan: Arc::new(std::sync::Mutex::new(idle_since())),
+        last_scan: Arc::new(std::sync::Mutex::new(None)),
         scan_running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
         last_run: Arc::new(std::sync::Mutex::new(None)),
         clients: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
@@ -1449,7 +1455,7 @@ mod tests {
             root: root.to_path_buf(),
             port,
             series: Arc::new(Mutex::new(series)),
-            last_scan: Arc::new(std::sync::Mutex::new(idle_since())),
+            last_scan: Arc::new(std::sync::Mutex::new(None)),
             scan_running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             last_run: Arc::new(std::sync::Mutex::new(None)),
             clients: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
@@ -1661,7 +1667,7 @@ mod tests {
             root: root.clone(),
             port,
             series: Arc::new(Mutex::new(series)),
-            last_scan: Arc::new(std::sync::Mutex::new(idle_since())),
+            last_scan: Arc::new(std::sync::Mutex::new(None)),
             scan_running: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             last_run: Arc::new(std::sync::Mutex::new(None)),
             clients: Arc::new(std::sync::atomic::AtomicUsize::new(0)),
