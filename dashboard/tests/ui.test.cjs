@@ -380,3 +380,19 @@ test('the page is valid JavaScript before anything else is true', () => {
       'inline script ' + i + ' parses');
   }
 });
+
+test('the stylesheet uses the scale it defines', () => {
+  // Four half-steps (9.5 / 10.5 / 11.5 / 12.5) were doing the work of two, and
+  // seven hexes duplicated three semantic colours. Both creep back one rule at a
+  // time, so the rule is mechanical: a size is a token or it is not.
+  const html = fs.readFileSync(path.join(__dirname, '../web/index.html'), 'utf8');
+  const css = html.slice(html.indexOf('<style>'), html.indexOf('</style>'));
+  const literals = [...css.matchAll(/font-size:\s*([0-9.]+px)/g)].map((m) => m[1]);
+  assert.deepEqual(literals, [], 'every font-size is a var(--tN) token');
+  const pale = css.match(/#(?:c8ffe8|ffd9dd|ffe6c2|17453a|155a44|5c2026|5a4218)/g);
+  assert.equal(pale, null, 'the pale inks and dark borders are tokens');
+  const steps = [...css.matchAll(/--t(\d):([0-9]+)px/g)].map((m) => Number(m[2]));
+  assert.ok(steps.length >= 6, 'the scale has at least six steps');
+  const sorted = [...steps].sort((a, b) => a - b);
+  assert.deepEqual(steps, sorted, 'the scale ascends in order');
+});
