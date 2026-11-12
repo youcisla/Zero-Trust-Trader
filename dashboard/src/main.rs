@@ -1506,14 +1506,27 @@ mod tests {
             "import time\ntime.sleep(1.0)\nraise SystemExit(7)\n",
         )
         .unwrap();
+        // The interpreter the launcher would pick is not on every runner (the
+        // Windows image has no `py -3`), so the test names one explicitly. Only
+        // this test spawns, and the guard keeps the env write honest.
+        static ENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _guard = ENV.lock().unwrap();
+        let Some(interp) = ["python3", "python", "py"].into_iter().find(|p| {
+            std::process::Command::new(p)
+                .arg("--version")
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+        }) else {
+            return; // no interpreter on this machine: nothing to prove here
+        };
+        std::env::set_var("ZTT_PYTHON", interp);
+
         let (port, st) = serve(&root).await;
 
         let first = http_request(port, "/", headers(port)).await; // warm the router
         assert!(first.starts_with("HTTP/1.1 200"));
 
-        let (tx, _) = broadcast::channel(1);
-        let state = AppState { tx, ..st.clone() };
-        let _ = state;
         let res = trigger_scan(axum::extract::State(st.clone())).await;
         assert_eq!(
             res.status(),
