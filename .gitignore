@@ -82,3 +82,5 @@ sweep_*.json
 dashboard_scan.jsonl
 dashboard_heartbeat.json
 dashboard_heartbeat.json.tmp
+# A human's stop. Never committed: a frozen tree in a clone is a mystery.
+KILL_SWITCH

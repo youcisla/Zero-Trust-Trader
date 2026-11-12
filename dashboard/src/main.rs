@@ -379,6 +379,20 @@ fn scan_state(root: &Path, tier2: &Value, tier3: &Value, funnel: Option<&Vec<Str
 }
 
 fn build(root: &Path, series: &mut collector::Collector, last_scan_run: Value) -> Value {
+    // The same marker position_manager and run_funnel refuse on. The monitor
+    // reads it and nothing else: a UI that could set it would be a control
+    // surface, and this process has exactly one write already.
+    let kill_switch = if std::env::var("ZTT_KILL_SWITCH")
+        .map(|v| v.trim() == "1")
+        .unwrap_or(false)
+    {
+        Some("ZTT_KILL_SWITCH=1 in the environment".to_string())
+    } else if root.join("KILL_SWITCH").exists() {
+        Some("KILL_SWITCH exists at the tree root".to_string())
+    } else {
+        None
+    };
+
     let engine_path = newest_state(root);
     let engine = display_engine(read_json(&engine_path));
 
@@ -517,6 +531,7 @@ fn build(root: &Path, series: &mut collector::Collector, last_scan_run: Value) -
         // Bumped whenever a field changes meaning or disappears. Additive fields do
         // not bump it: a client that does not know a key is already correct.
         "schema_version": SCHEMA_VERSION,
+        "kill_switch": kill_switch,
         "ts": SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0),
         "engine": engine,
         "engine_age_s": age_secs(&engine_path),
@@ -1533,6 +1548,33 @@ mod tests {
         let ui = http_request(port, "/", headers(port)).await;
         assert!(ui.contains("frame-ancestors 'none'"), "{ui}");
         assert!(!ui.to_ascii_lowercase().contains("sandbox;"), "{ui}");
+    }
+
+    #[tokio::test]
+    async fn the_monitor_reports_the_kill_switch_and_never_sets_it() {
+        // One marker, two readers: position_manager refuses on it and run_funnel
+        // refuses on it; this process only says so. It must never be able to arm
+        // or disarm the system itself - a monitor with a switch is a control
+        // surface, and this process has exactly one write already.
+        let root = fixture_dir("kill");
+        let mut series = collector::Collector::new();
+        let before = build(&root, &mut series, Value::Null);
+        assert!(before["kill_switch"].is_null(), "{before}");
+        assert!(!root.join("KILL_SWITCH").exists(), "nothing was written");
+
+        std::fs::write(root.join("KILL_SWITCH"), "").unwrap();
+        let after = build(&root, &mut series, Value::Null);
+        assert_eq!(
+            after["kill_switch"],
+            json!("KILL_SWITCH exists at the tree root"),
+            "{after}"
+        );
+        std::fs::remove_file(root.join("KILL_SWITCH")).unwrap();
+        let cleared = build(&root, &mut series, Value::Null);
+        assert!(
+            cleared["kill_switch"].is_null(),
+            "clearing it clears the field"
+        );
     }
 
     #[tokio::test]

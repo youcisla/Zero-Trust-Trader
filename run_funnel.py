@@ -30,6 +30,8 @@ import subprocess
 import sys
 import time
 import uuid
+
+import kill_switch
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -240,6 +242,13 @@ def _main() -> int:
     global _SCAN_ID
     _SCAN_ID = uuid.uuid4().hex
     t0 = time.monotonic()
+    # Before anything touches the terminal, the lock or the ledger: a human may
+    # have stopped the system, and a scan that runs anyway wastes 35 minutes and
+    # rewrites the universe with a market they were trying to freeze.
+    why = kill_switch.active()
+    if why:
+        print(f"REFUSED: kill switch active ({why}). Nothing started.")
+        return kill_switch.EXIT_KILLED
     ap = argparse.ArgumentParser()
     load_env()
     ap.add_argument("--rebuild", action="store_true",

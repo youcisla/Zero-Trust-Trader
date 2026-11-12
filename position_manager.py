@@ -32,6 +32,7 @@ import os
 import time
 
 import audit
+import kill_switch
 import process_lock
 from dataclasses import dataclass
 from decimal import Decimal, ROUND_CEILING, ROUND_FLOOR
@@ -244,6 +245,13 @@ def ensure_mt5(mt5) -> None:
 
 def run_once(cfg: Cfg, apply: bool, close_at: str | None) -> dict:
     """One supervision pass. Returns the state document the dashboard reads."""
+    # Ahead of the maintenance marker and of the terminal import: a frozen
+    # system must not read the broker, and what it publishes says why it stopped.
+    killed = kill_switch.active()
+    if killed:
+        return {"ok": False, "error": f"kill switch: {killed}", "killed": killed,
+                "generated_utc": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+                "positions": None, "actions": [], "session_close_due": None, "applied": False}
     if (HERE / ".ztt-maintenance").exists():
         return {"ok": False, "error": "maintenance in progress"}
     import MetaTrader5 as mt5
@@ -472,6 +480,13 @@ def main() -> int:
                 log_line(f"SUPERVISOR PASS FAILED {type(e).__name__}: {e}")
                 time.sleep(a.interval)
                 continue
+            if doc.get("killed"):
+                # A human stopped it. Publish what happened, then leave: the
+                # supervisor is not allowed to argue with `touch KILL_SWITCH`,
+                # and Task Scheduler must not see a healthy process.
+                write_state(doc)
+                log_line(f"KILLED {doc['killed']} — exiting {kill_switch.EXIT_KILLED}")
+                return kill_switch.EXIT_KILLED
             try:
                 published = write_state(doc)
             except OSError as e:

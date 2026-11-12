@@ -808,7 +808,10 @@ function CmdStrip({d, data, up, lastRun}) {
   }, null);
   const bar = d.bar == null ? null : Number(d.bar);
   const gap = bar != null && best ? Number((bar - best.v).toFixed(2)) : null;
-  const cells = [
+  const cells = data && data.kill_switch ? [
+    {k: "killed", v: "ALL AUTOMATION FROZEN", tone: "bad", h: data.kill_switch},
+  ] : [];
+  cells.push(
     {k: "verdict", v: d.verdict || "—", tone: d.verdict === "PROPOSAL" ? "good" : d.verdict ? "mute" : "",
      h: d.verdict === "PROPOSAL" ? "both gates cleared" : d.verdict ? "refused" : "no scan on disk"},
     {k: "bar", v: bar == null ? "—" : num2(bar), h: "Bonferroni z"},
@@ -822,7 +825,7 @@ function CmdStrip({d, data, up, lastRun}) {
      tone: lastRun && !lastRun.running && lastRun.exit === 0 ? "good" : lastRun && !lastRun.running ? "bad" : "",
      h: lastRun && lastRun.started_utc ? lastRun.started_utc.slice(11, 19) + "Z" : "not started here"},
     {k: "engine", v: fmtDur(d.age), tone: d.age == null ? "" : d.age > 120 ? "warn" : "good", h: "heartbeat"},
-  ];
+  );
   return html`<div className="cmdstrip" role="status" aria-label="system state">
     <span className=${"dot " + (up ? "live" : "dead")} title=${up ? "socket connected" : "socket down"}></span>
     ${cells.map((c) => html`<span key=${c.k} className=${"cell " + (c.tone || "")} title=${c.h}>
