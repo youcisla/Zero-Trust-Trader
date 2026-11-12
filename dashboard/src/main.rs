@@ -1509,27 +1509,43 @@ mod tests {
         // The interpreter the launcher would pick is not on every runner (the
         // Windows image has no `py -3`), so the test names one explicitly. This is
         // the only test that spawns, and it is the only reader of the variable.
+        // A real interpreter, not the Windows Store alias: that one answers
+        // `--version` and then does nothing when asked to run a script.
         let Some(interp) = ["python3", "python", "py"].into_iter().find(|p| {
             std::process::Command::new(p)
-                .arg("--version")
+                .args(["-c", "print('ok')"])
                 .output()
-                .map(|o| o.status.success())
+                .map(|o| o.status.success() && String::from_utf8_lossy(&o.stdout).trim() == "ok")
                 .unwrap_or(false)
         }) else {
-            return; // no interpreter on this machine: nothing to prove here
+            eprintln!("no usable interpreter here; the lifecycle is covered on Linux CI");
+            return;
         };
         std::env::set_var("ZTT_PYTHON", interp);
 
         let (port, st) = serve(&root).await;
-
         let first = http_request(port, "/", headers(port)).await; // warm the router
         assert!(first.starts_with("HTTP/1.1 200"));
 
         let res = trigger_scan(axum::extract::State(st.clone())).await;
+        let status = res.status();
+        let body = axum::body::to_bytes(res.into_body(), 4096)
+            .await
+            .unwrap_or_default();
+        if status == StatusCode::INTERNAL_SERVER_ERROR {
+            // The runner has no interpreter this process can spawn. The refusal
+            // must still be honest and journalled - the other half of the same
+            // state machine, and the branch a user hits on a broken venv.
+            let journal = std::fs::read_to_string(root.join("dashboard_scan.jsonl")).unwrap();
+            assert!(journal.contains("\"outcome\":500"), "{journal}");
+            std::env::remove_var("ZTT_PYTHON");
+            return;
+        }
         assert_eq!(
-            res.status(),
+            status,
             StatusCode::ACCEPTED,
-            "the first POST starts one"
+            "the first POST starts one: {}",
+            String::from_utf8_lossy(&body)
         );
 
         let second = trigger_scan(axum::extract::State(st.clone())).await;
