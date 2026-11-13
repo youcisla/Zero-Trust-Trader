@@ -81,17 +81,18 @@ def correlation(sym_a: str, sym_b: str, bars_n: int = 3000, tf: str = "H1") -> f
 
 
 def dedupe(survivors: list[dict], corr_max: float,
-           stat_key: str = "z") -> tuple[list[dict], list[dict]]:
+           stat_key: str = "z", tf: str = "H1") -> tuple[list[dict], list[dict]]:
     """Greedy: keep by descending ``stat_key``, drop anything correlated with a keeper.
 
     The caller sorts by the statistic the gate actually used, so under --t-gate
-    the higher-t edge survives and the higher-z one is the one dropped.
+    the higher-t edge survives and the higher-z one is the one dropped. The
+    correlation is measured on the scan timeframe, the one Tier 2 deduped on.
     """
     kept, dropped = [], []
     for cand in survivors:
         clash = None
         for k in kept:
-            rho = correlation(cand["symbol"], k["symbol"])
+            rho = correlation(cand["symbol"], k["symbol"], tf=tf)
             if rho is None or not math.isfinite(rho) or abs(rho) > corr_max:
                 clash = (k["symbol"], rho)
                 break
@@ -229,7 +230,9 @@ def _main() -> int:
                          a.bars, a.replays, a.seed, 2, 1500, trials,
                          a.permutations, a.session_close, a.t_gate)
         if doc is None:
-            print(f"{label}: no setups fired — skipped")
+            # Also returned when the present bar has no setup: no proposal is
+            # the correct answer even if history is full of trades.
+            print(f"{label}: no current setup — skipped")
             continue
         doc["tier2"] = {k: row.get(k) for k in ("class", "strategy", "side", "strength",
                                                 "score", "spread_pct_atr")}
@@ -253,7 +256,7 @@ def _main() -> int:
     stat_key = "t_stat_R" if a.t_gate else "z"
     survivors.sort(key=lambda d: d["significance"][stat_key], reverse=True)
 
-    kept, dropped = (dedupe(survivors, a.corr_max, stat_key)
+    kept, dropped = (dedupe(survivors, a.corr_max, stat_key, a.tf)
                      if len(survivors) > 1 else (survivors, []))
 
     payload = {"generated_utc": md.now_utc(), "scan_id": scan_id,

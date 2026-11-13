@@ -127,7 +127,7 @@ class TestDedupeKeepsTheHigherEdgeUnderTheActiveGate(unittest.TestCase):
         b = {"symbol": "BBB", "significance": {"gate": "t", "z": 4.0, "t_stat_R": 6.2}}
         stat_key = "t_stat_R"
         survivors = sorted([a, b], key=lambda d: d["significance"][stat_key], reverse=True)
-        with unittest.mock.patch.object(t3, "correlation", lambda *_: 0.95):
+        with unittest.mock.patch.object(t3, "correlation", lambda *_, **__: 0.95):
             kept, dropped = t3.dedupe(survivors, 0.7, stat_key)
         self.assertEqual([d["symbol"] for d in kept], ["BBB"])
         self.assertEqual(dropped[0]["symbol"], "AAA")
@@ -139,7 +139,7 @@ class TestDedupeKeepsTheHigherEdgeUnderTheActiveGate(unittest.TestCase):
 
         a = {"symbol": "AAA", "significance": {"z": 9.0}}
         b = {"symbol": "BBB", "significance": {"z": 4.0}}
-        with unittest.mock.patch.object(t3, "correlation", lambda *_: 0.95):
+        with unittest.mock.patch.object(t3, "correlation", lambda *_, **__: 0.95):
             kept, dropped = t3.dedupe([a, b], 0.7)
         self.assertEqual([d["symbol"] for d in kept], ["AAA"])
         self.assertEqual(dropped[0]["z"], 4.0)

@@ -63,23 +63,22 @@ def main(symbols):
     print(f"{'symbol':<9}{'policy':<12}{'n':>5}{'win':>7}{'avgR':>8}"
           f"{'target':>7}{'stop':>6}{'sess':>6}{'horiz':>6}{'maxDD':>9}")
     out = []
+    offset = md.broker_offset()
     for sym in symbols:
-        # Select FIRST, then read the quote: symbol_info on a symbol that is not
-        # in Market Watch returns a struct whose spread is 0, and a zero spread
-        # silently turns the backtest into a cost-free market - BCHUSD measured
-        # 372 trades at -0.007R instead of the real 468 at -0.849R.
+        # Select FIRST, then read the quote: a symbol outside Market Watch has
+        # no tick, and tick_spread refuses rather than measuring a free market.
         if not mt5.symbol_select(sym, True):
             print(f"{sym}: cannot select")
             continue
-        info = mt5.symbol_info(sym)
-        if info is None:
-            print(f"{sym}: no symbol info")
-            continue
-        bars = md.fetch(sym, "M15", BARS, md.broker_offset())
+        bars = md.fetch(sym, "M15", BARS, offset)
         if not bars or len(bars["c"]) < 500:
             print(f"{sym}: no usable bars")
             continue
-        spread_px = float(info.spread) * float(info.point)
+        # The same validated ask-bid the live path charges, never a raw field.
+        spread_px = md.tick_spread(mt5.symbol_info_tick(sym), offset)
+        if spread_px is None:
+            print(f"{sym}: no validated spread")
+            continue
         for label, live in (("trail only", True), ("trail + rr TP", False)):
             trades = tm.scan_donchian(bars, 20, ATR_K, RR, HORIZON, "both",
                                       spread=spread_px, live_exits=live,

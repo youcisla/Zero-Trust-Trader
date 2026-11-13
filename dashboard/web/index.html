@@ -814,9 +814,15 @@ function CmdStrip({d, data, up, lastRun}) {
     const v = s.gate === "t" ? s.t_stat_R : s.z != null ? s.z : s.t_stat_R;
     const n = Number(v);
     if (v == null || !Number.isFinite(n)) return a;
-    return !a || n > a.v ? {v: n, symbol: r.symbol || "?"} : a;
+    // The bar must belong to the statistic: a t is gated on its own t_crit,
+    // never on the normal Bonferroni bar.
+    return !a || n > a.v
+      ? {v: n, symbol: r.symbol || "?", bar: s.gate === "t" ? s.t_crit : d.bar,
+         barName: s.gate === "t" ? "Bonferroni t (per candidate)" : "Bonferroni z"}
+      : a;
   }, null);
-  const bar = d.bar == null ? null : Number(d.bar);
+  const bar = best && best.bar != null ? Number(best.bar)
+    : d.bar == null ? null : Number(d.bar);
   const gap = bar != null && best ? Number((bar - best.v).toFixed(2)) : null;
   const cells = data && data.kill_switch ? [
     {k: "killed", v: "ALL AUTOMATION FROZEN", tone: "bad", h: data.kill_switch},
@@ -824,7 +830,7 @@ function CmdStrip({d, data, up, lastRun}) {
   cells.push(
     {k: "verdict", v: d.verdict || "—", tone: d.verdict === "PROPOSAL" ? "good" : d.verdict ? "mute" : "",
      h: d.verdict === "PROPOSAL" ? "both gates cleared" : d.verdict ? "refused" : "no scan on disk"},
-    {k: "bar", v: bar == null ? "—" : num2(bar), h: "Bonferroni z"},
+    {k: "bar", v: bar == null ? "—" : num2(bar), h: best ? best.barName : "Bonferroni z"},
     {k: "best", v: best ? signed(best.v) : "—", h: best ? best.symbol : "no candidate"},
     {k: "gap", v: gap == null ? "—" : gap > 0 ? "-" + num2(gap) : "+" + num2(-gap),
      tone: gap != null && gap <= 0 ? "good" : "", h: "to the bar"},
@@ -1553,9 +1559,14 @@ function GateGauge({d, data}) {
     const v = s.gate === "t" ? s.t_stat_R : s.z != null ? s.z : s.t_stat_R;
     const n = Number(v);
     if (v == null || !Number.isFinite(n)) return a;
-    return !a || n > a.v ? {v: n, symbol: r.symbol || "?", trades: (r.history || {}).occurrences} : a;
+    return !a || n > a.v
+      ? {v: n, symbol: r.symbol || "?", trades: (r.history || {}).occurrences,
+         bar: s.gate === "t" ? s.t_crit : d.bar,
+         barName: s.gate === "t" ? "Bonferroni t (per candidate)" : "Bonferroni z"}
+      : a;
   }, null);
-  const bar = d.bar == null ? null : Number(d.bar);
+  const bar = best && best.bar != null ? Number(best.bar)
+    : d.bar == null ? null : Number(d.bar);
   if (bar == null) {
     return html`<${Card} title="Gate" note="no scan on disk"><${Empty} text="no scan has written a bar yet" /></${Card}>`;
   }
@@ -1574,7 +1585,8 @@ function GateGauge({d, data}) {
     ? trend.map((v, i) => ((i / (trend.length - 1)) * 158 + 1).toFixed(1) + ","
         + (32 - ((v - tLo) / ((tHi - tLo) || 1)) * 28).toFixed(1)).join(" ")
     : "";
-  return html`<${Card} title="Gate · how far" note=${"bar " + num2(bar) + " · Bonferroni over " + num0(d.cumulative || 0) + " trials"}>
+  return html`<${Card} title="Gate · how far" note=${"bar " + num2(bar) + " · " +
+    (best && best.barName ? best.barName : "Bonferroni z") + " over " + num0(d.cumulative || 0) + " trials"}>
     <div className="gauge">
       <div className="track"><div className="fill" style=${{width: at(best ? best.v : 0) + "%"}}></div></div>
       <div className="barline" style=${{left: at(bar) + "%"}}><span>${num2(bar)}</span></div>
@@ -1689,11 +1701,15 @@ function Research({d, data}) {
 
   const gateRows = results.map((r) => {
     const s = r.significance || {}, p = r.permutation || {};
+    // The margin belongs to the statistic that gated: t against its own
+    // per-candidate t bar, z against the Bonferroni z bar.
+    const stat = s.gate === "t" ? s.t_stat_R : s.z;
+    const bar = s.gate === "t" ? s.t_crit : s.z_crit_bonferroni;
     return {
       key: r.symbol + "/" + r.strategy,
       symbol: r.symbol, strategy: r.strategy, side: r.side,
-      naive: s.z != null ? s.z : null,
-      corrected: (s.z != null && s.z_crit_bonferroni != null) ? s.z - s.z_crit_bonferroni : null,
+      naive: stat != null ? stat : null,
+      corrected: (stat != null && bar != null) ? stat - bar : null,
       perm: p.p_value != null ? 0.05 - p.p_value : null,
       passesNaive: !!s.passes_naive, passesCorrected: !!s.passes_corrected, passesPerm: !!p.passes,
       avgR: s.mean_net_R, t: s.t_stat_R,
@@ -1733,7 +1749,8 @@ function Research({d, data}) {
   return html`<div className="contents">
     <div className="grid g21">
       <${Card} title="Gate margin — why it was refused"
-        note=${x2(d) ? "bar " + num2(d.bar) + " · gate " + (d.x.gate || "—") : "no current scan"}>
+        note=${x2(d) ? "gate " + (d.x.gate || "—") + " · bar " +
+          (d.x.gate === "t" ? "per candidate (t, df = n - 1)" : num2(d.bar)) : "no current scan"}>
         ${gateRows.length ? html`<table>
           <thead><tr><th>candidate</th><th>naive 1.96</th><th>corrected</th><th>permutation</th><th className="num">avg R</th></tr></thead>
           <tbody>${gateRows.map((g) => html`<tr key=${g.key}>
@@ -1807,7 +1824,7 @@ function Research({d, data}) {
           <div style=${{display: "flex", gap: "8px", alignItems: "center", flexWrap: "wrap"}}>
             <b className="mono">${r.symbol}</b><span className="l-dim">${r.strategy}</span>
             <span className="badge">${r.side}</span>
-            <span className=${"badge " + (s.passes_corrected ? "pass" : "bad")}>t ${num2(s.t_stat_R)} vs ${num2(s.z_crit_bonferroni)}</span>
+            <span className=${"badge " + (s.passes_corrected ? "pass" : "bad")}>${s.gate === "t" ? "t " + num2(s.t_stat_R) + " vs " + num2(s.t_crit) : "z " + num2(s.z) + " vs " + num2(s.z_crit_bonferroni)}</span>
             <span className=${"badge " + (p.passes ? "pass" : "bad")}>p ${num2(p.p_value)}</span>
             <span className=${"badge " + ((h.win_rate || 0) > 0 ? "info" : "")}>win ${pct(h.win_rate)}</span>
             <span className="badge">avg R ${signed(s.mean_net_R, 3)}</span>
@@ -2121,7 +2138,7 @@ function Layers({data}) {
       <div className="kv"><span>last verdict</span><b>${prog.verdict || "—"}</b></div>
       <div className="kv"><span>tests this scan</span><b>${num0(prog.tests)}</b></div>
       <div className="kv"><span>cumulative trials</span><b>${num0(t3.trials_cumulative)}</b></div>
-      <div className="kv"><span>bar (corrected)</span><b>${num2(sig.z_crit_bonferroni)}</b></div>
+      <div className="kv"><span>bar (corrected)</span><b>${num2(sig.gate === "t" ? sig.t_crit : sig.z_crit_bonferroni)}</b></div>
       <div className="l-faint" style=${{fontSize: "var(--t1)", marginTop: "8px"}}>
         The gate is passed or it is not. Nothing in this card was written by a model.
       </div>
