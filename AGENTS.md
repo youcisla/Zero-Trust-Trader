@@ -525,6 +525,11 @@ news_feeds = ["https://example.com/rss"]
 
 Without feeds the scout reports `no feed configured` and does not call the model.
 
+**External research readers.** `agent-reach` and `last30days` are documented and
+fenced in `docs/RESEARCH-LANE.md`: a human runs them, their output lands in
+`docs/PRIOR-ART.md` or `docs/ALTERNATIVES.md`, and neither ever runs inside a
+scan, feeds a gate, or reaches execution.
+
 **What has no agent, on purpose:** chart reading, strategy testing, sizing and
 execution. Tier 2 and Tier 3 already do the first two with a measured error rate
 and a cumulative bar; sizing is 0.01 lots; execution is the human gate. An agent
