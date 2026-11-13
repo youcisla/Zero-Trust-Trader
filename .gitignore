@@ -1,6 +1,9 @@
 # runtime artifacts — never commit
 *.log
 *.out
+# The trials ledger's signed head: runtime state beside funnel_history.log.
+ledger_head.json
+ledger_head.json.tmp
 funnel.lock
 position_manager.lock
 stops.json.lock
