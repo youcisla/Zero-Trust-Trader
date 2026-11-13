@@ -61,22 +61,31 @@ def scan_files(root: Path, names: list[str], identifier: str = "") -> list[tuple
     return failures
 
 
+def private_identifier(root: Path, configured: str = "") -> str:
+    """The one identifier this tree actually protects, or "".
+
+    CI cannot read `.env` (no such file), which is why ZTT_PRIVATE_IDENTIFIER
+    exists there - but the machine that commits is the machine where the slip
+    happens, and an eight-digit login is exactly what a fixture copies by
+    accident. Both the check and the publication build read it from here.
+    """
+    if configured:
+        return configured
+    try:
+        for line in (root / ".env").read_text(encoding="utf-8", errors="replace").splitlines():
+            m = re.match(r"\s*MT5_EXPECTED_LOGIN\s*=\s*(\d{6,})", line)
+            if m:
+                return m.group(1)
+    except OSError:
+        pass
+    return ""
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--root", type=Path, default=ROOT)
     args = parser.parse_args(argv)
-    identifier = os.environ.get("ZTT_PRIVATE_IDENTIFIER", "")
-    # A local run can read the one identifier this tree actually protects. CI cannot
-    # (no .env), which is why ZTT_PRIVATE_IDENTIFIER exists there - but the machine
-    # that commits is the machine where the slip happens, and an eight-digit login
-    # is exactly what a fixture copies by accident.
-    local_env = args.root / ".env"
-    if local_env.exists() and not identifier:
-        for line in local_env.read_text(encoding="utf-8", errors="replace").splitlines():
-            m = re.match(r"\s*MT5_EXPECTED_LOGIN\s*=\s*(\d{6,})", line)
-            if m:
-                identifier = m.group(1)
-                break
+    identifier = private_identifier(args.root, os.environ.get("ZTT_PRIVATE_IDENTIFIER", ""))
     expects = os.environ.get("ZTT_EXPECT_IDENTIFIER") == "1"
     # GitHub renders a secret as an empty string for a pull request from a fork, and
     # an unset secret looks identical. The workflow therefore states its expectation
