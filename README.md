@@ -508,12 +508,7 @@ agent can build is not consent.
 if a row was edited, deleted or reordered. Rows written before the chain existed
 are reported as `unsigned` rather than silently trusted, and writing a new
 unsigned row now says so on stderr — a fresh clone without `ZTT_LEDGER_KEY` gets
-a ledger that is only as trustworthy as the disk, and it tells you. A signed head
-(`ledger_head.json`, gitignored runtime beside the log) binds the count and the
-chain tail, so deleting the newest signed row or emptying the file reports
-`truncated` and a count below the anchored one reports `rollback` — a keyed tree
-refuses both, and refuses `unsigned`/`empty`, so a tail deletion can no longer
-lower the significance bar. A keyless clone still proceeds and says so.
+a ledger that is only as trustworthy as the disk, and it tells you.
 
 | Suite | Covers |
 | --- | --- |

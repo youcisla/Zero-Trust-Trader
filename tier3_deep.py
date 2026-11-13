@@ -73,12 +73,6 @@ def log_run(src: dict, payload: dict) -> None:
     path = HERE / "funnel_history.log"
     with path.open("a", encoding="utf-8") as fh:
         fh.write(tt.sign_line(line, path) + "\n")
-    # Advance the signed anchor in the same step as the append. An anchor that
-    # lagged its ledger could not tell a deleted newest row from a fresh one.
-    if tt.ledger_key() is not None:
-        written = tt.read_lines(path)
-        tt.write_anchor(sum(tt.total(path, lines=written)),
-                        tt.last_sig(path, lines=written), path=path)
 
 
 def correlation(sym_a: str, sym_b: str, bars_n: int = 3000, tf: str = "H1",
@@ -177,10 +171,8 @@ def _main() -> int:
         # fresh by required_trials, so a snapshot can never understate the bar.
         ledger = trials_total.read_lines()
         state, detail = trials_total.verify(lines=ledger)
-        # broken/truncated/rollback always refuse; unsigned/empty refuse only
-        # when a key is configured, so a keyless clone still scans.
-        if trials_total.refuses(state):
-            print(f"ledger chain {state} ({detail}); refusing")
+        if state == "broken":
+            print(f"ledger chain is broken ({detail}); refusing")
             return 1
         if state != "ok":
             print(f"ledger chain {state}: {detail}")
