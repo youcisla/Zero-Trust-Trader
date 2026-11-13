@@ -1158,7 +1158,7 @@ async fn client(mut socket: WebSocket, st: AppState) {
     let _counted = Counted(st.clone());
     let mut rx = st.tx.subscribe();
     let first = st.current.lock().await.clone();
-    if socket.send(Message::Text(first)).await.is_err() {
+    if socket.send(Message::Text(first.into())).await.is_err() {
         return;
     }
     // A browser cannot send a WebSocket ping itself, and a socket that carries
@@ -1173,7 +1173,7 @@ async fn client(mut socket: WebSocket, st: AppState) {
         tokio::select! {
             msg = rx.recv() => match msg {
                 Ok(body) => {
-                    if socket.send(Message::Text(body)).await.is_err() {
+                    if socket.send(Message::Text(body.into())).await.is_err() {
                         break;
                     }
                 }
@@ -1181,7 +1181,7 @@ async fn client(mut socket: WebSocket, st: AppState) {
                 Err(_) => break,
             },
             _ = ping.tick() => {
-                if socket.send(Message::Ping(Vec::new())).await.is_err() {
+                if socket.send(Message::Ping(Vec::new().into())).await.is_err() {
                     break;
                 }
             }
@@ -1296,7 +1296,7 @@ fn router(state: AppState) -> Router {
         .route("/api/snapshot", get(snapshot))
         .route("/api/meta", get(meta))
         .route("/api/scan", post(trigger_scan))
-        .route("/api/logs/:which", get(full_log))
+        .route("/api/logs/{which}", get(full_log))
         .route("/api/report/latest", get(latest_report))
         .route("/ws", get(ws))
         .route("/vendor/react.production.min.js", get(|| js("react")))
