@@ -2,6 +2,7 @@
 name = "zero-trust-dashboard"
 version = "0.1.0"
 edition = "2021"
+rust-version = "1.96"
 description = "Local read-only dashboard for the Zero-Trust Trader engine"
 license = "MIT"
 

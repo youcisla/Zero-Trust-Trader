@@ -32,8 +32,13 @@ node --test dashboard/tests/ui.test.cjs    # if you touched the dashboard
 No trading terminal is required — MetaTrader5 is stubbed in
 `tests/_mt5stub.py`, so the indicator maths and the safety guards run anywhere.
 The dashboard has fixture tests: `cd dashboard && cargo test --locked`.
+`pre-commit install` wires `.pre-commit-config.yaml`, which runs `ruff check` and
+`ruff format` on the files you stage — a legacy file is formatted the first time
+someone touches it, which is how the backlog drains without a mass rewrite.
 CI runs Python 3.12–3.14 on Linux and a stubbed Windows job, plus locked Rust
-build/test/Clippy. It scans every tracked source, including the workflow itself,
+build/test/Clippy and a pinned `cargo-audit`. The Rust toolchain version comes
+from `dashboard/rust-toolchain.toml` only.
+It scans every tracked source, including the workflow itself,
 and reports privacy rule/file names without printing matched values.
 
 ## Regressions worth keeping in mind

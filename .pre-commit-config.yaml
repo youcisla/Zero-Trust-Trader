@@ -1,0 +1,18 @@
+# Local hooks only: ruff is already pinned in requirements-dev.txt, so a hook that
+# fetched its own copy would pin it twice. The repo-wide format backlog is not
+# ruff-formatted yet; a hook runs on the staged files, which is how it drains.
+repos:
+  - repo: local
+    hooks:
+      - id: ruff-check
+        name: ruff check
+        entry: python -m ruff
+        args: [check]
+        language: system
+        types: [python]
+      - id: ruff-format
+        name: ruff format
+        entry: python -m ruff
+        args: [format]
+        language: system
+        types: [python]

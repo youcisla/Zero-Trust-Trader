@@ -33,18 +33,25 @@ def fmt(x, n=2, dash="—"):
 
 
 def main(argv: list[str]) -> int:
-    md.connect()                # marketdata owns the terminal connection
+    md.connect()  # marketdata owns the terminal connection
     acc = mt5.account_info()
     leverage = acc.leverage if acc else None
-    print(f"account {ACCOUNT_EUR:.0f} {acc.currency if acc else 'EUR'} · "
-          f"server leverage 1:{leverage} · window {DAYS} days · target {TARGET_MULT:.0f}x\n")
+    print(
+        f"account {ACCOUNT_EUR:.0f} {acc.currency if acc else 'EUR'} · "
+        f"server leverage 1:{leverage} · window {DAYS} days · target {TARGET_MULT:.0f}x\n"
+    )
 
     g = TARGET_MULT ** (1 / DAYS) - 1
     rows = []
-    for sym in (argv or list(DEFAULT)):
+    added: list[str] = []
+    for sym in argv or list(DEFAULT):
+        inf = mt5.symbol_info(sym)
+        was_visible = bool(inf and getattr(inf, "visible", False))
         if not mt5.symbol_select(sym, True):
             print(f"{sym:<9} not on this server")
             continue
+        if not was_visible:
+            added.append(sym)  # ours to release; the user's stays
         si, tk = mt5.symbol_info(sym), mt5.symbol_info_tick(sym)
         bars = md.fetch(sym, "M15", 400)
         if not (si and tk and bars):
@@ -56,40 +63,67 @@ def main(argv: list[str]) -> int:
         point_value = si.trade_tick_value * (si.point / si.trade_tick_size) * vm
         pips_per_point = 1.0
         if sym.endswith("USD") and si.digits >= 5:
-            pips_per_point = 0.1                       # 5-digit FX: 10 points = 1 pip
-        rows.append(dict(sym=sym, vm=vm, margin=margin, pv=point_value, atr=atr,
-                         spread=tk.ask - tk.bid, point=si.point, ppp=pips_per_point,
-                         contract=si.trade_contract_size, digits=si.digits))
+            pips_per_point = 0.1  # 5-digit FX: 10 points = 1 pip
+        rows.append(
+            dict(
+                sym=sym,
+                vm=vm,
+                margin=margin,
+                pv=point_value,
+                atr=atr,
+                spread=tk.ask - tk.bid,
+                point=si.point,
+                ppp=pips_per_point,
+                contract=si.trade_contract_size,
+                digits=si.digits,
+            )
+        )
 
-    print(f"{'symbol':<9} {'min lot':>7} {'contract':>9} {'margin@min':>10} {'afford?':>8} "
-          f"{'spread':>8} {'M15 ATR':>9} {'spread/ATR':>10}")
+    print(
+        f"{'symbol':<9} {'min lot':>7} {'contract':>9} {'margin@min':>10} {'afford?':>8} "
+        f"{'spread':>8} {'M15 ATR':>9} {'spread/ATR':>10}"
+    )
     for r in rows:
         afford = "yes" if r["margin"] <= ACCOUNT_EUR else "NO"
-        print(f"{r['sym']:<9} {r['vm']:>7.2f} {r['contract']:>9.0f} {r['margin']:>9.2f}€ "
-              f"{afford:>8} {r['spread']/r['point']:>6.0f}pt {r['atr']:>9.5f} "
-              f"{r['spread']/r['atr']*100 if r['atr'] else 0:>9.1f}%")
+        print(
+            f"{r['sym']:<9} {r['vm']:>7.2f} {r['contract']:>9.0f} {r['margin']:>9.2f}€ "
+            f"{afford:>8} {r['spread'] / r['point']:>6.0f}pt {r['atr']:>9.5f} "
+            f"{r['spread'] / r['atr'] * 100 if r['atr'] else 0:>9.1f}%"
+        )
 
-    print(f"\n{'symbol':<9} {'€/point':>8} {'free margin':>12} {'stop-out':>16} "
-          f"{'pts/day (flat)':>15} {'pts day-1':>10}")
+    print(
+        f"\n{'symbol':<9} {'€/point':>8} {'free margin':>12} {'stop-out':>16} "
+        f"{'pts/day (flat)':>15} {'pts day-1':>10}"
+    )
     for r in rows:
         free = ACCOUNT_EUR - r["margin"]
         if r["pv"] <= 0:
             continue
         if free <= 0:
-            print(f"{r['sym']:<9} {r['pv']:>8.4f} {'—':>12} "
-                  f"{'CANNOT OPEN on 50 EUR':>16} {'—':>15} {'—':>10}")
+            print(
+                f"{r['sym']:<9} {r['pv']:>8.4f} {'—':>12} "
+                f"{'CANNOT OPEN on 50 EUR':>16} {'—':>15} {'—':>10}"
+            )
             continue
         so_pts = free / r["pv"]
         need = (ACCOUNT_EUR * (TARGET_MULT - 1) / DAYS) / r["pv"]
         d1 = (ACCOUNT_EUR * g) / r["pv"]
-        print(f"{r['sym']:<9} {r['pv']:>8.4f} {free:>11.2f}€ "
-              f"{so_pts:>9,.0f}pt = {so_pts*r['ppp']:>5,.0f}pip {need:>14,.0f} {d1:>10,.1f}")
+        print(
+            f"{r['sym']:<9} {r['pv']:>8.4f} {free:>11.2f}€ "
+            f"{so_pts:>9,.0f}pt = {so_pts * r['ppp']:>5,.0f}pip {need:>14,.0f} {d1:>10,.1f}"
+        )
 
-    print(f"\nthe invariant: profit_needed / ruin_distance = {TARGET_MULT-1:.0f}x at every size, "
-          f"because both scale with 1/lots")
-    print(f"so each day must bank {((TARGET_MULT-1)/DAYS):.2f}x the distance between the "
-          f"account and zero")
+    print(
+        f"\nthe invariant: profit_needed / ruin_distance = {TARGET_MULT - 1:.0f}x at every size, "
+        f"because both scale with 1/lots"
+    )
+    print(
+        f"so each day must bank {((TARGET_MULT - 1) / DAYS):.2f}x the distance between the "
+        f"account and zero"
+    )
     md.release_auto_selected()
+    for sym in added:
+        mt5.symbol_select(sym, False)
     return 0
 
 

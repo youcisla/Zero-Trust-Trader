@@ -474,7 +474,8 @@ python tools/run_tests.py
 ```
 
 CI runs the checked-in Ruff correctness rules over the source, a pinned Python
-dependency audit, and stubbed tests on Linux and Windows. `compileall` only proves a
+dependency audit, cached Rust builds with a pinned `cargo-audit`, and stubbed
+tests on Linux and Windows. `compileall` only proves a
 file parses; an undefined name parses fine and crashes at runtime, which is how
 a `NameError` once reached production twelve runs in a row while CI stayed green.
 
