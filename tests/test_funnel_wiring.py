@@ -89,6 +89,7 @@ class TestTGateReachesTier3(unittest.TestCase):
             clock = mock.Mock(wraps=datetime)
             clock.now.return_value = datetime(2026, 11, 9, 14, tzinfo=timezone.utc)
             with mock.patch.object(rf, "HERE", tmp), \
+                 mock.patch.object(rf.kill_switch, "MARKER", tmp / "KILL_SWITCH"), \
                  mock.patch.object(rf, "_progress_path", lambda: tmp / "scan_progress.json"), \
                  mock.patch.object(rf, "LOG", ledger), \
                  mock.patch.object(rf, "LOCK", tmp / "funnel.lock"), \
@@ -185,6 +186,22 @@ class TestTGateReachesTier3(unittest.TestCase):
         rc, calls, ledger, _ = self._main([], failed_stage="tier3_deep.py")
         self.assertEqual(rc, 1)
         self.assertIn("total_tests=150", ledger)
+
+    def test_a_broken_ledger_chain_refuses_before_tier2(self):
+        import trials_total as tt
+        key = b"k" * 32
+        body = ("2026-11-09T13:00:00Z | universe=1 tested=1 total_tests=100 "
+                "scan_id=aaaa | STAND_DOWN")
+        with tempfile.TemporaryDirectory() as d:
+            log = Path(d) / "ledger.log"
+            log.write_text(tt.sign_line(body, log, key) + "\n", encoding="utf-8")
+            tampered = log.read_text(encoding="utf-8").replace(
+                "total_tests=100", "total_tests=10")
+        with mock.patch.object(tt, "ledger_key", return_value=key):
+            rc, calls, ledger, _ = self._main([], ledger_text=tampered)
+        self.assertEqual(rc, 1)
+        self.assertFalse(any(c and c[0] == "tier2_patterns.py" for c in calls))
+        self.assertIn("FAILED ledger chain", ledger)
 
 
 if __name__ == "__main__":

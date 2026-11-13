@@ -368,9 +368,12 @@ in `tier3_results.json` - the pair the gate actually used.
 This table is an illustrative historical snapshot, not a live trial count.
 Every value is computed by `bonferroni_z()`, not estimated — `python status.py`
 prints the current one. The window is 05:00–17:00 UTC (48 scans/day), but the
-session matrix below narrows the families early. The measured scan declares
-291 tests (97 symbols x 3 families), so 48 scans add 13,968 hypotheses a day,
-not the 26,000 a full 180-symbol universe at all three families would.
+session matrix below narrows the families early. The 291-test row was a
+97-symbol scan; on 2026-11-12 the 180-symbol universe declared 196–402 tests
+per scan depending on the session, and the 35 scans recorded from 08:31 to
+16:45 added 10,358 hypotheses. Read `trials_declared` and `z_crit_corrected`
+from `tier3_results.json` for the pair the gate actually used; do not multiply
+291 by 48.
 
 ```bash
 $ python trials_total.py

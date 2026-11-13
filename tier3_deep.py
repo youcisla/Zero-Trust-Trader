@@ -163,6 +163,12 @@ def _main() -> int:
         return 1
     try:
         import trials_total
+        state, detail = trials_total.verify()
+        if state == "broken":
+            print(f"ledger chain is broken ({detail}); refusing")
+            return 1
+        if state != "ok":
+            print(f"ledger chain {state}: {detail}")
         minimum = trials_total.required_trials(scan_tests)
     except (OSError, ValueError, RuntimeError) as exc:
         print(f"cannot establish cumulative trials: {exc}")

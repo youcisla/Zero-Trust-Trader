@@ -228,19 +228,21 @@ candidate that clears 3.59 today will be refused next month at the same z.
 
 The scan window widened from 16 scans/day (13:00-17:00) to 48 (05:00-17:00).
 The strategy matrix narrows in the early sessions so the daily hypothesis count
-does not scale with the window.
+does not scale with the window. The count is `tested x families`, where
+`tested` is the subset of the 180-symbol universe with fresh bars at that
+moment; it is not a fixed 50 symbols.
 
-| Window (UTC) | Scans | Symbols | Families | Tests |
-| --- | --- | --- | --- | --- |
-| 05:00-08:00 | 12 | 50 | donchian | 600 |
-| 08:00-13:00 | 20 | 50 | donchian, bollinger | 2,000 |
-| 13:00-17:00 | 16 | 50 | donchian, rsi, bollinger | 2,400 |
-| **Total** | **48** | | | **5,000** |
+| Window (UTC) | Scans | Families | Tests/scan (measured 2026-11-12) |
+| --- | --- | --- | --- |
+| 05:00-08:00 | 12 | donchian | tested (1 family) |
+| 08:00-13:00 | 20 | donchian, bollinger | 196-356 |
+| 13:00-17:00 | 16 | donchian, rsi, bollinger | 330-402 |
 
-5,000/day is 2.08x the previous 2,400/day. The matrix does not push the total
-below the old rate - it stops the widened window from costing 7,200/day
-(48 scans x 150 tests), which is what a naive 12-hour expansion would have
-done. Fewer families early is not a saving, it is a smaller bet.
+The 35 scans recorded on 2026-11-12 from 08:31 to 16:45 added 10,358
+hypotheses. That partial day already exceeds the 5,000 this table used to claim
+when the universe was 50 symbols. Fewer families early is not a saving, it is a
+smaller bet; read the actual per-scan count from the ledger's `total_tests` or
+`tier3_results.json`'s `trials_declared`.
 
 ### z_crit is cumulative, never per-scan
 

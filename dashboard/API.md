@@ -65,7 +65,9 @@ The top-level fields are:
   `account` and `positions`. The account retains display equity, balance,
   currency, server and a masked label; the raw account login and arbitrary
   provider fields are omitted. Position fields are restricted to those used by
-  the table.
+  the table. A document whose `ok` is missing or null is served with `ok:false`,
+  an error and `positions:null`; a missing positions array is never rendered as
+  flat.
 - `engine_age_s`: age of the chosen engine-generation file, or null if unknown.
   The reader selects the newest generation, falling back to the legacy name.
 - `equity`, `balance`, `currency`, `server`, `positions`: display summaries;

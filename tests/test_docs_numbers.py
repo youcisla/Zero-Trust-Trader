@@ -32,7 +32,8 @@ class TheReadmeBarTable(unittest.TestCase):
                                    msg=f"README says z={published} at {n} trials, gate says {want}")
 
     def test_the_arithmetic_behind_the_rows_is_the_arithmetic(self):
-        # 291 tests a scan x 48 scans, and the week/month rows compound it.
+        # The historical 291-test row x 48 scans; the live per-scan count is
+        # read from the ledger, not frozen here.
         for count, mult in ((13_968, 1), (97_776, 7), (419_040, 30)):
             self.assertEqual(count, 291 * 48 * mult)
 
@@ -53,14 +54,13 @@ class TheUniverseSentence(unittest.TestCase):
 
     def test_one_number_for_the_universe(self):
         import json
+        readme = (ROOT / "README.md").read_text(encoding="utf-8")
+        canon = re.findall(r"1,711 quoted → \d+ tradable[^.]*?(\d+) liquid", readme)
+        self.assertTrue(canon, "README.md lost its canonical universe sentence")
         universe = ROOT / "liquid_universe.json"
         if not universe.exists():
             self.skipTest("runtime artifact absent (fresh clone or CI)")
         count = json.loads(universe.read_text(encoding="utf-8"))["count"]
-        readme = (ROOT / "README.md").read_text(encoding="utf-8")
-        canon = re.findall(r"1,711 quoted → \d+ tradable[^.]*?(\d+) liquid", readme)
-        if not canon:
-            self.skipTest("canonical sentence not found")
         self.assertEqual(int(canon[0]), count,
                          f"README says {canon[0]} liquid, liquid_universe.json says {count}")
 

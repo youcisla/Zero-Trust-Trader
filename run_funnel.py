@@ -267,8 +267,13 @@ def preflight_report() -> int:
     offset = md.broker_offset()
     print(f"terminal   {server} · login {getattr(acct, 'login', '?')} · "
           f"broker offset {offset:+d}s")
-    # One symbol, one bar: enough to prove the closed-bar path works.
-    bars = md.fetch("EURUSD", "H1", 5)
+    # One symbol, one bar: enough to prove the closed-bar path works. Fetching
+    # selects the symbol into Market Watch; release it on every path or the
+    # probe leaks one entry per run.
+    try:
+        bars = md.fetch("EURUSD", "H1", 5)
+    finally:
+        md.release_auto_selected()
     print(f"bars       {'5 closed EURUSD H1' if bars is not None else 'none — closed-bar path refused'}")
     for p_ in problems:
         print(f"PROBLEM    {p_}")
@@ -463,6 +468,12 @@ def _main() -> int:
 
     try:
         import trials_total
+        state, detail = trials_total.verify(LOG)
+        if state == "broken":
+            log(f"FAILED ledger chain | {detail}")
+            return 1
+        if state != "ok":
+            print(f"ledger chain {state}: {detail}")
         prior = trials_total.required_trials(0, LOG)
     except (OSError, ValueError, TypeError, ImportError) as exc:
         log(f"FAILED trial accounting before scan | {type(exc).__name__}: {exc}")

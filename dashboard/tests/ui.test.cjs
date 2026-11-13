@@ -14,7 +14,7 @@ const source = fs.readFileSync(path.join(__dirname, '../web/index.html'), 'utf8'
 const helpers = source.split('// BEGIN fixture-tested state helpers')[1]
   .split('// END fixture-tested state helpers')[0];
 
-const EXPORTS = ['scanCurrent', 'transportFresh', 'protectionLabel', 'parseFunnel', 'lastFunnel',
+const EXPORTS = ['scanCurrent', 'scanRunState', 'transportFresh', 'protectionLabel', 'parseFunnel', 'lastFunnel',
   'ledgerRows', 'pipeline', 'edgeCounts', 'edgeStates', 'computeDrawdown', 'bonferroniMirror',
   'sessionState', 'derive', 'fmtDur', 'fmtTok', 'todayStats', 'num2', 'signed', 'backoffMs',
   'heatFrac', 'heatRgb', 'HEAT_METRICS', 'esc'];
@@ -91,11 +91,28 @@ test('dry run, applied, refusing and stale observations have distinct labels', (
   assert.match(h.protectionLabel(null, null, true), /unknown/);
 });
 
+test('a fresh engine doc without ok or positions is unknown, never flat', () => {
+  assert.match(h.protectionLabel({engine: {positions: null}}, 1, true), /unknown/);
+  assert.match(h.protectionLabel({engine: {ok: null, positions: null}}, 1, true), /unknown/);
+  assert.equal(h.protectionLabel({engine: {ok: true, applied: false, positions: []}}, 1, true),
+               'confirmed flat');
+});
+
 test('a candidate is only "current" when the artifacts say so', () => {
   assert.equal(h.scanCurrent({scan: {current: true}}), true);
   assert.equal(h.scanCurrent({scan: {current: false}}), false);
   assert.equal(h.scanCurrent({tier3: {survivors: ['FIXTURE']}}), false);
   assert.equal(h.scanCurrent(null), false);
+});
+
+test('a zero exit with no ledger row is a no-op, not a completed scan', () => {
+  assert.equal(h.scanRunState(null), null);
+  assert.equal(h.scanRunState({running: true}), 'running');
+  assert.equal(h.scanRunState({exit: 0, outcome: 'completed'}), 'completed');
+  assert.equal(h.scanRunState({exit: 0, outcome: 'noop'}), 'noop');
+  assert.equal(h.scanRunState({exit: 0}), 'completed');
+  assert.equal(h.scanRunState({exit: 2, outcome: 'failed'}), 'failed');
+  assert.equal(h.scanRunState({exit: null}), 'failed');
 });
 
 /* ---- ledger ---------------------------------------------------------- */

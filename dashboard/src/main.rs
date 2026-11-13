@@ -305,15 +305,23 @@ fn display_engine(mut engine: Value) -> Value {
         return Value::Null;
     };
     object.retain(|k, _| ["ok", "applied", "error", "positions", "account"].contains(&k.as_str()));
+    let ok_flag = object.get("ok").and_then(Value::as_bool);
     let positions_valid = object
         .get("positions")
         .and_then(Value::as_array)
         .is_some_and(|items| items.iter().all(Value::is_object));
-    if object.get("ok").and_then(Value::as_bool) == Some(true) && !positions_valid {
-        object.insert("ok".into(), json!(false));
-        object.insert("error".into(), json!("invalid position observation"));
-    }
-    if object.get("ok").and_then(Value::as_bool) != Some(true) {
+    if ok_flag != Some(true) || !positions_valid {
+        if ok_flag != Some(false) {
+            object.insert("ok".into(), json!(false));
+            object.insert(
+                "error".into(),
+                json!(if ok_flag.is_none() {
+                    "invalid engine observation: missing ok"
+                } else {
+                    "invalid position observation"
+                }),
+            );
+        }
         object.insert("positions".into(), Value::Null);
     }
     if let Some(account) = object.get_mut("account").and_then(Value::as_object_mut) {
@@ -513,7 +521,7 @@ fn build(root: &Path, series: &mut collector::Collector, last_scan_run: Value) -
     let alerts = health::alerts(
         engine_age_secs.is_some(),
         engine_age_secs.map(|a| a as i64),
-        engine.get("ok").and_then(Value::as_bool).unwrap_or(true),
+        engine.get("ok").and_then(Value::as_bool).unwrap_or(false),
         engine.get("error").and_then(Value::as_str),
         ledger_doc
             .get("rows")
@@ -899,6 +907,17 @@ async fn local_request(State(st): State<AppState>, request: Request, next: Next)
     response
 }
 
+/// Exit 0 alone cannot tell "ran" from "no-op": the funnel returns 0 when it
+/// loses the lock or is outside its window. A completed scan appends a ledger
+/// row; a no-op leaves the ledger unchanged.
+fn scan_outcome(exit: Option<i32>, ledger_before: u64, ledger_after: u64) -> &'static str {
+    match exit {
+        Some(0) if ledger_after > ledger_before => "completed",
+        Some(0) => "noop",
+        _ => "failed",
+    }
+}
+
 /// POST /api/scan — the one write in this process.
 ///
 /// It starts the *research* pipeline and nothing else. `run_funnel.py` takes its
@@ -990,6 +1009,10 @@ async fn trigger_scan(State(st): State<AppState>) -> Response {
         )
             .into_response();
     }
+    let ledger_path = st.root.join("funnel_history.log");
+    let ledger_before = std::fs::metadata(&ledger_path)
+        .map(|m| m.len())
+        .unwrap_or(0);
     match interpreter
         .arg(&script)
         .arg("--window-utc")
@@ -1029,6 +1052,9 @@ async fn trigger_scan(State(st): State<AppState>) -> Response {
                 let status = child.wait();
                 running.store(false, Ordering::SeqCst);
                 let exit = status.ok().and_then(|s| s.code());
+                let ledger_after = std::fs::metadata(&ledger_path)
+                    .map(|m| m.len())
+                    .unwrap_or(0);
                 let mut run = last_run.lock().unwrap_or_else(|e| e.into_inner());
                 let mut doc = run.take().unwrap_or_else(|| json!({"pid": pid}));
                 journal(
@@ -1037,6 +1063,10 @@ async fn trigger_scan(State(st): State<AppState>) -> Response {
                 );
                 if let Some(obj) = doc.as_object_mut() {
                     obj.insert("exit".into(), json!(exit));
+                    obj.insert(
+                        "outcome".into(),
+                        json!(scan_outcome(exit, ledger_before, ledger_after)),
+                    );
                     obj.insert("running".into(), json!(false));
                     obj.insert("finished_utc".into(), json!(now_utc()));
                 }
@@ -1373,7 +1403,22 @@ mod tests {
         let malformed = display_engine(json!({"ok":true, "positions":[null]}));
         assert_eq!(malformed["ok"], false);
         assert!(malformed["positions"].is_null());
+        let missing_ok = display_engine(json!({"positions": []}));
+        assert_eq!(missing_ok["ok"], false);
+        assert!(missing_ok["positions"].is_null());
+        assert!(missing_ok["error"]
+            .as_str()
+            .unwrap_or("")
+            .contains("missing ok"));
         assert!(display_engine(Value::Null).is_null());
+    }
+
+    #[test]
+    fn a_zero_exit_without_a_ledger_row_is_a_noop() {
+        assert_eq!(scan_outcome(Some(0), 100, 100), "noop");
+        assert_eq!(scan_outcome(Some(0), 100, 180), "completed");
+        assert_eq!(scan_outcome(Some(2), 100, 180), "failed");
+        assert_eq!(scan_outcome(None, 100, 100), "failed");
     }
 
     #[test]

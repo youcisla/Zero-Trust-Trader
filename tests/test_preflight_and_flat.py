@@ -1,8 +1,12 @@
 """The five-second check, the flat exit, and the break-even cushion."""
 
+import os
 import sys
+import tempfile
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path[:0] = [str(ROOT), str(ROOT / "tests")]
@@ -15,14 +19,36 @@ import run_funnel as rf  # noqa: E402
 class ThePreflight(unittest.TestCase):
     def test_a_kill_switch_stops_it_before_the_terminal_is_asked(self):
         saved = kill_switch.MARKER
-        kill_switch.MARKER = ROOT / "KILL_SWITCH"
-        try:
-            kill_switch.MARKER.write_text("", encoding="utf-8")
-            rc = rf.preflight_report()
-        finally:
-            kill_switch.MARKER.unlink(missing_ok=True)
-            kill_switch.MARKER = saved
+        with tempfile.TemporaryDirectory() as d:
+            kill_switch.MARKER = Path(d) / "KILL_SWITCH"
+            try:
+                kill_switch.MARKER.write_text("", encoding="utf-8")
+                rc = rf.preflight_report()
+            finally:
+                kill_switch.MARKER = saved
         self.assertEqual(rc, kill_switch.EXIT_KILLED)
+
+
+class ThePreflightLeak(unittest.TestCase):
+    def test_it_releases_the_symbol_fetch_selected(self):
+        import marketdata as md
+        import trials_total
+        with tempfile.TemporaryDirectory() as d, \
+             mock.patch.object(rf.kill_switch, "MARKER", Path(d) / "KILL_SWITCH"), \
+             mock.patch.object(trials_total, "verify", return_value=("ok", "fixture")), \
+             mock.patch.dict(os.environ, {"MT5_EXPECTED_LOGIN": "12345"}), \
+             mock.patch.object(md.mt5, "initialize", return_value=True), \
+             mock.patch.object(md.mt5, "terminal_info",
+                               return_value=SimpleNamespace(connected=True)), \
+             mock.patch.object(md.mt5, "account_info",
+                               return_value=SimpleNamespace(login=12345, server="Synthetic-Demo",
+                                                            trade_mode=0)), \
+             mock.patch.object(md, "broker_offset", return_value=0), \
+             mock.patch.object(md, "fetch", return_value={"c": []}), \
+             mock.patch.object(md, "release_auto_selected", return_value=0) as release:
+            rc = rf.preflight_report()
+        self.assertEqual(rc, 0)
+        release.assert_called_once_with()
 
 
 class TheFlatExit(unittest.TestCase):

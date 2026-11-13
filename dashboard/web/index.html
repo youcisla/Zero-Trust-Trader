@@ -504,6 +504,15 @@ function scanCurrent(data) {
   return data.scan.current === true;
 }
 
+/** A zero exit is not "it ran": the funnel returns 0 when it loses the lock or
+ *  is outside its window. The server stamps `outcome` from the ledger row. */
+function scanRunState(lastRun) {
+  if (!lastRun) return null;
+  if (lastRun.running) return "running";
+  if (lastRun.exit !== 0) return "failed";
+  return lastRun.outcome === "noop" ? "noop" : "completed";
+}
+
 /** Reconnect delay: 0.5 s, 1 s, 2 s, 4 s, then every 5 s. Bounded on purpose —
  *  a busy server gets room, a dead one is still probed often enough to recover
  *  without a stampede. */
@@ -527,7 +536,8 @@ function protectionLabel(data, ageSecs, transportLive) {
   // 30 s, not the alert rail's 120 s: the supervisor writes every second, so half
   // a minute of silence already means what you see is not what is happening.
   if (ageSecs > 30) return "engine stale — protection unverified";
-  const n = (data.engine.positions || []).length;
+  if (!Array.isArray(data.engine.positions)) return "positions unknown — protection unverified";
+  const n = data.engine.positions.length;
   if (n === 0) return "confirmed flat";
   return data.engine.applied ? "apply enabled · observation current" : "observed only · dry run";
 }
@@ -2478,6 +2488,7 @@ function App() {
   const health = (data && data.health) || {};
   const lastRun = data && data.last_scan_run;
   const scanLive = !!(lastRun && lastRun.running);
+  const runState = scanRunState(lastRun);
 
   return html`<div className="app">
     <aside className="side">
@@ -2535,10 +2546,11 @@ function App() {
           onClick=${runScan}
           title="runs exactly what the scheduler runs; it takes the same lock">
           ${scanLive ? "scan running…" : running ? "starting…" : "▶ Run scan now"}</button>
-        ${lastRun ? html`<span className=${"badge " + (lastRun.running ? "" : lastRun.exit === 0 ? "pass" : "fail")}
+        ${lastRun ? html`<span className=${"badge " + (runState === "completed" ? "pass" : runState === "failed" ? "fail" : "")}
           title=${"pid " + (lastRun.pid || "?") + " · started " + (lastRun.started_utc || "?") +
                   (lastRun.finished_utc ? " · finished " + lastRun.finished_utc : "")}>
-          ${lastRun.running ? "running" : lastRun.exit === 0 ? "exit 0" : "exit " + (lastRun.exit == null ? "?" : lastRun.exit)}
+          ${runState === "running" ? "running" : runState === "noop" ? "no-op (lock/window)" :
+            lastRun.exit === 0 ? "exit 0" : "exit " + (lastRun.exit == null ? "?" : lastRun.exit)}
         </span>` : null}
         ${!data || !data.progress ? html`<span className="l-faint">no scan progress recorded on this tree yet</span>`
           : html`${["preflight", "universe", "tier2", "tier3", "verdict"].map((k, i) => {

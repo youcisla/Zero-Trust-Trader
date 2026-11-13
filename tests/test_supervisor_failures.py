@@ -27,6 +27,10 @@ class TestBrokerFailures(unittest.TestCase):
         patcher = mock.patch.object(pm, "HERE", pathlib.Path(self.tmp.name))
         patcher.start()
         self.addCleanup(patcher.stop)
+        patcher = mock.patch.object(pm.kill_switch, "MARKER",
+                                    pathlib.Path(self.tmp.name) / "KILL_SWITCH")
+        patcher.start()
+        self.addCleanup(patcher.stop)
         patcher = mock.patch.object(rf, "EXPECTED_LOGIN", 12345)
         patcher.start()
         self.addCleanup(patcher.stop)
@@ -290,6 +294,14 @@ class TestStopMap(unittest.TestCase):
 
 
 class TestMaintenance(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        patcher = mock.patch.object(rf.kill_switch, "MARKER",
+                                    pathlib.Path(self.tmp.name) / "KILL_SWITCH")
+        patcher.start()
+        self.addCleanup(patcher.stop)
+
     def test_marker_refuses_funnel_and_supervisor_before_terminal_or_lock(self):
         with tempfile.TemporaryDirectory() as directory:
             root = pathlib.Path(directory)

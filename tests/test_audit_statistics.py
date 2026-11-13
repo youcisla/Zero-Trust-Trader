@@ -186,6 +186,31 @@ class TestTier3Accounting(unittest.TestCase):
         self.assertEqual(rc, 0)
         self.assertNotEqual(payload["scan_id"], "old")
 
+    def test_broken_ledger_chain_refuses_the_deep_test(self):
+        import trials_total as tt
+        key = b"k" * 32
+        with tempfile.TemporaryDirectory() as directory:
+            root = pathlib.Path(directory)
+            log = root / "funnel_history.log"
+            body = ("2026-11-09T13:00:00Z | universe=1 tested=1 total_tests=100 "
+                    "scan_id=old | STAND_DOWN")
+            log.write_text(tt.sign_line(body, log, key) + "\n", encoding="utf-8")
+            log.write_text(log.read_text(encoding="utf-8").replace(
+                "total_tests=100", "total_tests=10"), encoding="utf-8")
+            src = root / "tier2.json"
+            src.write_text(json.dumps({"top": [], "total_tests": 90, "scan_id": "scan-a"}),
+                           encoding="utf-8")
+            with mock.patch.object(tt, "LOG", log), \
+                 mock.patch.object(tt, "ledger_key", return_value=key), \
+                 mock.patch.object(t3, "OUT", root / "tier3.json"), \
+                 mock.patch.object(t3, "HERE", root), \
+                 mock.patch.object(sys, "argv",
+                                   ["tier3_deep.py", "--tier2", str(src), "--scan-id", "scan-a"]):
+                rc = t3.main()
+            self.assertEqual(rc, 1)
+            self.assertFalse((root / "tier3.json").exists())
+            self.assertEqual(log.read_text(encoding="utf-8").count("\n"), 1)
+
 
 class TestResearchLock(unittest.TestCase):
     def test_explicit_scan_id_cannot_bypass_another_research_owner(self):
