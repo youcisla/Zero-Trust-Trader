@@ -282,3 +282,71 @@ that will settle it.
 - **Convergence is the best evidence.** Two independent projects arriving at
   "ground every number in the source, before any agent runs" is worth more than any
   single benchmark in either README.
+
+---
+
+## 5. A 16-module backtest validation framework, and the López de Prado checklist — what the 30-day sweep on multiple testing found
+
+Read 2026-11-13. A `last30days` run over 2026-10-14 → 2026-11-13 on "backtest
+overfitting / multiple-testing correction in retail algorithmic trading"
+returned **24 items across 3 active sources** (GitHub 19, Hacker News 4,
+YouTube 1), and its own freshness header said **5 of 24** dated items came from
+the last seven days. Reddit was rate-limited inside that sweep (HTTP 429 in its
+coverage block, 403 in its error block), so
+the threads below came from `agent-reach reddit search`; Reddit's read then
+answered with a login wall, so they are cited from search results, not full
+threads. `agent-reach github search` failed on this host (socket access denied),
+so the issue below was read from its own API page. The thinness is the first
+finding: the topic is settled and old, and the last 30 days added nothing new to
+it.
+
+- https://github.com/starsstar2327-commits/Quant-project-/issues/8 — a 16-module
+  framework, October 2026, written as a sequence of pass/fail gates
+- https://www.reddit.com/r/quant/comments/1rlobeh/opensourced_a_cheat_sheet_on_lopez_de_prados/ —
+  CPCV, Deflated Sharpe, Probability of Backtest Overfitting, purging and
+  embargoing
+- https://www.reddit.com/r/algotrading/comments/1shokdu/dont_be_afraid_to_overfit/ —
+  the adversarial take, which concedes the point in its own top reply
+
+### What we already do
+
+| Their module | Ours | Verdict |
+| --- | --- | --- |
+| M1 execution timing: signal on close, fill at next open | `fetch` drops the forming bar; signals are confirmed at bar close | same boundary, held structurally |
+| M2 significance under multiple testing: Φ⁻¹(1 − α/2N), **N is what was actually tried** | gate 5, `bonferroni_z(cumulative)` — and `student_t_crit(0.05/N, df)` when the statistic is the mean-R t | same formula, wider N |
+| M3/M13 block bootstrap: resample 10–20 bar blocks, the 5th-percentile drawdown must be **deeper** than the historical one | `simulate()`: 10,000 replays, seed 19, real bars resampled by slot of day ±2 from a 1,500-bar pool | preserves intraday seasonality, not multi-bar dependence |
+| M4 walk-forward: rolling train/test | tier 3 on 15,000 bars, both gates | one window, no rolling split |
+| M9 correlation: a new stream above ρ 0.7 adds little | gate 4 dedupe at \|ρ\| 0.7, keeps the higher z | same threshold, independent arrival |
+| M16 cost sensitivity: 2D commission × slippage matrix, the realistic cell decides | the live spread charged per symbol | one measured point, not a matrix |
+| — | gate 6, a random-entry permutation null at p < 0.05, 1,000 permutations | none of the 16 modules has one |
+
+The arithmetic agrees exactly, which is the confirmation the ticket asked for.
+Their M2 threshold is Φ⁻¹(1 − α/2N) and ours is `bonferroni_z(n)` of the same
+quantity: `bonferroni_z(170)` returns `3.62`, the number their text states for
+N = 170. At this tree's frozen history, `bonferroni_z(2_205)` returns `4.237`;
+the cumulative count when this was read (2,205 legacy + 49,479 logged = 51,684)
+gives `4.898`, and each scan adds its 50/100/150 tests on top. Their
+"the relevant N is not 1" discipline is our `required_trials()`, and we count it
+across the life of the machine rather than across one parameter grid.
+
+### What we took
+
+**One named measurement for §7, and the checklist to run it with.** The
+Deflated Sharpe Ratio and the Probability of Backtest Overfitting are the two
+documented ways to ask what our Bonferroni bar cannot: whether the *selected*
+candidate is real given the dispersion of every candidate tried, using the
+return series rather than a win-rate count. Neither is adopted here — a
+correction change is a hypothesis under §7, with before and after numbers on
+the same bars — but both now have a page number in this file. The r/algotrading
+thread converges on the experiment design: multiple out-of-sample stages, regime
+stability, and low sensitivity to parameter changes, which is a better test of a
+new correction than a single holdout.
+
+### What we refused
+
+| Idea | Why not |
+| --- | --- |
+| Swapping Bonferroni for DSR or PBO as the gate | DSR needs a per-candidate Sharpe with skew and kurtosis over T observations; the gate judges a win-rate z or a mean-R t on decided trades. A newer statistic that resets the cumulative record is not a tightening, and §4.2 forbids the shape of the change |
+| A noise-injection look-ahead audit as a gate | our look-ahead boundary is the forming bar dropped in `fetch`, true by construction and cheap; their M6 re-runs the strategy at every timestamp, which is minutes per symbol inside a scan that already takes tens of minutes. Worth a `tools/` audit one day, under §7's before/after rule |
+| A block bootstrap inside the live Monte Carlo | it changes the drawdown distribution `docs/SIZE-AND-RUIN.md` is built on; a silent change to a sizing input is the class of edit §4 exists to stop |
+| "Don't be afraid to overfit" | its own top reply is our gate: 10,000 backtests and one god-tier equity curve is selection bias, not a strategy. The thread's answer — control for data mining — is what gate 5 already does |
