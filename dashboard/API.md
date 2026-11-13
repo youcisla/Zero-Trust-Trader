@@ -81,7 +81,7 @@ The top-level fields are:
 - `scan`: `{current, status, scan_id, reason}`. `current` is true only when both
   stage artifacts and the latest ledger row have the same nonempty `scan_id`,
   the artifacts are no older than three hours, and that latest row ends in a
-  completed `STAND_DOWN` or `PROPOSAL` verdict. Missing identity, newer failed
+  completed `STAND_DOWN` or `WINNER` verdict. Missing identity, newer failed
   rows, mismatches and old artifacts produce `historical_or_unknown`.
 
 Consumers must check `scan.current` before displaying a current candidate.

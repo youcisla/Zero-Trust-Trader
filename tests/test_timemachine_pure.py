@@ -13,6 +13,12 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path[:0] = [str(ROOT), str(ROOT / "tests")]
 
+# It imports marketdata, which imports MetaTrader5 at module scope. Install the
+# stub first so this module runs standalone, not only after another test did.
+import _mt5stub  # noqa: E402
+
+_mt5stub.install()
+
 import timemachine_mt5 as tm  # noqa: E402
 
 

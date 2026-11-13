@@ -364,15 +364,15 @@ fn scan_state(root: &Path, tier2: &Value, tier3: &Value, funnel: Option<&Vec<Str
         .get("scan_id")
         .and_then(Value::as_str)
         .filter(|s| !s.is_empty());
-    let verdict = row
-        .split(" | ")
-        .nth(2)
-        .and_then(|s| s.split_whitespace().next());
+    // Same vocabulary the ledger parser uses, so "current" cannot disagree with
+    // what the ledger page shows: a WINNER row ("WINNER:SYM,...") is a completed
+    // scan exactly like STAND_DOWN. The writer emits no other verdict.
+    let verdict = ledger::verdict_word(row.split(" | ").nth(2).unwrap_or(""));
     let ids_match = t2_id.is_some() && t2_id == t3_id && t2_id == ledger_id;
     let fresh = ["tier2_candidates.json", "tier3_results.json"]
         .iter()
         .all(|name| age_secs(&root.join(name)).is_some_and(|age| age <= SCAN_MAX_AGE));
-    let current = ids_match && fresh && matches!(verdict, Some("STAND_DOWN" | "PROPOSAL"));
+    let current = ids_match && fresh && matches!(verdict, Some("STAND_DOWN" | "WINNER"));
     let reason = if !ids_match {
         "missing or mismatched scan identity"
     } else if !fresh {
@@ -1013,6 +1013,27 @@ async fn trigger_scan(State(st): State<AppState>) -> Response {
     let ledger_before = std::fs::metadata(&ledger_path)
         .map(|m| m.len())
         .unwrap_or(0);
+    // The load above is only a fast path. Two concurrent POSTs both passed it
+    // before either had spawned, and both spawned. Claiming the slot is one
+    // atomic step now; the loser is refused instead of starting a second
+    // interpreter that fights the funnel lock and churns the terminal.
+    if st
+        .scan_running
+        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+        .is_err()
+    {
+        journal(
+            &st.root,
+            json!({"ts": now_utc(), "event": "post", "outcome": 409,
+                                 "reason": "a scan is still running"}),
+        );
+        return (
+            StatusCode::CONFLICT,
+            Json(json!({"started": false, "error": "a scan is still running",
+                        "code": "scan_running", "status": 409})),
+        )
+            .into_response();
+    }
     match interpreter
         .arg(&script)
         .arg("--window-utc")
@@ -1024,7 +1045,6 @@ async fn trigger_scan(State(st): State<AppState>) -> Response {
     {
         Ok(mut child) => {
             let pid = child.id();
-            st.scan_running.store(true, Ordering::SeqCst);
             journal(
                 &st.root,
                 json!({"ts": now_utc(), "event": "start", "pid": pid}),
@@ -1079,6 +1099,9 @@ async fn trigger_scan(State(st): State<AppState>) -> Response {
                 .into_response()
         }
         Err(e) => {
+            // Nothing started: the claimed slot must be free again, or a broken
+            // interpreter would refuse every later POST until a restart.
+            st.scan_running.store(false, Ordering::SeqCst);
             journal(
                 &st.root,
                 json!({"ts": now_utc(), "event": "post", "outcome": 500,
@@ -1303,6 +1326,10 @@ fn router(state: AppState) -> Router {
 mod tests {
     use super::*;
 
+    /// Two tests spawn a child and `ZTT_PYTHON` is process-wide, so each holds
+    /// this across its set..remove window and cannot see the other's interpreter.
+    static SPAWN_ENV: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
     fn tmp(name: &str) -> PathBuf {
         let p = std::env::temp_dir().join(format!("ztt-{}-{}", std::process::id(), name));
         let _ = std::fs::remove_file(&p);
@@ -1467,7 +1494,8 @@ mod tests {
         }
         let t2 = json!({"scan_id":"fixture"});
         let t3 = json!({"scan_id":"fixture"});
-        let row = "2026-11-09T12:00:00Z | scan_id=fixture | PROPOSAL".to_string();
+        // The row the writer actually emits for a winning scan: "WINNER:SYM,...".
+        let row = "2026-11-09T12:00:00Z | scan_id=fixture | WINNER:EURUSD,GBPUSD".to_string();
         assert_eq!(
             scan_state(&root, &t2, &t3, Some(&vec![row.clone()]))["current"],
             true
@@ -1666,6 +1694,7 @@ mod tests {
             eprintln!("no usable interpreter here; the lifecycle is covered on Linux CI");
             return;
         };
+        let _env = SPAWN_ENV.lock().unwrap_or_else(|e| e.into_inner());
         std::env::set_var("ZTT_PYTHON", interp);
 
         let (port, st) = serve(&root).await;
@@ -1727,6 +1756,59 @@ mod tests {
         let journal = std::fs::read_to_string(root.join("dashboard_scan.jsonl")).unwrap();
         assert!(journal.contains("\"outcome\":409"), "{journal}");
         assert!(journal.contains("\"exit\":7"), "{journal}");
+    }
+
+    #[tokio::test]
+    async fn two_concurrent_posts_start_exactly_one_scan() {
+        // SECURITY-03: the running check and the running set were two steps, so
+        // two requests arriving together both passed the check and both spawned
+        // an interpreter. The claim is atomic now; the loser is refused.
+        let root = fixture_dir("scan-race");
+        std::fs::write(
+            root.join("run_funnel.py"),
+            "import time\ntime.sleep(1.0)\n",
+        )
+        .unwrap();
+        let Some(interp) = ["python3", "python", "py"].into_iter().find(|p| {
+            std::process::Command::new(p)
+                .args(["-c", "print('ok')"])
+                .output()
+                .map(|o| o.status.success() && String::from_utf8_lossy(&o.stdout).trim() == "ok")
+                .unwrap_or(false)
+        }) else {
+            eprintln!("no usable interpreter here; the race is covered on Linux CI");
+            return;
+        };
+        let _env = SPAWN_ENV.lock().unwrap_or_else(|e| e.into_inner());
+        std::env::set_var("ZTT_PYTHON", interp);
+
+        let (_port, st) = serve(&root).await;
+        let (first, second) = tokio::join!(
+            trigger_scan(axum::extract::State(st.clone())),
+            trigger_scan(axum::extract::State(st.clone()))
+        );
+        let statuses = [first.status(), second.status()];
+        let accepted = statuses
+            .iter()
+            .filter(|s| **s == StatusCode::ACCEPTED)
+            .count();
+        assert_eq!(accepted, 1, "one claim, one child: {statuses:?}");
+        let refused = statuses
+            .iter()
+            .find(|s| **s != StatusCode::ACCEPTED)
+            .expect("the loser has a status");
+        assert!(
+            *refused == StatusCode::CONFLICT || *refused == StatusCode::TOO_MANY_REQUESTS,
+            "the loser is refused, not started: {statuses:?}"
+        );
+
+        for _ in 0..60 {
+            tokio::time::sleep(Duration::from_millis(200)).await;
+            if !st.scan_running.load(std::sync::atomic::Ordering::SeqCst) {
+                break;
+            }
+        }
+        std::env::remove_var("ZTT_PYTHON");
     }
 
     #[tokio::test]

@@ -72,7 +72,7 @@ impl Row {
 /// a blank line, a comment, or a half-written tail — so a malformed line can
 /// never become a fabricated scan.
 /// The canonical verdict word if `s` starts with one.
-fn verdict_word(s: &str) -> Option<&'static str> {
+pub fn verdict_word(s: &str) -> Option<&'static str> {
     let first = s
         .trim_start()
         .split(|c: char| c.is_whitespace() || c == ':')
