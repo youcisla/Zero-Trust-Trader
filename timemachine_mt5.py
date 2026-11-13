@@ -165,11 +165,8 @@ def _resolve_live(bars, i, side, entry, stop, risk, atr, spread, horizon,
         raise ValueError("positive horizon and finite positive risk required")
     sgn = 1 if side == "long" else -1
     hi_a, lo_a, cl_a = bars["h"], bars["l"], bars["c"]
-    times = bars.get("t")
-    close_min = None
-    if close_utc:
-        _h, _m = (int(x) for x in close_utc.split(":"))
-        close_min = _h * 60 + _m
+    session = (_session_flags(bars, close_utc)
+               if close_utc and bars.get("t") is not None else None)
     n = len(cl_a)
     cur = stop
     mae = 0.0
@@ -192,22 +189,44 @@ def _resolve_live(bars, i, side, entry, stop, risk, atr, spread, horizon,
                 cur = nxt
         # No overnight holds: the horizon alone allows a 16:45 entry to run to
         # 00:45, so the session close is a hard exit in the test as well.
-        if close_min is not None and times is not None:
-            bt = md.bar_close_utc(bars, j)
-            if bt.hour * 60 + bt.minute >= close_min:
-                px = cl_a[j] if side == "long" else cl_a[j] + spread
-                return "session", mae, j, px
+        if session is not None and session[j]:
+            px = cl_a[j] if side == "long" else cl_a[j] + spread
+            return "session", mae, j, px
         j += 1
     j = min(j, i + horizon, n - 1)
     return "horizon", mae, j, (cl_a[j] if side == "long" else cl_a[j] + spread)
 
 
+def _session_flags(bars, close_utc: str) -> list[bool]:
+    """Per-bar "this bar closes at or after the session end", computed once.
+
+    The same (hour, minute) test as md.bar_close_utc(), done on the UTC
+    minute-of-day integer: the null's 1000 replays must not each rebuild an
+    aware datetime per simulated bar. Cached on the bars dict, so one analyse()
+    pays for it once.
+    """
+    cached = bars.get("_session_flags")
+    if cached is not None and cached[0] == close_utc:
+        return cached[1]
+    hour, minute = (int(x) for x in close_utc.split(":"))
+    close_min = hour * 60 + minute
+    secs = md.TF_SECONDS.get(bars.get("tf"), 0)
+    offset = bars.get("offset", 0)
+    flags = [int(float(t) - offset + secs) // 60 % 1440 >= close_min
+             for t in bars["t"]]
+    bars["_session_flags"] = (close_utc, flags)
+    return flags
+
+
 def _row(bars, i, side, entry, stop, target, risk, outcome, mae, exit_i, rr,
-         exit_price=None):
+         exit_price=None, lean: bool = False):
     mark = bars["c"][exit_i] if exit_price is None else exit_price
     gross = ((mark - entry) if side == "long" else (entry - mark)) / risk
     r = gross if exit_price is not None else (
         rr if outcome == "target" else -1.0 if outcome == "stop" else gross)
+    if lean:
+        # The permutation null reads R and nothing else.
+        return {"R": round(r, 3)}
     return {"bar": i, "time": int(bars["t"][i]), "side": side,
             "entry": round(entry, 5), "stop": round(stop, 5), "target": round(target, 5),
             "risk": round(risk, 6), "outcome": outcome or "neither",
@@ -215,7 +234,7 @@ def _row(bars, i, side, entry, stop, target, risk, outcome, mae, exit_i, rr,
 
 
 def _trade_row(bars, i, side, close_px, risk, rr, horizon, atr, spread,
-               live_exits, close_utc):
+               live_exits, close_utc, lean: bool = False):
     """Enter at ``close_px`` and resolve with one exit policy. Returns (row, exit_i).
 
     Every scanner and the permutation null go through here, so a scanner
@@ -225,6 +244,7 @@ def _trade_row(bars, i, side, close_px, risk, rr, horizon, atr, spread,
     spread while the null paid the spread and trailed.
 
     Long pays the spread on entry, short on exit: exactly one round trip.
+    `lean` returns just the R the null scores, keeping every fill identical.
     """
     entry = close_px + spread if side == "long" else close_px
     sgn = 1 if side == "long" else -1
@@ -235,7 +255,7 @@ def _trade_row(bars, i, side, close_px, risk, rr, horizon, atr, spread,
             bars, i, side, entry, stop, risk, atr, spread, horizon,
             close_utc=close_utc)
         row = _row(bars, i, side, entry, stop, target, risk, outcome, mae,
-                   exit_i, rr, exit_price=exit_px)
+                   exit_i, rr, exit_price=exit_px, lean=lean)
     else:
         outcome, mae, exit_i = _resolve(
             bars, i, side, entry, stop, target, risk, horizon, spread)
@@ -243,7 +263,7 @@ def _trade_row(bars, i, side, close_px, risk, rr, horizon, atr, spread,
         exit_px = (bars["c"][exit_i] + spread
                    if side == "short" and outcome is None else None)
         row = _row(bars, i, side, entry, stop, target, risk, outcome, mae,
-                   exit_i, rr, exit_price=exit_px)
+                   exit_i, rr, exit_price=exit_px, lean=lean)
     return row, exit_i
 
 
@@ -703,7 +723,7 @@ def permutation_test(bars, trades, k_atr, rr, horizon, permutations=1000, seed=1
             # same costs, same exit policy. Otherwise the p-value compares two
             # different strategies and means nothing.
             row, _exit_i = _trade_row(bars, i, side, c[i], risk, rr, horizon,
-                                      a, spread, live_exits, close_utc)
+                                      a, spread, live_exits, close_utc, lean=True)
             perm.append(row)
         stat = (_t_from([p["R"] for p in perm]) if use_t
                 else _z_from(perm, rr, p0))
@@ -850,13 +870,23 @@ def _current_setup(strategy, bars, don_n, ema_fast, ema_slow):
 def analyse(symbol, tf="H1", strategy="donchian", don_n=20, ema_fast=50, ema_slow=200,
             atr_k=1.5, rr=1.5, horizon=None, sides="both", bars_n=5000,
             replays=10000, seed=19, window=2, pool_bars=1500, n_tests=1,
-            permutations=0, close_utc=None, use_t: bool = False) -> dict | None:
-    """Full Time Machine for one symbol. Returns None when there is nothing to say."""
+            permutations=0, close_utc=None, use_t: bool = False,
+            bars_cache: dict | None = None) -> dict | None:
+    """Full Time Machine for one symbol. Returns None when there is nothing to say.
+
+    A caller sweeping several families over the same symbol passes one
+    `bars_cache` so the series is read once; each call gets its own shallow copy
+    because the entry window below is per-family.
+    """
     if horizon is None:
         horizon = HORIZON_DEFAULT[tf]
     md.connect()
     offset = md.broker_offset()
-    bars = md.fetch(symbol, tf, bars_n, offset)
+    if bars_cache is None:
+        bars = md.fetch(symbol, tf, bars_n, offset)
+    else:
+        cached = md.fetch_cached(bars_cache, symbol, tf, bars_n, offset)
+        bars = None if cached is None else dict(cached)
     if bars is None:
         return None
     if close_utc is not None:

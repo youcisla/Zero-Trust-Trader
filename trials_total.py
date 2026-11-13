@@ -39,42 +39,61 @@ TRIALS_RE = re.compile(r"\btrials=(\d+)(?=\s|\||$)")
 SCAN_RE = re.compile(r"\bscan_id=([A-Za-z0-9_-]+)(?=\s|\||$)")
 
 
-def total(path: Path | None = None) -> tuple[int, int]:
+def read_lines(path: Path | None = None) -> list[str]:
+    """The ledger split into lines, with the same strict decode total() uses.
+
+    A process that needs verify() and total() together reads once and passes the
+    result: the ledger is append-only and keeps growing forever.
+    """
+    log = path or LOG
+    return log.read_text(encoding="utf-8").splitlines() if log.exists() else []
+
+
+def total(path: Path | None = None, lines: list[str] | None = None) -> tuple[int, int]:
     """(legacy, logged) — logged prefers total_tests, falls back to trials."""
     logged = 0
     scans: dict[str, int] = {}
     unresolved: set[str] = set()
     log = path or LOG
-    if log.exists():
-        for line in log.read_text(encoding="utf-8").splitlines():
-            scan = SCAN_RE.search(line)
-            if "total_tests=UNKNOWN" in line and scan:
-                unresolved.add(scan.group(1))
-                continue
-            m = TOTAL_RE.search(line) if "total_tests=" in line else TRIALS_RE.search(line)
-            if m:
-                count = int(m.group(1))
-                if scan:
-                    scans[scan.group(1)] = max(scans.get(scan.group(1), 0), count)
-                    if re.search(r"(?:^|\|\s*)TRIALS_RECONCILED\b", line):
+    if lines is None:
+        lines = read_lines(log)
+    reconciled: tuple[bytes | None, str] | None = None
+    for line in lines:
+        scan = SCAN_RE.search(line)
+        if "total_tests=UNKNOWN" in line and scan:
+            unresolved.add(scan.group(1))
+            continue
+        m = TOTAL_RE.search(line) if "total_tests=" in line else TRIALS_RE.search(line)
+        if m:
+            count = int(m.group(1))
+            if scan:
+                scans[scan.group(1)] = max(scans.get(scan.group(1), 0), count)
+                if re.search(r"(?:^|\|\s*)TRIALS_RECONCILED\b", line):
+                    # One chain verification per total(), not one per reconcile
+                    # row: it reads the whole ledger every time it runs.
+                    if reconciled is None:
                         key = ledger_key()
-                        if key is not None and (SIG_PREFIX not in line or verify(log, key)[0] != "ok"):
-                            raise ValueError("trial reconciliation must have a verified ledger signature")
-                        unresolved.discard(scan.group(1))
-                else:
-                    logged += count
-            elif "total_tests=" in line or re.search(r"\btrials=", line):
-                raise ValueError("ledger contains an unverifiable trial count")
+                        reconciled = (key, "ok" if key is None
+                                      else verify(log, key, lines=lines)[0])
+                    key, chain = reconciled
+                    if key is not None and (SIG_PREFIX not in line or chain != "ok"):
+                        raise ValueError("trial reconciliation must have a verified ledger signature")
+                    unresolved.discard(scan.group(1))
+            else:
+                logged += count
+        elif "total_tests=" in line or re.search(r"\btrials=", line):
+            raise ValueError("ledger contains an unverifiable trial count")
     if unresolved:
         raise ValueError("unresolved scan trial count; append verified TRIALS_RECONCILED record")
     return LEGACY_TRIALS, logged + sum(scans.values())
 
 
-def required_trials(scan_tests: int, path: Path | None = None) -> int:
+def required_trials(scan_tests: int, path: Path | None = None,
+                    lines: list[str] | None = None) -> int:
     """Cumulative correction input; an unverifiable count must stop the scan."""
     if type(scan_tests) is not int or scan_tests < 0:
         raise ValueError("total_tests must be a nonnegative integer")
-    return sum(total(path)) + scan_tests
+    return sum(total(path, lines)) + scan_tests
 
 
 def ledger_key(environ=None) -> bytes | None:
@@ -99,11 +118,13 @@ def line_sig(key: bytes, prev: str, body: str) -> str:
     return hmac.new(key, f"{prev}|{body}".encode(), hashlib.sha256).hexdigest()[:16]
 
 
-def last_sig(path: Path | None = None) -> str:
+def last_sig(path: Path | None = None, lines: list[str] | None = None) -> str:
     log = path or LOG
-    if not log.exists():
-        return "genesis"
-    for line in reversed(log.read_text(encoding="utf-8", errors="replace").splitlines()):
+    if lines is None:
+        if not log.exists():
+            return "genesis"
+        lines = log.read_text(encoding="utf-8", errors="replace").splitlines()
+    for line in reversed(lines):
         if SIG_PREFIX in line:
             return line.rsplit(SIG_PREFIX, 1)[1].strip()
     return "genesis"
@@ -112,7 +133,8 @@ def last_sig(path: Path | None = None) -> str:
 _WARNED_UNSIGNED = False
 
 
-def sign_line(body: str, path: Path | None = None, key: bytes | None = None) -> str:
+def sign_line(body: str, path: Path | None = None, key: bytes | None = None,
+              lines: list[str] | None = None) -> str:
     """Append the chain signature to one ledger line."""
     global _WARNED_UNSIGNED
     k = key if key is not None else ledger_key()
@@ -126,10 +148,11 @@ def sign_line(body: str, path: Path | None = None, key: bytes | None = None) -> 
                   "written UNSIGNED and cannot be checked for tampering",
                   file=sys.stderr)
         return body
-    return f"{body}{SIG_PREFIX}{line_sig(k, last_sig(path), body)}"
+    return f"{body}{SIG_PREFIX}{line_sig(k, last_sig(path, lines), body)}"
 
 
-def verify(path: Path | None = None, key: bytes | None = None) -> tuple[str, str]:
+def verify(path: Path | None = None, key: bytes | None = None,
+           lines: list[str] | None = None) -> tuple[str, str]:
     """("ok" | "unsigned" | "broken" | "empty", detail).
 
     Only signed lines are chained, so the FAILED rows written by the
@@ -138,9 +161,12 @@ def verify(path: Path | None = None, key: bytes | None = None) -> tuple[str, str
     """
     log = path or LOG
     k = key if key is not None else ledger_key()
-    if not log.exists():
+    if lines is None:
+        if not log.exists():
+            return "empty", "no ledger yet"
+        lines = log.read_text(encoding="utf-8", errors="replace").splitlines()
+    elif not lines and not log.exists():
         return "empty", "no ledger yet"
-    lines = log.read_text(encoding="utf-8", errors="replace").splitlines()
     signed = [(i, ln) for i, ln in enumerate(lines, 1) if SIG_PREFIX in ln]
     if not signed:
         return "unsigned", "no signed rows (the ledger predates the chain)"

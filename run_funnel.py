@@ -468,13 +468,17 @@ def _main() -> int:
 
     try:
         import trials_total
-        state, detail = trials_total.verify(LOG)
+        # The chain check and the prior count read the same bytes. The gate's
+        # own count (below, after Tier 2) is re-read: a stale snapshot there
+        # would understate the cumulative trials and weaken the bar.
+        ledger = trials_total.read_lines(LOG)
+        state, detail = trials_total.verify(LOG, lines=ledger)
         if state == "broken":
             log(f"FAILED ledger chain | {detail}")
             return 1
         if state != "ok":
             print(f"ledger chain {state}: {detail}")
-        prior = trials_total.required_trials(0, LOG)
+        prior = trials_total.required_trials(0, LOG, lines=ledger)
     except (OSError, ValueError, TypeError, ImportError) as exc:
         log(f"FAILED trial accounting before scan | {type(exc).__name__}: {exc}")
         return 1
