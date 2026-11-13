@@ -80,6 +80,10 @@ liquid_universe.backup*.json
 # The diagram itself (architecture.html) and its source JSON are tracked.
 dashboard/web/architecture.*.json
 
+# Per-scan candidate metrics appended by tools/record_candidate_metrics.py;
+# runtime history, never committed.
+candidate_metrics.jsonl
+
 # tools/batch_backtest.py writes a ranked artifact per run
 sweep_*.json
 # The monitor's own records: what a human triggered, and that it is alive.

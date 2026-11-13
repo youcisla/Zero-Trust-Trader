@@ -227,12 +227,15 @@ scheduled — they answer a question on demand.
 | `check_docs.py` | refuse to ship a README, a map or a mémoire that describe the tree as it was |
 | `export_desk_history.py` | publish the desk's answers as `docs/desk-history.jsonl`; the live SQLite stays local |
 | `desk_scorecard.py` | what the desk decided, how often a note survived the guard, and the escalation rate — `--since` splits it at the moment of a change; reads `desk_history.sqlite` read-only |
+| `record_candidate_metrics.py` | append one scan's per-candidate metrics from `tier3_results.json` to `candidate_metrics.jsonl`; idempotent by `scan_id` |
+| `edge_decay.py` | per-candidate trajectories from that history: times seen, z/t and win-rate trail, a decay flag — empty history is an honest answer |
 | `tools/build_public.py` | sanitise a copy into `_publish/`; refuses if it finds a machine path |
 
 `batch_backtest.py`, `broker_math.py`, `vol_dispersion.py` and `exit_policy_ab.py`
 need the **MT5 terminal on Windows** — they read live bars, so they fail with
 `ModuleNotFoundError` on a Linux clone. `check_public.py`, `check_docs.py`,
-`tools/build_public.py`, `run_tests.py` and `export_desk_history.py` are pure stdlib.
+`tools/build_public.py`, `run_tests.py`, `export_desk_history.py`,
+`record_candidate_metrics.py` and `edge_decay.py` are pure stdlib.
 
 Canonical universe figures, dated: **2026-11-11 — 1,711 quoted → 349 tradable at
 11:28 UTC → 180 liquid (148 shares)**. A rebuild counts what the markets that are
