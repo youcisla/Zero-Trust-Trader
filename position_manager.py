@@ -247,8 +247,16 @@ def ensure_mt5(mt5) -> None:
     _MT5_READY = True
 
 
-def run_once(cfg: Cfg, apply: bool, close_at: str | None) -> dict:
-    """One supervision pass. Returns the state document the dashboard reads."""
+def run_once(cfg: Cfg, apply: bool, close_at: str | None,
+             only_comment: str | None = None) -> dict:
+    """One supervision pass. Returns the state document the dashboard reads.
+
+    `only_comment` is the opt-in SECURITY-02 filter: when set, only positions
+    whose `comment` starts with the prefix are trailed, stopped or closed. An
+    untagged position (a manual trade, or one opened before the tag existed) is
+    left untouched and reported. Absent (None), every position is managed
+    exactly as before.
+    """
     # Ahead of the maintenance marker and of the terminal import: a frozen
     # system must not read the broker, and what it publishes says why it stopped.
     killed = kill_switch.active()
@@ -288,11 +296,20 @@ def run_once(cfg: Cfg, apply: bool, close_at: str | None) -> dict:
                 errors.append("unusable position type or volume")
                 continue
             side = 1 if p.type == 0 else -1
+            comment = getattr(p, "comment", None) or ""
+            managed = only_comment is None or comment.startswith(only_comment)
             open_docs.append({
                 "ticket": p.ticket, "symbol": p.symbol, "side": side,
                 "volume": p.volume, "entry": p.price_open, "sl": p.sl,
                 "price": p.price_current, "profit": round(p.profit, 2),
+                "comment": comment, "managed": managed,
+                "reason": "" if managed else f"not managed: comment {comment}",
             })
+            # SECURITY-02, opt-in: an untagged position is left entirely alone --
+            # no trail, no stop update, and never a session close. It still
+            # appears above, so the published list cannot read as flat.
+            if not managed:
+                continue
 
             if due:
                 if apply:
@@ -436,6 +453,9 @@ def main() -> int:
     ap.add_argument("--once", action="store_true", help="single pass then exit")
     ap.add_argument("--session-close", default=None, metavar="HH:MM",
                     help="UTC time to flatten (e.g. 20:45); omit to disable")
+    ap.add_argument("--only-comment", default=None, metavar="PREFIX",
+                    help="manage only positions whose comment starts with PREFIX "
+                         "(default: manage every position)")
     ap.add_argument("--be-r", type=float, default=1.0)
     ap.add_argument("--be-lock-r", type=float, default=0.0,
                     help="lock this many R beyond flat at break-even (default 0 = flat after spread)")
@@ -471,7 +491,7 @@ def main() -> int:
         print(f"another supervisor is running (lock {LOCK.name})")
         return 0
     log_line(f"supervisor up | interval={a.interval}s | apply={a.apply} | "
-             f"session-close={a.session_close}")
+             f"session-close={a.session_close} | only-comment={a.only_comment}")
 
     last_error = None
     state_stalled = False
@@ -490,7 +510,7 @@ def main() -> int:
             # silently: no restart, no alert, a stale trail and no message. A
             # failed pass is a line in the log; it is not the end of the loop.
             try:
-                doc = run_once(cfg, a.apply, a.session_close)
+                doc = run_once(cfg, a.apply, a.session_close, a.only_comment)
             except Exception as e:  # noqa: BLE001 - the loop outlives any one pass
                 log_line(f"SUPERVISOR PASS FAILED {type(e).__name__}: {e}")
                 time.sleep(a.interval)
