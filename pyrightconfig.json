@@ -1,0 +1,22 @@
+{
+  // Report-only until the type backlog is cleared; then drop `continue-on-error`
+  // from the pyright step in .github/workflows/ci.yml to make it blocking.
+  "typeCheckingMode": "basic",
+  "pythonVersion": "3.14",
+  "include": ["*.py", "tools/*.py"],
+  "exclude": [
+    "tests",
+    "dashboard",
+    ".venv",
+    "_publish",
+    "tools/build_public.py",
+    "sweep.py"
+  ],
+  // NumPy/pandas ship partial stubs; suppressing the unknown-type noise keeps
+  // the report focused on the np.float64 leak class this scaffold is for.
+  "reportMissingTypeStubs": false,
+  "reportUnknownMemberType": false,
+  "reportUnknownVariableType": false,
+  "reportUnknownParameterType": false,
+  "reportUnknownArgumentType": false
+}
