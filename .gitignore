@@ -8,6 +8,7 @@ stops.json.lock
 __pycache__/
 *.py[cod]
 .publish_marker
+.claude/settings.local.json
 
 # generated data (regenerate with the pipeline)
 engine_state.json
