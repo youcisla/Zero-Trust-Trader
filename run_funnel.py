@@ -24,7 +24,9 @@ from timemachine_mt5 import PERMUTATIONS  # noqa: E402  (1000, CLI-locked)
 
 import argparse
 import atexit
+import csv
 import json
+import math
 import os
 import subprocess
 import sys
@@ -49,6 +51,10 @@ PY = sys.executable
 # terminal would otherwise grind through 1,711 empty symbol probes and report a
 # quiet market. Abort instead.
 ENV_FILE = HERE / ".env"
+
+# Owner-set daily halt (ticket 0015): once the UTC day is spent, stop scanning it.
+DAILY_LOSS_CAP_R = 3.0   # realized R at or below -3 halts the rest of the UTC day
+DAILY_TRADES_CAP = 5     # 5 closed trades in a UTC day halts the rest
 
 
 def load_env() -> None:
@@ -133,6 +139,54 @@ def preflight() -> tuple[bool, list[str]]:
         return False, [f"mt5.initialize() failed: {md.mt5.last_error()}"]
     problems = preflight_check(md.mt5.terminal_info(), md.mt5.account_info())
     return (not problems), problems
+
+
+def daily_stop(trades_path=None) -> tuple[bool, str]:
+    """Has today (UTC) already spent the owner's daily halt? Read-only; never writes.
+
+    `trades.csv` carries prices, not R: each closed row's R is rebuilt from
+    entry/exit/stop, with the stop distance as the risk unit. A row closed today
+    that cannot be parsed (or has entry == stop) refuses rather than being
+    skipped — it could be hiding a loss, and the cap exists to stop the loss. A
+    row whose date cannot be read refuses for the same reason: it cannot be
+    proven not to be today's.
+    """
+    path = HERE / "trades.csv" if trades_path is None else Path(trades_path)
+    today = datetime.now(timezone.utc).date()
+    try:
+        with path.open(newline="", encoding="utf-8") as fh:
+            rows = list(csv.DictReader(fh))
+    except FileNotFoundError:
+        return False, "no trades.csv — nothing closed today"
+    except (OSError, UnicodeDecodeError, csv.Error) as exc:
+        return True, f"trades.csv unreadable ({exc}) — refusing"
+    count = 0
+    total = 0.0
+    for row in rows:
+        raw = (row.get("closed") or "").strip()
+        try:
+            closed = datetime.strptime(raw, "%Y-%m-%d %H:%M:%S").date()
+        except ValueError:
+            return True, f"trades.csv row has no readable closed date ({raw!r}) — refusing"
+        if closed != today:
+            continue
+        try:
+            entry, exit_, stop = (float(row[k]) for k in ("entry", "exit", "stop"))
+            side = (row.get("side") or "").strip().lower()
+            risk = abs(entry - stop)
+        except (KeyError, TypeError, ValueError):
+            return True, f"trades.csv has an unreadable row closed today ({raw}) — refusing"
+        if side not in ("long", "short") or risk == 0 or not all(
+                math.isfinite(v) for v in (entry, exit_, stop)):
+            return True, f"trades.csv has an unreadable row closed today ({raw}) — refusing"
+        count += 1
+        total += (exit_ - entry) / risk if side == "long" else (entry - exit_) / risk
+    if total <= -DAILY_LOSS_CAP_R:
+        return True, (f"daily loss cap: {total:+.2f}R across {count} closed trade(s) "
+                      f"today (cap -{DAILY_LOSS_CAP_R:.0f}R)")
+    if count >= DAILY_TRADES_CAP:
+        return True, f"daily trade cap: {count} closed today (cap {DAILY_TRADES_CAP})"
+    return False, f"{count} closed today, {total:+.2f}R"
 
 
 def log(line: str) -> None:
@@ -246,6 +300,13 @@ def preflight_report() -> int:
         print(f"PREFLIGHT REFUSED  kill switch active ({why})")
         return kill_switch.EXIT_KILLED
 
+    tripped, why = daily_stop()
+    print(f"daily cap  {why}")
+    if tripped:
+        # A stand-down, not a failure: the owner's daily halt is the scan working.
+        print("PREFLIGHT STAND-DOWN  daily cap tripped — the scan will not run today")
+        return 0
+
     # bootstrap=False: preflight is a read-only check and must never write the
     # anchor; the scan that follows owns that one-time migration.
     status, detail = trials_total.verify(bootstrap=False)
@@ -351,6 +412,13 @@ def _main() -> int:
     if (HERE / ".ztt-maintenance").exists() and not a.plan_only:
         print("REFUSED: maintenance in progress; no terminal connection or scan")
         return 2
+
+    # The owner's daily halt, before the terminal and the lock: a day that is
+    # already spent must not cost another scan. Refusal only, and a stand-down.
+    tripped, why = daily_stop()
+    if tripped:
+        print(f"REFUSED: {why}. No scan for the rest of this UTC day.")
+        return 0
 
     # Lock first: an overlapping run must cost nothing, not a preflight + MT5 init.
     if not acquire_lock(a.lock_max_age_min):
