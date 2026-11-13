@@ -96,7 +96,7 @@ size was not "too small to tell"; it was hiding nothing.
 
 ---
 
-## Four in-repo gates, plus two external approvals
+## Five in-repo gates, plus two external approvals
 
 | # | Gate | Where it runs | Failure it catches |
 | --- | --- | --- | --- |
@@ -104,15 +104,22 @@ size was not "too small to tell"; it was hiding nothing.
 | 2 | **Correlation dedupe** — collapse candidates above \|ρ\| 0.7 | this repo | `AMD.US-24` vs `AMD.US-PERP` measure **+0.997**: the same bet billed twice |
 | 3 | **Corrected significance** — Bonferroni z, or the *t* of mean R under `--t-gate` | this repo | the scan itself — 9,081 hypotheses tried means the bar is 4.54, not 1.96 |
 | 4 | **Permutation null** — random entries, same fills, costs and exits | this repo | autocorrelation and barrier geometry that the analytic z assumes away |
-| 5 | **Human `APPROVED`** | a human | the agent's own judgement |
-| 6 | **Bridge consent gate** | a separate process | a compromised or confused agent |
+| 5 | **Daily halt** — −3R realized or 5 closed trades in a UTC day | this repo | piling more scans onto a day that is already spent |
+| 6 | **Human `APPROVED`** | a human | the agent's own judgement |
+| 7 | **Bridge consent gate** | a separate process | a compromised or confused agent |
 
-Gates 1–4 are code in this repository and run on every scan. Gates 5 and 6 live
+Gates 1–5 are code in this repository and run on every scan. Gates 6 and 7 live
 outside it: they govern *entry orders* and are only as strong as the bridge
 deployment. Nothing in this repo can place an entry on its own — it has no order
 path at all — and protective exits through the supervisor are single-approval by
 design, because a stop you cannot move without a second signature is a stop you
 cannot tighten when the market turns.
+
+Gate 5 is the owner's daily halt: `run_funnel.daily_stop()` reads `trades.csv`,
+rebuilds each of today's closed trades in R from its entry/exit/stop, and stands
+the scan down for the rest of the UTC day at −3R realized or 5 closed trades. It
+is a pre-scan refusal — there is no order path in it — and a row it cannot read
+refuses rather than being skipped.
 
 Gates 3 and 4 are not redundant. The permutation test is per-instrument and does
 **not** correct for the scan: at 568 tests, a p-value of 0.015 is expected ~8

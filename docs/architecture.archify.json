@@ -42,7 +42,7 @@
    "id": "preflight",
    "type": "backend",
    "label": "run_funnel",
-   "sublabel": "window · lock · demo pin",
+   "sublabel": "window · lock · demo pin · daily cap",
    "pos": [
     250,
     60
@@ -62,6 +62,10 @@
     {
      "path": "run_funnel.py",
      "label": "progress()"
+    },
+    {
+     "path": "run_funnel.py",
+     "label": "daily_stop()"
     }
    ]
   },
