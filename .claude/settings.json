@@ -1,0 +1,40 @@
+{
+  "permissions": {
+    "deny": [
+      "Edit(./funnel_history.log)",
+      "Edit(./trades.csv)",
+      "Edit(./liquid_universe.json)",
+      "Edit(./stops.json)",
+      "Edit(./engine_state.*.json)",
+      "Edit(./audit.jsonl)",
+      "Edit(./idempotency.db)",
+      "Edit(./KILL_SWITCH)",
+      "Edit(./config.toml)",
+      "Edit(./.env)"
+    ]
+  },
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python",
+            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/gate_guard.py"]
+          }
+        ]
+      },
+      {
+        "matcher": "Bash|PowerShell",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python",
+            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/gate_guard.py"]
+          }
+        ]
+      }
+    ]
+  }
+}
