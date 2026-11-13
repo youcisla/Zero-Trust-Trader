@@ -16,13 +16,39 @@ from pathlib import Path
 
 import MetaTrader5 as mt5
 
-from purge_market_watch import artifact_symbols
-
 HERE = Path(__file__).resolve().parent
 WORK = Path(__file__).resolve().parent
 if WORK.exists():
     HERE = WORK
 OUT = HERE / "my_market_watch.json"
+
+
+def artifact_symbols() -> set[str]:
+    """Every symbol our own scans have touched, read from the in-tree artifacts."""
+    names: set[str] = set()
+    for f in HERE.glob("tier1_universe*.json"):
+        try:
+            for row in json.loads(f.read_text()).get("symbols", []):
+                names.add(row["symbol"])
+        except Exception as e:
+            print(f"  ! {f.name}: {e}")
+    for fname in ("tier2_candidates.json", "tier3_results.json"):
+        p = HERE / fname
+        if not p.exists():
+            continue
+        try:
+            doc = json.loads(p.read_text())
+        except Exception as e:
+            print(f"  ! {fname}: {e}")
+            continue
+        for key in ("top", "all_hits", "deduped"):
+            for row in doc.get(key, []) or []:
+                if isinstance(row, dict) and row.get("symbol"):
+                    names.add(row["symbol"])
+        for row in doc.get("results", []) or []:
+            if isinstance(row, dict) and row.get("symbol"):
+                names.add(row["symbol"])
+    return names
 
 
 def main() -> int:

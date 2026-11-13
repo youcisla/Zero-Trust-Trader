@@ -220,12 +220,12 @@ scheduled — they answer a question on demand.
 | `check_docs.py` | refuse to ship a README, a map or a mémoire that describe the tree as it was |
 | `export_desk_history.py` | publish the desk's answers as `docs/desk-history.jsonl`; the live SQLite stays local |
 | `desk_scorecard.py` | what the desk decided, how often a note survived the guard, and the escalation rate — `--since` splits it at the moment of a change; reads `desk_history.sqlite` read-only |
-| `build_public.py` | sanitise a copy into `_publish/`; refuses if it finds a machine path |
+| `tools/build_public.py` | sanitise a copy into `_publish/`; refuses if it finds a machine path |
 
 `batch_backtest.py`, `broker_math.py`, `vol_dispersion.py` and `exit_policy_ab.py`
 need the **MT5 terminal on Windows** — they read live bars, so they fail with
 `ModuleNotFoundError` on a Linux clone. `check_public.py`, `check_docs.py`,
-`build_public.py`, `run_tests.py` and `export_desk_history.py` are pure stdlib.
+`tools/build_public.py`, `run_tests.py` and `export_desk_history.py` are pure stdlib.
 
 Canonical universe figures, dated: **2026-11-11 — 1,711 quoted → 349 tradable at
 11:28 UTC → 180 liquid (148 shares)**. A rebuild counts what the markets that are
@@ -295,7 +295,7 @@ as a green "no data", and both were fixed here after being caught on screen.
 | `GET /` | the UI — one embedded HTML file, React vendored, no build step |
 | `GET /api/snapshot` | one-shot state, last 12 lines of each log |
 | `GET /api/logs/{audit,funnel,actions}` | bounded newest log excerpt with explicit truncation metadata; see [API contract](dashboard/API.md) |
-| `GET /ws` | the snapshot on change, and again every 5 s regardless, so a quiet tree cannot be mistaken for a dead feed; the server pings every 15 s and the page reconnects itself when messages stop |
+| `GET /ws` | the snapshot on change, and again every 4 s regardless, so a quiet tree cannot be mistaken for a dead feed; the server pings every 15 s and the page reconnects itself when messages stop |
 | `GET /architecture` | the generated stage map (Archify, embedded at build time) |
 | `GET /api/report/latest` | the newest per-scan HTML report (`reports/run-*.html`) |
 | `/vendor/echarts.min.js` | the chart bundle, vendored from a pinned npm tarball (sha256 in `PROVENANCE.json`) |
@@ -414,8 +414,11 @@ because something silently lied at least once during development.
 
 Needs Python **3.12–3.14** (the pinned NumPy version requires 3.12+), the
 MetaTrader 5 terminal on Windows logged into a **demo** account, and Rust 1.96.0
-if you want the dashboard. Use a dedicated environment; the tracked launchers
-refuse to fall back to an arbitrary Python on PATH.
+if you want the dashboard. Node **26.12.1** (pinned in `.nvmrc`) runs the
+dashboard's UI fixture tests, and the `claude` CLI runs the agents and skills in
+`.claude/`; neither is needed for the Python pipeline. Use a dedicated
+environment; the tracked launchers refuse to fall back to an arbitrary Python on
+PATH.
 
 ```powershell
 git clone https://github.com/youcisla/Zero-Trust-Trader.git

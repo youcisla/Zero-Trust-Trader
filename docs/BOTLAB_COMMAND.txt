@@ -1,7 +1,9 @@
 BOTLAB HONESTY GATE — command to run when the first trade ledger exists
 =======================================================================
 
-Cumulative trials as of 2026-11-05: 5,106
+Cumulative trials grow with every scan — never hardcode the count. Read the live
+value once and pass it wherever this file shows `$TRIALS`. A hardcoded lower bar
+under-declares the search space and lowers the gate.
 
 
 STEP 1 — get the live trials number (do not trust a hardcoded figure)
@@ -11,30 +13,31 @@ cd <project-dir>
 
 python trials_total.py
 
-It prints the total on line 1 (5106 on 2026-11-05) and the breakdown on line 2
-(`# legacy=2205 logged=2901`). Each scheduled funnel run adds ~1,791, so this
-number is stale the moment tomorrow's run finishes. Always re-run it.
+It prints the total on line 1 and the breakdown on line 2 (for example
+`# legacy=2205 logged=...`). Each scheduled funnel run adds thousands of tests,
+so the number is stale the moment tomorrow's run finishes. Always re-run it and
+substitute the first line for `$TRIALS` below.
 
 
 STEP 2 — run the gate
 ---------------------
 
-python -m honest_backtest check your_trades.csv --trials 5106
+python -m honest_backtest check your_trades.csv --trials $TRIALS
 
 Our own exporter names the file trades.csv, so in practice:
 
-python -m honest_backtest check trades.csv --trials 5106
+python -m honest_backtest check trades.csv --trials $TRIALS
 
 
 With explicit costs (only meaningful when the CSV has prices and no R column):
 
-python -m honest_backtest check trades.csv --trials 5106 ^
+python -m honest_backtest check trades.csv --trials $TRIALS ^
     --fee 0.00005 --slippage 0.0001 --json
 
 
 As a hard CI gate:
 
-python -m honest_backtest check trades.csv --trials 5106 --strict --fail-unless-ready
+python -m honest_backtest check trades.csv --trials $TRIALS --strict --fail-unless-ready
 
 
 WHAT TO EXPECT
@@ -50,8 +53,9 @@ hypotheses were tried before this strategy was selected, so a good-looking
 equity curve is judged against the best result pure luck would have produced
 from the same search. Under-counting is the classic way a backtest lies.
 
-Break-even honesty note: at 5,106 trials the luck-only Sharpe bar is high. If
-the gate fails for months, that is the designed outcome, not a bug to tune away.
+Break-even honesty note: at a cumulative count in the tens of thousands the
+luck-only Sharpe bar is high. If the gate fails for months, that is the designed
+outcome, not a bug to tune away.
 
 
 STEP 3 — where the trials number comes from
@@ -66,7 +70,7 @@ LEGACY_TRIALS constant in trials_total.py.
 
 Sanity check the two agree:
 
-    python trials_total.py                       # 5106
+    python trials_total.py                       # first line = live total
     tail -3 funnel_history.log                   # newest total_tests=...
 
 
