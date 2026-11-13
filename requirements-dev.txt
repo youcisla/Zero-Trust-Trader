@@ -2,3 +2,4 @@
 ruff==0.17.4
 pip-audit==2.10.1
 coverage==7.10.2
+pyright==1.1.414

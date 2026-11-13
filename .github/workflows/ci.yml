@@ -34,6 +34,12 @@ jobs:
           cache: pip
       - name: Install pinned dependencies
         run: python -m pip install -r requirements-dev.txt
+      # Report-only until the type backlog is cleared; then drop
+      # continue-on-error to make it blocking.
+      - name: Type check (pyright)
+        if: matrix.os == 'ubuntu-latest' && matrix.python-version == '3.14'
+        continue-on-error: true
+        run: python -m pyright
       - name: Guard all tracked files without printing matched values
         env:
           ZTT_PRIVATE_IDENTIFIER: ${{ secrets.ZTT_PRIVATE_IDENTIFIER }}
