@@ -47,6 +47,14 @@ jobs:
         run: python tools/run_tests.py
       - name: Correctness lint
         run: python -m ruff check --no-cache .
+      # The legacy tree predates `ruff format` (66 files would change, several of
+      # them frozen by this ticket's non-goals), so the gate covers the files
+      # this ticket formats. The pre-commit hook formats every file a contributor
+      # touches, which is how the backlog drains without a mass rewrite.
+      - name: Formatting (ruff) on the files this ticket formats
+        run: >-
+          python -m ruff format --check
+          tools/vol_dispersion.py tools/broker_math.py tests/test_tools_market_watch.py
       # Measured in CI at 60% on 2026-11-11; the floor sits two points below so a
       # refactor that deletes covered code does not fail the build, and a drop below
       # it is a real regression rather than noise.
@@ -79,16 +87,28 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
+      # One source of truth: the channel, profile and components come from
+      # dashboard/rust-toolchain.toml, and `rustup toolchain install` with no
+      # argument installs the toolchain active in this directory. The pinned
+      # action cannot do that without taking a duplicated `toolchain:` input.
+      - name: Install the toolchain pinned in dashboard/rust-toolchain.toml
+        working-directory: dashboard
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
         with:
-          toolchain: "1.96.0"
-          components: clippy,rustfmt
+          workspaces: dashboard
+      - name: Install the pinned advisory scanner
+        run: cargo install cargo-audit --locked --version 0.21.0
       - name: Build, test and lint locked dashboard dependencies
+        working-directory: dashboard
         run: |
-          cargo build --release --locked --manifest-path dashboard/Cargo.toml
-          cargo test --locked --manifest-path dashboard/Cargo.toml
-          cargo fmt --check --manifest-path dashboard/Cargo.toml
-          cargo clippy --locked --manifest-path dashboard/Cargo.toml -- -D warnings
+          cargo build --release --locked
+          cargo test --locked
+          cargo fmt --check
+          cargo clippy --locked -- -D warnings
+      - name: Audit locked dependencies (fails on a known vulnerability)
+        working-directory: dashboard
+        run: cargo audit
 
   # The dashboard ships on Windows (`start_dashboard.bat`, `py -3`, APPDATA).
   # A Linux-only Rust job never executes those branches.
@@ -97,8 +117,12 @@ jobs:
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-      - uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8
+      - name: Install the toolchain pinned in dashboard/rust-toolchain.toml
+        working-directory: dashboard
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@9d47c6ad4b02e050fd481d890b2ea34778fd09d6 # v2.7.8
         with:
-          toolchain: "1.96.0"
+          workspaces: dashboard
       - name: Test the dashboard on the platform it runs on
-        run: cargo test --locked --manifest-path dashboard/Cargo.toml
+        working-directory: dashboard
+        run: cargo test --locked
