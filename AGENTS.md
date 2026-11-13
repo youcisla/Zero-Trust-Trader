@@ -371,6 +371,15 @@ strategy family that could never fire). Neither raised an exception.
 `tests/test_position_manager.py` asserts these as a property sweep over 3,000
 randomised positions. If your change breaks it, your change is wrong — not the test.
 
+`--only-comment PREFIX` (opt-in, off by default) restricts the supervisor to
+positions whose broker `comment` starts with the prefix: it trails, stops and
+closes only those, and reports every other position as `not managed: comment <c>`
+— still listed, so the published positions cannot read as flat. This exists
+because the opener stamps `magic: 0`, so magic cannot separate a manual trade from
+one the funnel opened. The caveat is the point: **enable it only once every
+approved order is tagged**, because a real system position without the tag will be
+left unmanaged — no trail, no stop, and never a session close.
+
 The supervisor takes its lock with `O_CREAT | O_EXCL` (`position_manager.acquire_lock`),
 not by checking-and-writing: two supervisors starting in the same millisecond once
 both slipped through and could both move stops. A stale lock is still taken over —
