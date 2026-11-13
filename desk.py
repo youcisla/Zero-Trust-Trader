@@ -26,6 +26,7 @@ Stdlib only — urllib for HTTP, xml.etree for RSS. No SDK, no new dependency.
 
 from __future__ import annotations
 
+import ipaddress
 import json
 import math
 import os
@@ -47,6 +48,8 @@ RULES = "DESK.md"
 JOURNAL = "desk_journal.jsonl"
 DIGEST_LIMIT = 6000   # characters of each artifact the model is shown
 DEFAULT_URL = "https://api.deepseek.com/chat/completions"
+PROVIDER_HOST = (urlsplit(DEFAULT_URL).hostname or "").lower()
+LOOPBACK_HOSTS = {"127.0.0.1", "localhost", "::1"}
 NOTES = "agent_notes.json"
 MAX_RESPONSE = 256 * 1024
 MAX_ARTIFACT = 2 * 1024 * 1024
@@ -206,11 +209,33 @@ def _with_rules(messages: list[dict], root: Path | None) -> list[dict]:
             *messages]
 
 
+def _agent_url(url: str | None = None) -> str:
+    """The endpoint that may receive the bearer key.
+
+    An explicit caller URL (tests, the decision layer) is its own evidence. A URL
+    from `ZTT_AGENT_URL` is honoured only for the configured provider's host, or
+    for a loopback fixture with `ZTT_AGENT_LOOPBACK=1`: an environment variable
+    must not be able to redirect a key to a host nobody configured.
+    """
+    if url:
+        return url
+    env = os.environ.get("ZTT_AGENT_URL", "").strip()
+    if not env:
+        return DEFAULT_URL
+    host = (urlsplit(env).hostname or "").lower()
+    if host == PROVIDER_HOST:
+        return env
+    if host in LOOPBACK_HOSTS and os.environ.get("ZTT_AGENT_LOOPBACK") == "1":
+        return env
+    raise DeskError(f"ZTT_AGENT_URL host {host or '(none)'!r} is not the configured "
+                    f"provider {PROVIDER_HOST!r}")
+
+
 def chat(messages: list[dict], key: str, *, model: str | None = None,
          url: str | None = None, max_tokens: int = 4000, timeout: int = 90,
          root: Path | None = None, meta: dict | None = None) -> dict:
     """One JSON-mode completion. temperature 0: this is not a creative task."""
-    url = url or os.environ.get("ZTT_AGENT_URL", DEFAULT_URL)
+    url = _agent_url(url)
     payload = {
         "model": model or os.environ.get("ZTT_AGENT_MODEL", DEFAULT_MODEL),
         "messages": _with_rules(messages, root),
@@ -298,16 +323,20 @@ def _renders(v: float) -> set[str]:
     return {s.lstrip("+") for s in out}
 
 
-def uncited(note: dict, source: str) -> list[str]:
-    """Every number in the note that is not in the source it was shown.
+def uncited(note: dict, source: str, scope: str | None = None) -> list[str]:
+    """Every number in the note that is not in the text it may cite.
 
+    `scope` is the structured record of the candidate the note names. When it is
+    given, only that record's figures are citable: a number that belongs to a
+    different candidate in the same source is a mis-attribution, not a citation.
     FORMAT: "4.53" is accepted when 4.531 is in the source (rounded render), but
     a number that appears nowhere is a fabrication and fails the whole note.
     """
     bad = []
     # ensure_ascii=False keeps em dashes as characters; dates are not figures.
     blob = _thousands(_DATE_TIME.sub(" ", json.dumps(note, ensure_ascii=False, default=str)))
-    source_tokens = [m.group(0) for m in _NUM.finditer(_thousands(_DATE_TIME.sub(" ", source)))]
+    haystack = source if scope is None else scope
+    source_tokens = [m.group(0) for m in _NUM.finditer(_thousands(_DATE_TIME.sub(" ", haystack)))]
     allowed = set()
     for token in source_tokens:
         value = float(token)
@@ -386,15 +415,19 @@ def _validate_note(note: dict, source: str, expected_role: str | None) -> str | 
     return None
 
 
-def _guard(note: dict, source: str, expected_role: str | None = None) -> dict:
+def _guard(note: dict, source: str, expected_role: str | None = None,
+           scope: str | None = None, warning: str | None = None) -> dict:
     invalid = _validate_note(note, source, expected_role)
     if invalid:
         return {"status": "rejected", "reason": invalid, "agent": note.get("agent")}
-    bad = uncited(note, source)
+    bad = uncited(note, source, scope)
     if bad:
         return {"status": "rejected", "reason": "uncited numbers: " + ", ".join(bad[:6]),
                 "agent": note.get("agent"), "raw": note}
-    return {**note, "status": "ok"}
+    out = {**note, "status": "ok"}
+    if warning:
+        out["citation_warning"] = warning
+    return out
 
 
 # ---------------------------------------------------------------- the facts
@@ -562,7 +595,15 @@ def skeptic(results: list[dict], facts: str, key: str, root: Path | None = None,
                   + "\n\nAt most 3 reasons, one sentence each. Name the candidate each"
                   " reason is about."}], key, root=root, meta=meta, **kw)
     note.setdefault("symbol", shown[0].get("symbol"))
-    return _guard(note, facts + blob, "skeptic")
+    # Figures are attributed to the candidate the note names, not to the whole
+    # concatenation: one candidate's t-statistic must not be quotable as another's.
+    record = next((r for r in shown if isinstance(r, dict)
+                   and r.get("symbol") == note.get("symbol")), None)
+    if record is None:
+        return _guard(note, facts + blob, "skeptic", None,
+                      f"note names {note.get('symbol')!r}, not a candidate; "
+                      "figures were matched against the whole source")
+    return _guard(note, facts + blob, "skeptic", json.dumps(record))
 
 
 def chief(facts: str, key: str, root: Path | None = None, meta: dict | None = None, **kw) -> dict:
@@ -578,9 +619,49 @@ def chief(facts: str, key: str, root: Path | None = None, meta: dict | None = No
 MAX_FEED = 512 * 1024
 
 
+def _feed_refusal(url: str) -> str | None:
+    """Why a feed URL may not be fetched, or None if it may.
+
+    https only: `file:` would read this machine's disk. Loopback and link-local
+    are refused too - a feed URL that reaches 127.0.0.1 or 169.254.169.254 turns
+    the desk into a probe of the host it runs on.
+    """
+    parsed = urlsplit(url)
+    if parsed.scheme != "https":
+        return f"scheme {parsed.scheme or '(none)'!r} refused (https only)"
+    host = (parsed.hostname or "").lower().rstrip(".")
+    if not host:
+        return "feed URL has no host"
+    try:
+        ip = ipaddress.ip_address(host)
+    except ValueError:
+        if host == "localhost":
+            return f"host {host!r} refused (local address)"
+        return None
+    ip = getattr(ip, "ipv4_mapped", None) or ip
+    if ip.is_loopback or ip.is_link_local:
+        return f"host {host!r} refused (local address)"
+    return None
+
+
+def _parse_feed(text: str, url: str) -> list[dict]:
+    if "<!DOCTYPE" in text.upper() or "<!ENTITY" in text.upper():
+        raise ValueError("feed declares a DTD — refused")
+    tree = ElementTree.fromstring(text)
+    out = []
+    for item in tree.iter():
+        if item.tag.split("}")[-1] not in ("item", "entry"):
+            continue
+        title = (item.findtext("title") or item.findtext("{*}title") or "").strip()
+        if title:
+            out.append({"headline": title[:300], "source": url})
+    return out
+
+
 def headlines(feeds: list[str], limit: int = 20) -> list[dict]:
     """RSS/Atom, stdlib only. A dead feed is reported, not silently skipped.
 
+    Fetching is https-only and never addresses this machine (`_feed_refusal`).
     ElementTree never fetches external entities, and the two remaining XML
     attacks are closed by hand rather than by a new dependency: the body is
     capped at 512 KiB and any document declaring a DTD or an entity is refused.
@@ -591,27 +672,19 @@ def headlines(feeds: list[str], limit: int = 20) -> list[dict]:
         if len(out) >= limit:
             break
         try:
+            refusal = _feed_refusal(url)
+            if refusal:
+                raise ValueError(refusal)
             req = urllib.request.Request(url, headers={"User-Agent": "zero-trust-trader/1.0"})
             with urllib.request.build_opener(_NoRedirect()).open(req, timeout=20) as r:
                 raw = r.read(MAX_FEED + 1)
             if len(raw) > MAX_FEED:
                 raise ValueError("feed exceeds size limit")
-            text = raw.decode("utf-8-sig")
-            if "<!DOCTYPE" in text.upper() or "<!ENTITY" in text.upper():
-                raise ValueError("feed declares a DTD — refused")
-            tree = ElementTree.fromstring(text)
+            items = _parse_feed(raw.decode("utf-8-sig"), url)
         except Exception as e:  # noqa: BLE001 - a feed failing must not kill the brief
-            errors.append(f"{url}: {type(e).__name__}")
+            errors.append(f"{url}: {str(e) or type(e).__name__}")
             continue
-        for item in tree.iter():
-            if item.tag.split("}")[-1] not in ("item", "entry"):
-                continue
-            title = (item.findtext("title") or item.findtext("{*}title") or "").strip()
-            if not title:
-                continue
-            out.append({"headline": title[:300], "source": url})
-            if len(out) >= limit:
-                break
+        out.extend(items[:limit - len(out)])
     if errors:
         out.append({"headline": "FEED ERROR: " + "; ".join(errors), "source": "desk"})
     return out

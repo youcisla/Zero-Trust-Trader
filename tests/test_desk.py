@@ -72,6 +72,12 @@ class _Server:
         self.thread.join(timeout=5)
 
 
+def _agent_env(url):
+    """Point the desk at the local fixture. Loopback needs the explicit test
+    flag: a host from the environment is refused unless it is the provider's."""
+    return mock.patch.dict(os.environ, {"ZTT_AGENT_URL": url, "ZTT_AGENT_LOOPBACK": "1"})
+
+
 class TestClient(unittest.TestCase):
     def test_request_is_json_mode_at_temperature_zero(self):
         with _Server() as s:
@@ -152,47 +158,43 @@ class TestRun(unittest.TestCase):
         self.assertIn("DEEPSEEK_API_KEY", notes["hint"])
 
     def test_a_rejected_note_marks_the_whole_run_rejected(self):
-        with _Server() as s, mock.patch.object(desk, "api_key", lambda *a, **k: "sk-test"):
-            os.environ["ZTT_AGENT_URL"] = s.url
+        with _Server() as s, mock.patch.object(desk, "api_key", lambda *a, **k: "sk-test"), \
+             _agent_env(s.url):
             s.answer = '{"agent":"chief","summary":"z = 9.99 is strong","contradictions":[],"watch":"x"}'
             notes = desk.run(self.root)
-        os.environ.pop("ZTT_AGENT_URL", None)
         self.assertEqual(notes["status"], "rejected")
         self.assertEqual(notes["roles"]["chief"]["status"], "rejected")
 
     def test_the_written_file_never_contains_the_key(self):
-        with _Server() as s, mock.patch.object(desk, "api_key", lambda *a, **k: "sk-secret-123"):
-            os.environ["ZTT_AGENT_URL"] = s.url
+        with _Server() as s, mock.patch.object(desk, "api_key", lambda *a, **k: "sk-secret-123"), \
+             _agent_env(s.url):
             s.answer = '{"agent":"chief","summary":"t -19.78 vs 4.531","contradictions":[],"watch":"x"}'
             notes = desk.run(self.root)
-        os.environ.pop("ZTT_AGENT_URL", None)
         p = desk.write_notes(self.root, notes)
         self.assertNotIn("sk-secret", p.read_text(encoding="utf-8"))
         self.assertEqual(json.loads(p.read_text(encoding="utf-8"))["roles"]["chief"]["status"], "ok")
 
     def test_without_feeds_the_scout_says_so_instead_of_calling(self):
-        with _Server() as s, mock.patch.object(desk, "api_key", lambda *a, **k: "sk-test"):
-            os.environ["ZTT_AGENT_URL"] = s.url
+        with _Server() as s, mock.patch.object(desk, "api_key", lambda *a, **k: "sk-test"), \
+             _agent_env(s.url):
             s.answer = '{"agent":"chief","summary":"t -19.78 vs 4.531","contradictions":[],"watch":"x"}'
             notes = desk.run(self.root, feeds=[])
-        os.environ.pop("ZTT_AGENT_URL", None)
         self.assertEqual(notes["roles"]["scout"]["status"], "no feed configured")
         self.assertEqual(len(s.seen), 3, "only skeptic, chief and jury may call the model")
 
 
 class TestFeeds(unittest.TestCase):
     def test_titles_are_parsed(self):
-        with _Server() as s:
-            items = desk.headlines([f"http://127.0.0.1:{s.httpd.server_port}/feed"])
+        items = desk._parse_feed(
+            "<rss><channel><item><title>Oil spikes on supply cut</title></item>"
+            "</channel></rss>", "https://feeds.example.com/rss")
         self.assertEqual(items[0]["headline"], "Oil spikes on supply cut")
 
     def test_a_document_with_a_dtd_is_refused(self):
-        evil = b'<?xml version="1.0"?><!DOCTYPE r [<!ENTITY a "aaaaaaaaaa">]><rss><channel><item><title>&a;</title></item></channel></rss>'
-        with _Server(evil) as s:
-            items = desk.headlines([f"http://127.0.0.1:{s.httpd.server_port}/feed"])
-        self.assertEqual(len(items), 1)
-        self.assertIn("FEED ERROR", items[0]["headline"])
-        self.assertIn("ValueError", items[0]["headline"])
+        evil = ('<?xml version="1.0"?><!DOCTYPE r [<!ENTITY a "aaaaaaaaaa">]>'
+                '<rss><channel><item><title>&a;</title></item></channel></rss>')
+        with self.assertRaises(ValueError):
+            desk._parse_feed(evil, "https://feeds.example.com/rss")
 
 
 class TestRulesAndJournal(unittest.TestCase):
@@ -246,23 +248,21 @@ class TestModelDrift(unittest.TestCase):
         self.addCleanup(self.dir.cleanup)
 
     def test_a_silent_upgrade_is_recorded_not_ignored(self):
-        with _Server() as s, mock.patch.object(desk, "api_key", lambda *a, **k: "sk-test"):
-            os.environ["ZTT_AGENT_URL"] = s.url
+        with _Server() as s, mock.patch.object(desk, "api_key", lambda *a, **k: "sk-test"), \
+             _agent_env(s.url):
             s.served_model = "deepseek-chat-2026.12"     # alias moved under us
             s.answer = '{"agent":"chief","summary":"nothing to report","contradictions":[],"watch":"x"}'
             notes = desk.run(self.root)
-        os.environ.pop("ZTT_AGENT_URL", None)
         self.assertEqual(notes["model"], desk.DEFAULT_MODEL)
         self.assertEqual(notes["model_returned"], "deepseek-chat-2026.12")
         self.assertEqual(notes["model_drift"]["served"], "deepseek-chat-2026.12")
         self.assertEqual(notes["usage"]["prompt_tokens"], 11)
 
     def test_no_drift_when_the_provider_echoes_the_pin(self):
-        with _Server() as s, mock.patch.object(desk, "api_key", lambda *a, **k: "sk-test"):
-            os.environ["ZTT_AGENT_URL"] = s.url
+        with _Server() as s, mock.patch.object(desk, "api_key", lambda *a, **k: "sk-test"), \
+             _agent_env(s.url):
             s.answer = '{"agent":"chief","summary":"nothing to report","contradictions":[],"watch":"x"}'
             notes = desk.run(self.root)
-        os.environ.pop("ZTT_AGENT_URL", None)
         self.assertNotIn("model_drift", notes)
         self.assertEqual(notes["model_returned"], desk.DEFAULT_MODEL)
 

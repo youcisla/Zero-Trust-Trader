@@ -13,7 +13,7 @@ import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from tools.check_public import ROOT, scan_files, tracked_files
+from tools.check_public import ROOT, private_identifier, scan_files, tracked_files
 
 REQUIRED = {
     "AGENTS.md", "README.md", "LICENSE", "requirements.txt", "run_funnel.py",
@@ -32,7 +32,8 @@ def build(root: Path, destination: Path) -> dict:
     missing = REQUIRED.difference(names)
     if missing:
         raise ValueError("required tracked sources missing: " + ", ".join(sorted(missing)))
-    refusals = scan_files(root, names, os.environ.get("ZTT_PRIVATE_IDENTIFIER", ""))
+    refusals = scan_files(root, names,
+                          private_identifier(root, os.environ.get("ZTT_PRIVATE_IDENTIFIER", "")))
     if refusals:
         raise ValueError("privacy refusal: " + ", ".join(f"{name} [{rule}]" for name, rule in refusals))
     if destination.exists() and any(destination.iterdir()):
