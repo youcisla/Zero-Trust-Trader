@@ -133,7 +133,7 @@ Rules that follow from this:
   state, never a flat line; a one-point series pins the axis to a minute so it
   cannot read as a day of silence.
 - **The socket must prove it is alive.** The server sends the snapshot on change and
-  once every five seconds regardless, and pings every 15 s; the watch loop logs a
+  once every four seconds regardless, and pings every 15 s; the watch loop logs a
   failed build and continues instead of ending (it used to `return`, which left every
   client holding an open socket that would never speak again). The client closes and
   reconnects itself when messages stop, with 0.5→5 s backoff, and retries at once on
@@ -153,8 +153,8 @@ Rules that follow from this:
   to the parent of `dashboard\` (this tree). Launch it through the `.bat`, never
   the raw `.exe` — the exe would inherit `System32` as its working directory and
   find no files.
-- **Publication is a build, not a tree.** `build_public.py` sanitises a copy into
-  `_publish/` and refuses to ship if it finds a machine path. Never edit
+- **Publication is a build, not a tree.** `tools/build_public.py` sanitises a copy
+  into `_publish/` and refuses to ship if it finds a machine path. Never edit
   `_publish/`; rebuild it.
 
 ---
@@ -403,7 +403,7 @@ when launched from either the repo root or `dashboard/`.
 | --- | --- | --- |
 | `GET /` | read | the UI (single embedded HTML, React vendored — no CDN, no build step) |
 | `GET /api/snapshot` | read | one-shot state |
-| `GET /ws` | read | the snapshot on change (checked at 1 Hz), resent at least every 5 s so a quiet tree cannot be mistaken for a dead feed; protocol ping every 15 s; age advances in the browser |
+| `GET /ws` | read | the snapshot on change (checked at 1 Hz), resent at least every 4 s so a quiet tree cannot be mistaken for a dead feed; protocol ping every 15 s; age advances in the browser |
 | `GET /architecture` | read | the stage map, embedded from `dashboard/web/architecture.html` |
 | `POST /api/scan` | **write** | starts `run_funnel.py` — the *research* pipeline. The only write in this process |
 | `/vendor/echarts.min.js` | read | the chart library, embedded from a pinned npm tarball |
@@ -443,8 +443,9 @@ Adding a second write endpoint requires deleting this paragraph first.
 ### Why not Next.js
 
 A single-page localhost dashboard streaming one socket does not need SSR, a
-routing layer, or a Node toolchain in CI. One Rust process, no `node_modules`,
-no second port, no CORS.
+routing layer, or a Node build step. One Rust process, no `node_modules`, no
+second port, no CORS. CI does run `node --test` over the dashboard's UI fixtures
+(pinned by `.nvmrc`), but that is a test runner, not a build toolchain.
 
 ---
 

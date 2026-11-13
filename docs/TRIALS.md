@@ -153,8 +153,9 @@ winner, not the number of trades and not the number of files.
 - Parameter grid also swept: multiply, N symbols x M variants.
 
 Under-counting is the classic way a backtest lies. When unsure, round **up**.
-`tier3_deep.py` reads `tier2_candidates.json["symbols_tested"]` automatically as
-its default `--trials`, so the funnel cannot silently under-declare.
+`tier3_deep.py` defaults `--trials` to the authoritative cumulative count
+(`legacy + logged + this scan's tests`) and **refuses** an explicit value below
+it, so the funnel cannot silently under-declare.
 
 ## The two gates (both required)
 
@@ -195,15 +196,17 @@ Scanning more often does not buy more edge; it buys a higher bar. Measured with
 | Cumulative after one month | 77,256 | 4.98 |
 | *rejected:* 96 scans a day, no window | 14,400 | 4.64 |
 
-**Adopted: the London/NY overlap.** The intraday scan runs only 13:00-17:00 UTC
-(16 scans a day) — the window where volume and volatility are highest. Outside
-it `run_funnel.py` exits 0 immediately, before it takes the lock or touches MT5.
+**Historical: the London/NY overlap only (13:00-17:00 UTC, 16 scans/day).** That
+was the adopted cadence when this table was written; it has since been widened
+to 05:00-17:00 UTC — see the session matrix below, which is the current rule.
+Outside the window `run_funnel.py` exits 0 immediately, before it takes the lock
+or touches MT5.
 
-That is a 6x reduction in daily looks and it moves the wall out by roughly a
-month: the 96-scan cadence reaches z 4.64 inside a single day, while 16 scans a
-day takes about a month to reach 4.98. Scanning less is the only honest lever
-once a cadence is chosen — the bar is a function of how often you look, not of
-how hard you try.
+Restricting to the overlap was a 6x reduction in daily looks and it moved the
+wall out by roughly a month: the 96-scan cadence reaches z 4.64 inside a single
+day, while 16 scans/day takes about a month to reach 4.98. Scanning less is the
+only honest lever once a cadence is chosen — the bar is a function of how often
+you look, not of how hard you try.
 
 Two things follow, and only the second is usually understood:
 
