@@ -84,3 +84,9 @@ dashboard_heartbeat.json
 dashboard_heartbeat.json.tmp
 # A human's stop. Never committed: a frozen tree in a clone is a mystery.
 KILL_SWITCH
+
+# Agent worktrees are live checkouts, not repository content; the Claude Code
+# provisioning file is generated per machine. Neither belongs in the index.
+.claude/worktrees/
+.claude/proven-config.json
+.claude/.proven-config-version
