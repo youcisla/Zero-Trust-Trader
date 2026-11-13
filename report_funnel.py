@@ -141,7 +141,9 @@ def main() -> int:
             print("   Max loss    unknown — this artifact carries no contract size")
         gate = s.get("gate", "z")
         metric = s.get("t_stat_R") if gate == "t" else s["z"]
-        print(f"   Evidence    {gate}={metric:+.2f} vs corrected {zc:.2f} | "
+        bar = s.get("t_crit") if gate == "t" else zc
+        bar_txt = f"{bar:.2f}" if isinstance(bar, (int, float)) else "unknown"
+        print(f"   Evidence    {gate}={metric:+.2f} vs corrected {bar_txt} | "
               f"perm p={pm.get('p_value')} | n={h['n_decided']} | "
               f"win {h['win_rate']:.1%} | maxDD {h['max_drawdown_R']:+.2f}R")
         print(f"   Trials      {trials} this scan; {cumulative} cumulative")

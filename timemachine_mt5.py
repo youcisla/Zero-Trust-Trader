@@ -113,8 +113,13 @@ def slot_of(t_server: float, tf: str) -> int:
 
 # ---------------------------------------------------------------- resolve + scans
 
-def _resolve(bars, i, side, entry, stop, target, risk, horizon):
-    """Walk forward bar by bar. Stop before target. Returns (outcome, mae_R, exit_i)."""
+def _resolve(bars, i, side, entry, stop, target, risk, horizon, spread=0.0):
+    """Walk forward bar by bar. Stop before target. Returns (outcome, mae_R, exit_i).
+
+    Prices are bid, exactly as in `_resolve_live`: a long enters at the ask and
+    resolves on bid bars, while a short enters at the bid and its buy-back is
+    the ask (bar price + spread). Every trade pays one spread round trip.
+    """
     if horizon < 1 or not math.isfinite(risk) or risk <= 0:
         raise ValueError("positive horizon and finite positive risk required")
     hi_a, lo_a = bars["h"], bars["l"]
@@ -131,11 +136,11 @@ def _resolve(bars, i, side, entry, stop, target, risk, horizon):
                 outcome = "target"
                 break
         else:
-            mae = max(mae, (max(hi, entry) - entry) / risk)
-            if hi >= stop:
+            mae = max(mae, (max(hi + spread, entry) - entry) / risk)
+            if hi + spread >= stop:
                 outcome = "stop"
                 break
-            if lo <= target:
+            if lo + spread <= target:
                 outcome = "target"
                 break
         j += 1
@@ -233,9 +238,12 @@ def _trade_row(bars, i, side, close_px, risk, rr, horizon, atr, spread,
                    exit_i, rr, exit_price=exit_px)
     else:
         outcome, mae, exit_i = _resolve(
-            bars, i, side, entry, stop, target, risk, horizon)
+            bars, i, side, entry, stop, target, risk, horizon, spread)
+        # A short buys back at the ask; charge that on a non-barrier exit too.
+        exit_px = (bars["c"][exit_i] + spread
+                   if side == "short" and outcome is None else None)
         row = _row(bars, i, side, entry, stop, target, risk, outcome, mae,
-                   exit_i, rr)
+                   exit_i, rr, exit_price=exit_px)
     return row, exit_i
 
 
@@ -779,6 +787,66 @@ def max_loss_at_stop(risk: float, info, lots: float = LOT, currency: str = "") -
             "lots": lots, "basis": basis, "at": "stop_price"}
 
 
+def _current_setup(strategy, bars, don_n, ema_fast, ema_slow):
+    """The side this strategy's own rule fires on the present (last) bar.
+
+    Mirrors the scanners exactly, evaluated at i = len(c) - 1: a proposal must
+    describe a setup that exists now, never the last trade the backtest took
+    and never the Donchian channel midpoint. None when no setup fires.
+    """
+    c = bars["c"]
+    i = len(c) - 1
+    if i < 1:
+        return None
+    if strategy == "donchian":
+        upper, lower = md.donchian(bars["h"], bars["l"], don_n)
+        ef, es = md.ema(c, ema_fast), md.ema(c, ema_slow)
+        if any(math.isnan(v) for v in (upper[i], lower[i], ef[i], es[i])):
+            return None
+        if c[i] > upper[i] and ef[i] > es[i]:
+            return "long"
+        if c[i] < lower[i] and ef[i] < es[i]:
+            return "short"
+        return None
+    if strategy == "pullback":
+        ef, es = md.ema(c, ema_fast), md.ema(c, ema_slow)
+        if math.isnan(ef[i]) or math.isnan(es[i]):
+            return None
+        if ef[i] > es[i] and bars["l"][i] <= ef[i] and c[i] > ef[i]:
+            return "long"
+        if ef[i] < es[i] and bars["h"][i] >= ef[i] and c[i] < ef[i]:
+            return "short"
+        return None
+    if strategy == "rsi":
+        r = md.rsi(c, 14)
+        if math.isnan(r[i]) or math.isnan(r[i - 1]):
+            return None
+        if r[i - 1] >= 35.0 and r[i] < 35.0:
+            return "long"
+        if r[i - 1] <= 65.0 and r[i] > 65.0:
+            return "short"
+        return None
+    if strategy == "bollinger":
+        _m, up, lo = md.bollinger(c, 20, 2.0)
+        if any(math.isnan(v) for v in (up[i], lo[i], up[i - 1], lo[i - 1])):
+            return None
+        if c[i] < lo[i] and c[i - 1] >= lo[i - 1]:
+            return "long"
+        if c[i] > up[i] and c[i - 1] <= up[i - 1]:
+            return "short"
+        return None
+    if strategy == "macd":
+        line, sig = md.macd(c, 12, 26, 9)
+        if any(math.isnan(v) for v in (line[i], sig[i], line[i - 1], sig[i - 1])):
+            return None
+        if line[i - 1] <= sig[i - 1] and line[i] > sig[i]:
+            return "long"
+        if line[i - 1] >= sig[i - 1] and line[i] < sig[i]:
+            return "short"
+        return None
+    raise ValueError(strategy)
+
+
 def analyse(symbol, tf="H1", strategy="donchian", don_n=20, ema_fast=50, ema_slow=200,
             atr_k=1.5, rr=1.5, horizon=None, sides="both", bars_n=5000,
             replays=10000, seed=19, window=2, pool_bars=1500, n_tests=1,
@@ -844,22 +912,16 @@ def analyse(symbol, tf="H1", strategy="donchian", don_n=20, ema_fast=50, ema_slo
     a = md.atr(bars["h"], bars["l"], bars["c"], 14)
     atr_now = float(a[-1]) if not math.isnan(a[-1]) else float("nan")
     last = len(bars["c"]) - 1
-    c_now = float(bars["c"][last])
     upper, lower = md.donchian(bars["h"], bars["l"], don_n)
-    # The proposal side must come from the strategy that was tested, not from a
-    # Donchian midpoint: an RSI short on an up-trending channel is a real setup.
-    if strategy == "rsi":
-        r_now = float(md.rsi(bars["c"], 14)[-1])
-        side = "long" if r_now < 35 else "short" if r_now > 65 else trades[-1]["side"]
-    elif strategy == "bollinger":
-        _m, bu, bl = md.bollinger(bars["c"], 20, 2.0)
-        side = ("long" if c_now < float(bl[-1]) else
-                "short" if c_now > float(bu[-1]) else trades[-1]["side"])
-    elif strategy == "macd":
-        ln, sg = md.macd(bars["c"], 12, 26, 9)
-        side = "long" if float(ln[-1]) >= float(sg[-1]) else "short"
+    # The proposal side must be the side that was tested. A fixed side is used
+    # directly; "both" re-checks this strategy's rule on the present bar and
+    # proposes nothing when no setup fires - never a Donchian midpoint guess.
+    if sides in ("long", "short"):
+        side = sides
     else:
-        side = "long" if (not math.isnan(upper[last]) and c_now > (upper[last] + lower[last]) / 2) else "short"
+        side = _current_setup(strategy, bars, don_n, ema_fast, ema_slow)
+        if side is None:
+            return None
     ref = float(tick.ask if side == "long" else tick.bid)
     risk_p = atr_k * atr_now
     stop = ref - risk_p if side == "long" else ref + risk_p

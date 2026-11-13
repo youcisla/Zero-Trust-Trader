@@ -72,15 +72,17 @@ def candidate_card(r: dict) -> str:
     p = r.get("permutation") or {}
 
     gate = s.get("gate") or "z"
-    z = s.get("t_stat_R") if gate == "t" else s.get("z")
-    zc = s.get("z_crit_bonferroni")
+    stat = s.get("t_stat_R") if gate == "t" else s.get("z")
+    # The bar belongs to the distribution the statistic has: Bonferroni z for the
+    # z gate, the per-candidate t quantile for the t gate.
+    bar = s.get("t_crit") if gate == "t" else s.get("z_crit_bonferroni")
     pval = p.get("p_value")
     g1 = bool(s.get("passes_corrected"))
     # Trust the kernel's verdict: p < 0.05 alone also passes a loser that only
     # out-lost its random-entry null. permutation["passes"] requires mean R > 0.
     g2 = bool(p.get("passes"))
 
-    g1_detail = (f'{esc(gate)} = {esc(z)} against a corrected bar of {esc(zc)} '
+    g1_detail = (f'{esc(gate)} = {esc(stat)} against a corrected bar of {esc(bar)} '
                  f'({esc(s.get("n_tests"))} cumulative tests). '
                  f'A naive 1.96 test would have said '
                  f'{"pass" if s.get("passes_naive") else "fail"} — '
