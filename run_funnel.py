@@ -246,9 +246,11 @@ def preflight_report() -> int:
         print(f"PREFLIGHT REFUSED  kill switch active ({why})")
         return kill_switch.EXIT_KILLED
 
-    status, detail = trials_total.verify()
+    # bootstrap=False: preflight is a read-only check and must never write the
+    # anchor; the scan that follows owns that one-time migration.
+    status, detail = trials_total.verify(bootstrap=False)
     print(f"trials     {status}{(' — ' + detail) if detail else ''}")
-    if status != "ok":
+    if trials_total.refuses(status):
         print("PREFLIGHT REFUSED  the trial chain does not verify; nothing can be counted")
         return 1
 
@@ -473,7 +475,9 @@ def _main() -> int:
         # would understate the cumulative trials and weaken the bar.
         ledger = trials_total.read_lines(LOG)
         state, detail = trials_total.verify(LOG, lines=ledger)
-        if state == "broken":
+        # broken/truncated/rollback always refuse; unsigned/empty refuse only
+        # when a key is configured, so a keyless clone still scans.
+        if trials_total.refuses(state):
             log(f"FAILED ledger chain | {detail}")
             return 1
         if state != "ok":

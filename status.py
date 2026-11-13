@@ -188,8 +188,9 @@ def trials_block() -> None:
         print(f"  z bar at this count: {tm.bonferroni_z(total):.2f}")
         print(f"  -> botlab --trials {total}")
         # Tamper-evidence: a chain break means the bar may have been lowered.
-        state, detail = trials_total.verify()
-        if state == "broken":
+        # Read-only diagnostic: never seed the anchor from here, the scan does.
+        state, detail = trials_total.verify(bootstrap=False)
+        if state in ("broken", "truncated", "rollback"):
             print(f"  !! LEDGER TAMPERED — {detail}")
         elif state == "ok":
             print(f"  chain: ok — {detail}")

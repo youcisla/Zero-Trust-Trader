@@ -22,12 +22,15 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import sys
 import os
 import re
+from datetime import datetime, timezone
 from pathlib import Path
 
 SIG_PREFIX = " sig="
+ANCHOR_NAME = "ledger_head.json"
 
 HERE = Path(__file__).resolve().parent
 LOG = HERE / "funnel_history.log"
@@ -69,12 +72,14 @@ def total(path: Path | None = None, lines: list[str] | None = None) -> tuple[int
             if scan:
                 scans[scan.group(1)] = max(scans.get(scan.group(1), 0), count)
                 if re.search(r"(?:^|\|\s*)TRIALS_RECONCILED\b", line):
-                    # One chain verification per total(), not one per reconcile
-                    # row: it reads the whole ledger every time it runs.
+                    # One chain check per total(), not one per reconcile row: it
+                    # reads the whole ledger every time it runs. The pure chain
+                    # state is used, never verify(), so verify() may call total()
+                    # to compute its anchor count without recursing.
                     if reconciled is None:
                         key = ledger_key()
                         reconciled = (key, "ok" if key is None
-                                      else verify(log, key, lines=lines)[0])
+                                      else _chain_state(lines, key)[0])
                     key, chain = reconciled
                     if key is not None and (SIG_PREFIX not in line or chain != "ok"):
                         raise ValueError("trial reconciliation must have a verified ledger signature")
@@ -151,34 +156,160 @@ def sign_line(body: str, path: Path | None = None, key: bytes | None = None,
     return f"{body}{SIG_PREFIX}{line_sig(k, last_sig(path, lines), body)}"
 
 
-def verify(path: Path | None = None, key: bytes | None = None,
-           lines: list[str] | None = None) -> tuple[str, str]:
-    """("ok" | "unsigned" | "broken" | "empty", detail).
+def _chain_state(lines: list[str], key: bytes | None) -> tuple[str, str]:
+    """The hash chain alone: ("ok" | "unsigned" | "broken", detail).
 
     Only signed lines are chained, so the FAILED rows written by the
     orchestrator do not break it. Deleting a signed row, editing one, or
     reordering two all break the chain at the point it happened.
     """
-    log = path or LOG
-    k = key if key is not None else ledger_key()
-    if lines is None:
-        if not log.exists():
-            return "empty", "no ledger yet"
-        lines = log.read_text(encoding="utf-8", errors="replace").splitlines()
-    elif not lines and not log.exists():
-        return "empty", "no ledger yet"
     signed = [(i, ln) for i, ln in enumerate(lines, 1) if SIG_PREFIX in ln]
     if not signed:
         return "unsigned", "no signed rows (the ledger predates the chain)"
-    if k is None:
+    if key is None:
         return "unsigned", f"{len(signed)} signed rows, but no key to verify them"
     prev = "genesis"
     for lineno, line in signed:
         body, sig = line.rsplit(SIG_PREFIX, 1)
-        if line_sig(k, prev, body) != sig.strip():
+        if line_sig(key, prev, body) != sig.strip():
             return "broken", f"chain breaks at line {lineno} - the ledger was edited"
         prev = sig.strip()
     return "ok", f"{len(signed)} signed rows, chain intact"
+
+
+def _anchor_path(log: Path) -> Path:
+    return log.parent / ANCHOR_NAME
+
+
+def _anchor_sig(key: bytes, count: int, signed_tail: str) -> str:
+    """A self-contained signature binding the anchored count to the chain tail."""
+    return hmac.new(key, f"anchor|{count}|{signed_tail}".encode(),
+                    hashlib.sha256).hexdigest()
+
+
+def _load_anchor(log: Path) -> dict | None:
+    """The signed anchor, or None when it does not exist yet.
+
+    A present-but-unreadable anchor raises: fail closed rather than trust an
+    anchor that cannot be checked.
+    """
+    p = _anchor_path(log)
+    if not p.exists():
+        return None
+    try:
+        data = json.loads(p.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            raise ValueError("not an object")
+        int(data["count"])
+        str(data["signed_tail"])
+        str(data["sig"])
+        return data
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise ValueError(f"ledger anchor is unreadable: {exc}") from exc
+
+
+def write_anchor(count: int, signed_tail: str, key: bytes | None = None,
+                 path: Path | None = None) -> dict | None:
+    """Persist the signed head: {count, signed_tail, generated_utc, sig}.
+
+    Keyless trees have no anchor to sign, so they return None and stay
+    `unsigned` (stated, not trusted). The write is atomic: a half-written
+    anchor must never be read back as a valid one.
+    """
+    k = key if key is not None else ledger_key()
+    if k is None:
+        return None
+    log = path or LOG
+    p = _anchor_path(log)
+    rec = {"count": int(count), "signed_tail": str(signed_tail),
+           "generated_utc": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+           "sig": _anchor_sig(k, int(count), str(signed_tail))}
+    tmp = p.with_suffix(p.suffix + ".tmp")
+    tmp.write_text(json.dumps(rec, sort_keys=True) + "\n", encoding="utf-8")
+    os.replace(tmp, p)
+    return rec
+
+
+def refuses(state: str, key: bytes | None = None) -> bool:
+    """May a scan proceed on this ledger state?
+
+    broken/truncated/rollback always refuse. unsigned/empty refuse only when a
+    ledger key is configured: a keyless dev clone has no signature to offer, so
+    it proceeds on an unsigned/empty ledger (stated, never trusted). This is the
+    one predicate both run_funnel and tier3_deep ask, so they cannot drift.
+    """
+    if state in ("broken", "truncated", "rollback"):
+        return True
+    k = key if key is not None else ledger_key()
+    return k is not None and state in ("unsigned", "empty")
+
+
+def verify(path: Path | None = None, key: bytes | None = None,
+           lines: list[str] | None = None, bootstrap: bool = True) -> tuple[str, str]:
+    """("ok" | "unsigned" | "broken" | "empty" | "truncated" | "rollback", detail).
+
+    The signature chain catches an edit or a deletion in the middle. The signed
+    anchor (ledger_head.json) catches what the chain alone cannot see: a deleted
+    newest signed row (truncated) or a ledger whose count fell below the
+    anchored one (rollback), including emptying the file.
+
+    Bootstrap: when a key is configured, signed rows exist and no anchor does
+    yet, the chain is verified FIRST and only an `ok` chain may seed the anchor.
+    `bootstrap=False` is for read-only callers (preflight, status): the chain is
+    still checked, but nothing is written - the next scan seeds the anchor.
+    """
+    log = path or LOG
+    k = key if key is not None else ledger_key()
+    try:
+        anchor = _load_anchor(log)
+    except ValueError as exc:
+        return "broken", str(exc)
+    if lines is None:
+        if not log.exists():
+            return "empty", "no ledger yet"
+        lines = log.read_text(encoding="utf-8", errors="replace").splitlines()
+    signed = [(i, ln) for i, ln in enumerate(lines, 1) if SIG_PREFIX in ln]
+    if not signed:
+        if anchor is not None and k is not None:
+            return "truncated", "no signed rows remain but an anchor exists"
+        if not log.exists():
+            return "empty", "no ledger yet"
+        return "unsigned", "no signed rows (the ledger predates the chain)"
+    if k is None:
+        return "unsigned", f"{len(signed)} signed rows, but no key to verify them"
+    state, detail = _chain_state(lines, k)
+    if state != "ok":
+        return state, detail
+    signed_tail = last_sig(log, lines=lines)
+    try:
+        count = sum(total(log, lines=lines))
+    except ValueError as exc:
+        # A count that cannot be established is an untrustworthy ledger, not a
+        # crash: report it as broken so every gate refuses instead of raising.
+        return "broken", f"cannot count the ledger: {exc}"
+    if anchor is None:
+        # One-time migration: the chain already verifies, so this is the only
+        # state an anchor may be seeded from. A broken chain never gets here.
+        if not bootstrap:
+            return "ok", f"{detail}; no anchor yet (not seeded by a read-only check)"
+        write_anchor(count, signed_tail, key=k, path=log)
+        print(f"ledger anchor created: count={count} tail={signed_tail[:8]}",
+              file=sys.stderr)
+        return "ok", f"{detail}; anchor created"
+    if not hmac.compare_digest(_anchor_sig(k, anchor["count"], anchor["signed_tail"]),
+                               anchor["sig"]):
+        return "broken", "ledger anchor signature does not verify - the anchor was edited"
+    if count < anchor["count"]:
+        return "rollback", (f"recomputed count {count} is below the anchored "
+                            f"{anchor['count']}")
+    if signed_tail != anchor["signed_tail"]:
+        # The anchored tail must still be somewhere in the chain. Present means
+        # rows were only appended past the anchor (a crash between the append
+        # and the anchor write); absent means the newest signed rows were cut.
+        if anchor["signed_tail"] not in {ln.rsplit(SIG_PREFIX, 1)[1].strip()
+                                         for ln in lines if SIG_PREFIX in ln}:
+            return "truncated", "the newest signed row was removed - chain tail differs from the anchor"
+    return "ok", detail
 
 
 if __name__ == "__main__":
