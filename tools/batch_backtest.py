@@ -130,6 +130,8 @@ def main(argv: list[str] | None = None) -> int:
 
     rows: list[dict] = []
     failed = 0
+    # One series per symbol for every family in the sweep, not one per family.
+    bars_cache: dict = {}
     for sym, klass in universe:
         for fam in families:
             try:
@@ -138,7 +140,7 @@ def main(argv: list[str] | None = None) -> int:
                     bars_n=a.bars, replays=a.replays,
                     n_tests=cumulative or 1,
                     permutations=0,        # a screen, not a gate: no null, no claim
-                    use_t=True,
+                    use_t=True, bars_cache=bars_cache,
                 )
             except Exception as e:  # a dead symbol must not stop the sweep
                 failed += 1

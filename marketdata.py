@@ -126,13 +126,24 @@ def fetch(symbol: str, tf: str = "H1", bars: int = 3000, offset: int | None = No
     # survive the forming-bar drop) and silently starved every caller.
     if not keep:
         return None
+    def _tick_volume(r) -> float:
+        # A rate feed without tick_volume (old stub) measures 0, so a turnover
+        # ranking has nothing to rank rather than an invented number.
+        try:
+            return float(r["tick_volume"])
+        except (KeyError, TypeError, ValueError):
+            return 0.0
+
     try:
         arr = np.array([(int(r["time"]), float(r["open"]), float(r["high"]),
-                         float(r["low"]), float(r["close"])) for r in keep],
-                       dtype=np.float64)
-    except (TypeError, ValueError, OverflowError):
+                         float(r["low"]), float(r["close"]), _tick_volume(r))
+                        for r in keep], dtype=np.float64)
+    except (TypeError, ValueError, OverflowError, KeyError):
         return None
-    if (not np.isfinite(arr).all() or (arr[:, 1:] <= 0).any()
+    # tick_volume rides on the same copy_rates call, so a turnover measurement
+    # never needs a second fetch. Validation stays on the OHLC columns: a
+    # zero-volume bar is real, a zero-price bar is not.
+    if (not np.isfinite(arr[:, :5]).all() or (arr[:, 1:5] <= 0).any()
             or (np.diff(arr[:, 0]) <= 0).any()
             or (arr[:, 2] < np.maximum(arr[:, 1], arr[:, 4])).any()
             or (arr[:, 3] > np.minimum(arr[:, 1], arr[:, 4])).any()):
@@ -140,7 +151,21 @@ def fetch(symbol: str, tf: str = "H1", bars: int = 3000, offset: int | None = No
     return {"symbol": symbol, "tf": tf, "offset": offset,
             "timestamp_basis": "broker bar open; subtract offset for UTC",
             "t": arr[:, 0], "o": arr[:, 1], "h": arr[:, 2],
-            "l": arr[:, 3], "c": arr[:, 4]}
+            "l": arr[:, 3], "c": arr[:, 4], "v": arr[:, 5]}
+
+
+def fetch_cached(cache: dict, symbol: str, tf: str = "H1", bars: int = 3000,
+                 offset: int | None = None) -> dict | None:
+    """fetch() at most once per (symbol, timeframe, bar count) within one run.
+
+    A sweep that runs three families over one symbol used to read the same
+    series three times. The bar count is part of the key: a 500-bar turnover
+    probe must never answer a 3000-bar correlation question.
+    """
+    key = (symbol, tf, bars, offset)
+    if key not in cache:
+        cache[key] = fetch(symbol, tf, bars, offset)
+    return cache[key]
 
 
 def tick_spread(tick, offset: int = 0, max_age: float = 120.0) -> float | None:
@@ -290,14 +315,53 @@ def corr_returns(a: dict, b: dict) -> float | None:
     return rho if math.isfinite(rho) else None
 
 
-def correlation(sym_a: str, sym_b: str, bars_n: int = 3000, tf: str = "H1") -> float | None:
+def return_vector(bars: dict) -> tuple[np.ndarray, np.ndarray] | None:
+    """(timestamps, close-to-close returns) for one fetched series.
+
+    Precomputed once per symbol, so a dedupe pass correlates vectors instead of
+    re-diffing the same closes once per pair. None when corr_returns() would
+    refuse the series anyway.
+    """
+    if bars is None:
+        return None
+    t, c = bars["t"], bars["c"]
+    if len(t) < 101 or not np.isfinite(c).all() or (c <= 0).any():
+        return None
+    return t, np.diff(c) / c[:-1]
+
+
+def corr_vector(a, b) -> float | None:
+    """Pearson rho from two return_vector() values on the identical bar grid.
+
+    None when the grids differ or a vector is unusable; callers then fall back
+    to corr_returns(), which aligns the two series first — a symbol with missing
+    bars is never measured on a different sample than before.
+    """
+    if a is None or b is None:
+        return None
+    ta, ra = a
+    tb, rb = b
+    if ta.shape != tb.shape or not np.array_equal(ta, tb):
+        return None
+    if ra.std() == 0 or rb.std() == 0:
+        return None
+    rho = float(np.corrcoef(ra, rb)[0, 1])
+    return rho if math.isfinite(rho) else None
+
+
+def correlation(sym_a: str, sym_b: str, bars_n: int = 3000, tf: str = "H1",
+                cache: dict | None = None) -> float | None:
     """Pearson correlation of close-to-close returns over the common window.
 
     Same-symbol compares as +1.0 without a fetch: two strategies triggering on
-    one instrument is one position, not two.
+    one instrument is one position, not two. A per-run `cache` serves every pair
+    from one fetch per symbol instead of re-reading both sides per pair.
     """
     if sym_a == sym_b:
         return 1.0
+    if cache is not None:
+        return corr_returns(fetch_cached(cache, sym_a, tf, bars_n),
+                            fetch_cached(cache, sym_b, tf, bars_n))
     return corr_returns(fetch(sym_a, tf, bars_n), fetch(sym_b, tf, bars_n))
 
 

@@ -75,9 +75,10 @@ def log_run(src: dict, payload: dict) -> None:
         fh.write(tt.sign_line(line, path) + "\n")
 
 
-def correlation(sym_a: str, sym_b: str, bars_n: int = 3000, tf: str = "H1") -> float | None:
+def correlation(sym_a: str, sym_b: str, bars_n: int = 3000, tf: str = "H1",
+                cache: dict | None = None) -> float | None:
     """Delegates to the shared implementation so Tier 2 and Tier 3 cannot drift."""
-    return md.correlation(sym_a, sym_b, bars_n, tf)
+    return md.correlation(sym_a, sym_b, bars_n, tf, cache)
 
 
 def dedupe(survivors: list[dict], corr_max: float,
@@ -87,12 +88,14 @@ def dedupe(survivors: list[dict], corr_max: float,
     The caller sorts by the statistic the gate actually used, so under --t-gate
     the higher-t edge survives and the higher-z one is the one dropped. The
     correlation is measured on the scan timeframe, the one Tier 2 deduped on.
+    One per-run cache serves every pair from one fetch per symbol.
     """
     kept, dropped = [], []
+    cache: dict = {}
     for cand in survivors:
         clash = None
         for k in kept:
-            rho = correlation(cand["symbol"], k["symbol"], tf=tf)
+            rho = correlation(cand["symbol"], k["symbol"], tf=tf, cache=cache)
             if rho is None or not math.isfinite(rho) or abs(rho) > corr_max:
                 clash = (k["symbol"], rho)
                 break
@@ -164,7 +167,10 @@ def _main() -> int:
         return 1
     try:
         import trials_total
-        state, detail = trials_total.verify()
+        # One read for the chain check; the cumulative count is then read
+        # fresh by required_trials, so a snapshot can never understate the bar.
+        ledger = trials_total.read_lines()
+        state, detail = trials_total.verify(lines=ledger)
         if state == "broken":
             print(f"ledger chain is broken ({detail}); refusing")
             return 1

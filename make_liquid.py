@@ -67,13 +67,23 @@ def newest_universe() -> Path:
     return HERE / "tier1_universe.json"
 
 
-def measure(rows: list[dict], tf: str, lookback: int, max_spread_pct: float) -> list[dict]:
-    """Attach mean tick volume to each row; drop anything too expensive to trade."""
+def measure(rows: list[dict], tf: str, lookback: int, max_spread_pct: float,
+            bars_cache: dict | None = None) -> list[dict]:
+    """Attach mean tick volume to each row; drop anything too expensive to trade.
+
+    The volume still comes from its own raw copy_rates_from_pos call, which
+    includes the forming bar: `fetch` drops that bar by design, so averaging its
+    `v` would shift every mean_tick_volume and can reorder near-equal symbols.
+    shortcut: two terminal reads per symbol, until volume and liveness can share
+    one call without moving a published number.
+    """
     out = []
     for r in rows:
         if r["spread_pct_atr"] > max_spread_pct:
             continue
-        if md.fetch(r["symbol"], tf, lookback) is None:
+        bars = (md.fetch(r["symbol"], tf, lookback) if bars_cache is None
+                else md.fetch_cached(bars_cache, r["symbol"], tf, lookback))
+        if bars is None:
             continue
         rates = md.mt5.copy_rates_from_pos(r["symbol"], md.TIMEFRAMES[tf], 0, lookback)
         if rates is None or len(rates) == 0:
@@ -96,27 +106,31 @@ def order(measured: list[dict]) -> list[dict]:
 
 
 def dedupe(rows: list[dict], tf: str, corr_max: float, pool: int,
-           bars_n: int = 3000) -> tuple[list[dict], int]:
+           bars_n: int = 3000, bars_cache: dict | None = None) -> tuple[list[dict], int]:
     """Collapse near-identical instruments, keeping the most liquid of each.
 
     Without this the list is nine gold crosses (XAUCNH, XAUSGD, XAUEUR, XAUJPY,
     XAUTHB...), which are one position in nine quote currencies — the same
     failure the Tier 2 dedupe exists to prevent, caught one stage earlier where
-    it can still free up slots.
+    it can still free up slots. Each series' returns are computed once.
     """
     cand = rows[:pool]
     bars = {}
     for r in cand:
-        b = md.fetch(r["symbol"], tf, bars_n)
+        b = (md.fetch(r["symbol"], tf, bars_n) if bars_cache is None
+             else md.fetch_cached(bars_cache, r["symbol"], tf, bars_n))
         if b is not None:
             bars[r["symbol"]] = b
+    vecs = {s: md.return_vector(b) for s, b in bars.items()}
     kept: list[dict] = []
     for r in cand:
         if r["symbol"] not in bars:
             continue
         clash = False
         for k in kept:
-            rho = md.corr_returns(bars[r["symbol"]], bars[k["symbol"]])
+            rho = md.corr_vector(vecs[r["symbol"]], vecs[k["symbol"]])
+            if rho is None:
+                rho = md.corr_returns(bars[r["symbol"]], bars[k["symbol"]])
             if rho is None or not math.isfinite(rho) or abs(rho) > corr_max:
                 clash = True
                 break
@@ -183,12 +197,14 @@ def _main() -> int:
     print(f"source: {src_path.name} ({len(rows)} symbols) — measuring {a.tf} turnover...")
 
     md.connect()
-    measured = measure(rows, a.tf, a.lookback, a.max_spread_pct)
+    bars_cache: dict = {}
+    measured = measure(rows, a.tf, a.lookback, a.max_spread_pct, bars_cache)
     ordered = order(measured)
     # 0 means "no cap" on either side: the whole measured list is deduped, and every
     # survivor is kept. Both caps default to a number, so a caller that omits them
     # keeps the old behaviour; `--top 0` is an explicit request for everything.
-    kept, dropped = dedupe(ordered, a.tf, a.corr_max, a.pool or len(ordered))
+    kept, dropped = dedupe(ordered, a.tf, a.corr_max, a.pool or len(ordered),
+                           bars_cache=bars_cache)
     picked = kept[: a.top] if a.top else kept
     md.release_auto_selected()
 

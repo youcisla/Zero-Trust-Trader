@@ -122,15 +122,19 @@ def normalise(hits: list[dict], families: tuple[str, ...] = STRATEGIES) -> None:
 
 
 def dedupe(hits: list[dict], corr_max: float, tf: str, bars_n: int = 3000,
-           pool: int = 30) -> tuple[list[dict], list[dict]]:
+           pool: int = 30, bars_cache: dict | None = None) -> tuple[list[dict], list[dict]]:
     """Greedy by score: drop any hit too correlated with a stronger kept hit.
 
     Only the plausible winners are fetched (`pool`), otherwise deduping ~120
-    hits would mean thousands of correlation fetches.
+    hits would mean thousands of correlation fetches. Each symbol's returns are
+    computed once, so the pairwise loop correlates vectors rather than re-diffing
+    the same closes once per pair.
     """
     cand = hits[:pool]
     syms = list(dict.fromkeys(h["symbol"] for h in cand))
-    bars = {s: md.fetch(s, tf, bars_n) for s in syms}
+    bars = {s: (md.fetch(s, tf, bars_n) if bars_cache is None
+                else md.fetch_cached(bars_cache, s, tf, bars_n)) for s in syms}
+    vecs = {s: md.return_vector(b) for s, b in bars.items()}
     kept, dropped = [], []
     for h in cand:
         if bars[h["symbol"]] is None:
@@ -140,7 +144,12 @@ def dedupe(hits: list[dict], corr_max: float, tf: str, bars_n: int = 3000,
             continue
         clash = None
         for k in kept:
-            rho = 1.0 if k["symbol"] == h["symbol"] else md.corr_returns(bars[k["symbol"]], bars[h["symbol"]])
+            if k["symbol"] == h["symbol"]:
+                rho = 1.0
+            else:
+                rho = md.corr_vector(vecs[k["symbol"]], vecs[h["symbol"]])
+                if rho is None:
+                    rho = md.corr_returns(bars[k["symbol"]], bars[h["symbol"]])
             if rho is None or not math.isfinite(rho) or abs(rho) > corr_max:
                 clash = (k, rho)
                 break
@@ -195,9 +204,10 @@ def _main() -> int:
 
     hits, tested, per_family = [], 0, {f: 0 for f in fams}
     stale = 0
+    bars_cache: dict = {}
     for row in symbols:
         name = row["symbol"]
-        bars = md.fetch(name, a.tf, a.bars, offset)
+        bars = md.fetch_cached(bars_cache, name, a.tf, a.bars, offset)
         if bars is None:
             continue
         # Liveness: on a 15-minute cadence a closed market's last bar is hours
@@ -220,7 +230,8 @@ def _main() -> int:
     if a.no_dedupe:
         top, dropped = hits[: a.top], []
     else:
-        kept, dropped = dedupe(hits, a.corr_max, a.tf, a.dedupe_bars, a.dedupe_pool)
+        kept, dropped = dedupe(hits, a.corr_max, a.tf, a.dedupe_bars, a.dedupe_pool,
+                               bars_cache)
         top = kept[: a.top]
 
     total_tests = tested * len(fams)
