@@ -138,8 +138,8 @@ typed questions — *what deserves a person's attention* (show / stand_down /
 escalate) and *is the desk's verdict grounded in the figures it cites* — and
 records the choice, the probability and the confidence. Nothing reads the answer
 back: a test asserts the record is written and never consulted, so the layer
-cannot become a gate by accident. The layer is off by default (`desk.toml`
-`[decisions] jev_enabled` or `ZTT_JEV=1` turns it on): off, the record says
+cannot become a gate by accident. The layer is on in this tree (`desk.toml`
+`[decisions] jev_enabled`; `ZTT_JEV=0` turns it off): off, the record says
 `disabled`; on without `OPENROUTER_API_KEY`, it says `not configured` with the
 questions it would have asked, because an absent layer must be visible rather
 than zero. The comparison it enables is the point: the

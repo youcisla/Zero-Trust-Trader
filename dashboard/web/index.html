@@ -1545,7 +1545,7 @@ function DeskPage({d, data}) {
       <${Card} title="Decision model" note=${jev.model || "typesafe/jev-1.14"}>
         <div className="kv"><span>state</span><b>${jev.status === "disabled" ? "disabled" : jev.status ? "enabled" : "not run"}</b></div>
         ${jev.status === "disabled"
-          ? html`<div className="why clamp2">Off by default. Turn it on with jev_enabled = true under [decisions] in desk.toml, or set ZTT_JEV=1.</div>`
+          ? html`<div className="why clamp2">Off because ZTT_JEV=0 or jev_enabled = false under [decisions] in desk.toml. Set it back to run the layer.</div>`
           : jev.status === "ok" ? html`
           <div className="kv"><span>attention</span><b>${att.choice || "—"} ${att.probability == null ? "" : num0(att.probability * 100) + "%"}</b></div>
           <div className="kv"><span>grounded</span><b>${grounded.choice == null ? "—" : String(grounded.choice)}</b></div>
@@ -2185,8 +2185,8 @@ function Layers({data}) {
           <div className="why clamp2">${jev.reason || "no decision-model call has been recorded yet"}</div>
           <div className="l-faint" style=${{fontSize: "var(--t1)", marginTop: "6px"}}>
             It would answer two typed questions — ${(jev.would_ask || ["attention", "grounded"]).join(", ")} —
-            with a label and probabilities, and no prose. Turn it on with jev_enabled = true under [decisions]
-            in desk.toml or ZTT_JEV=1, and put OPENROUTER_API_KEY in .env; it is advisory and can never gate, size
+            with a label and probabilities, and no prose. It is on in this tree (jev_enabled = true under [decisions]
+            in desk.toml unless ZTT_JEV=0); put OPENROUTER_API_KEY in .env; it is advisory and can never gate, size
             or approve.</div>`}
     <//>
   </div>`;
