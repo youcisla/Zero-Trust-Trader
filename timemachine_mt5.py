@@ -275,6 +275,77 @@ def _entry_eligible(bars, i):
     return window[0] <= stamp.hour * 60 + stamp.minute < window[1]
 
 
+# ------------------------------------------------------------ triggers
+#
+# The three trigger rules, defined once and consumed by both the Tier 2 scan
+# (tier2_patterns.scan_symbol) and the backtest scanners below. They used to be
+# typed twice, so Tier 2 could propose a rule the Time Machine did not grade.
+# Each returns "long", "short" or None, and a NaN input means no decision.
+
+def donchian_trigger(close: float, upper: float, lower: float,
+                     ema_fast: float, ema_slow: float) -> str | None:
+    """Donchian breakout with the EMA trend gate: long up-trend, short without."""
+    if any(math.isnan(v) for v in (upper, lower, ema_fast, ema_slow)):
+        return None
+    up_trend = bool(ema_fast > ema_slow)
+    if close > upper and up_trend:
+        return "long"
+    if close < lower and not up_trend:
+        return "short"
+    return None
+
+
+def rsi_trigger(r_prev: float, r_now: float, lo: float, hi: float) -> str | None:
+    """RSI crossing INTO the oversold/overbought zone (not the resting state)."""
+    if math.isnan(r_prev) or math.isnan(r_now):
+        return None
+    if r_prev >= lo and r_now < lo:
+        return "long"
+    if r_prev <= hi and r_now > hi:
+        return "short"
+    return None
+
+
+def bollinger_trigger(close: float, close_prev: float, upper: float, lower: float,
+                      upper_prev: float, lower_prev: float) -> str | None:
+    """Close crossing OUT of the band — faded, not followed."""
+    if any(math.isnan(v) for v in (upper, lower, upper_prev, lower_prev)):
+        return None
+    if close < lower and close_prev >= lower_prev:
+        return "long"
+    if close > upper and close_prev <= upper_prev:
+        return "short"
+    return None
+
+
+def _scan_signals(bars, side_at, start_i, k_atr, rr, horizon, sides,
+                  spread, live_exits, close_utc):
+    """The one entry loop: ask ``side_at(i)`` for a side, then build the trade.
+
+    Every trigger family shares this skeleton; only the predicate differs, so
+    the predicate lives in the shared functions above. The ATR guard stays
+    here — no family can size a stop without a positive ATR.
+    """
+    c = bars["c"]
+    a = md.atr(bars["h"], bars["l"], c, 14)
+    trades, i = [], start_i
+    while i < len(c) - 1:
+        if math.isnan(a[i]) or a[i] <= 0:
+            i += 1
+            continue
+        side = side_at(i)
+        if side is not None and sides not in ("both", side):
+            side = None
+        if side is None or not _entry_eligible(bars, i):
+            i += 1
+            continue
+        tr, exit_i = _trade_row(bars, i, side, c[i], k_atr * a[i], rr, horizon,
+                                a, spread, live_exits, close_utc)
+        trades.append(tr)
+        i = max(exit_i, i + 1)
+    return trades
+
+
 def scan_donchian(bars, n, k_atr, rr, horizon, sides,
                   ema_fast: int = 50, ema_slow: int = 200, spread: float = 0.0,
                   live_exits: bool = True, close_utc: str | None = None):
@@ -288,31 +359,15 @@ def scan_donchian(bars, n, k_atr, rr, horizon, sides,
     and moves to break-even through position_manager.next_stop().
     """
     upper, lower = md.donchian(bars["h"], bars["l"], n)
-    a = md.atr(bars["h"], bars["l"], bars["c"], 14)
     c = bars["c"]
     ef, es = md.ema(c, ema_fast), md.ema(c, ema_slow)
-    trades = []
-    i = max(n + 1, ema_slow + 1)
-    while i < len(c) - 1:
-        if (math.isnan(upper[i]) or math.isnan(lower[i]) or math.isnan(a[i])
-                or a[i] <= 0 or math.isnan(ef[i]) or math.isnan(es[i])):
-            i += 1
-            continue
-        up_trend = bool(ef[i] > es[i])
-        side = None
-        # identical to tier2: long needs the up-trend, short needs it absent
-        if sides in ("both", "long") and c[i] > upper[i] and up_trend:
-            side = "long"
-        elif sides in ("both", "short") and c[i] < lower[i] and not up_trend:
-            side = "short"
-        if side is None or not _entry_eligible(bars, i):
-            i += 1
-            continue
-        tr, exit_i = _trade_row(bars, i, side, c[i], k_atr * a[i], rr, horizon,
-                                a, spread, live_exits, close_utc)
-        trades.append(tr)
-        i = max(exit_i, i + 1)
-    return trades
+
+    def side_at(i):
+        return donchian_trigger(float(c[i]), float(upper[i]), float(lower[i]),
+                                float(ef[i]), float(es[i]))
+
+    return _scan_signals(bars, side_at, max(n + 1, ema_slow + 1), k_atr, rr,
+                         horizon, sides, spread, live_exits, close_utc)
 
 
 def scan_pullback(bars, fast, slow, k_atr, rr, horizon, sides,
@@ -353,25 +408,12 @@ def scan_rsi(bars, n, lo, hi, k_atr, rr, horizon, sides,
     """
     c = bars["c"]
     r = md.rsi(c, n)
-    a = md.atr(bars["h"], bars["l"], c, 14)
-    trades, i = [], n + 2
-    while i < len(c) - 1:
-        if math.isnan(r[i]) or math.isnan(r[i - 1]) or math.isnan(a[i]) or a[i] <= 0:
-            i += 1
-            continue
-        side = None
-        if sides in ("both", "long") and r[i - 1] >= lo and r[i] < lo:
-            side = "long"
-        elif sides in ("both", "short") and r[i - 1] <= hi and r[i] > hi:
-            side = "short"
-        if side is None or not _entry_eligible(bars, i):
-            i += 1
-            continue
-        tr, exit_i = _trade_row(bars, i, side, c[i], k_atr * a[i], rr, horizon,
-                                a, spread, live_exits, close_utc)
-        trades.append(tr)
-        i = max(exit_i, i + 1)
-    return trades
+
+    def side_at(i):
+        return rsi_trigger(float(r[i - 1]), float(r[i]), lo, hi)
+
+    return _scan_signals(bars, side_at, n + 2, k_atr, rr, horizon, sides,
+                         spread, live_exits, close_utc)
 
 
 def scan_macd(bars, fast, slow, signal_n, k_atr, rr, horizon, sides,
@@ -411,25 +453,13 @@ def scan_bollinger(bars, n, k, k_atr, rr, horizon, sides,
     """
     c = bars["c"]
     _mid, up, lo = md.bollinger(c, n, k)
-    a = md.atr(bars["h"], bars["l"], c, 14)
-    trades, i = [], n + 2
-    while i < len(c) - 1:
-        if any(math.isnan(v) for v in (up[i], lo[i], up[i - 1], lo[i - 1], a[i])) or a[i] <= 0:
-            i += 1
-            continue
-        side = None
-        if sides in ("both", "long") and c[i] < lo[i] and c[i - 1] >= lo[i - 1]:
-            side = "long"
-        elif sides in ("both", "short") and c[i] > up[i] and c[i - 1] <= up[i - 1]:
-            side = "short"
-        if side is None or not _entry_eligible(bars, i):
-            i += 1
-            continue
-        tr, exit_i = _trade_row(bars, i, side, c[i], k_atr * a[i], rr, horizon,
-                                a, spread, live_exits, close_utc)
-        trades.append(tr)
-        i = max(exit_i, i + 1)
-    return trades
+
+    def side_at(i):
+        return bollinger_trigger(float(c[i]), float(c[i - 1]), float(up[i]),
+                                 float(lo[i]), float(up[i - 1]), float(lo[i - 1]))
+
+    return _scan_signals(bars, side_at, n + 2, k_atr, rr, horizon, sides,
+                         spread, live_exits, close_utc)
 
 
 # ---------------------------------------------------------------- stats

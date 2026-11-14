@@ -40,7 +40,8 @@ import pandas as pd
 
 import marketdata as md
 import process_lock
-from timemachine_mt5 import source_provenance
+from timemachine_mt5 import (source_provenance, donchian_trigger,
+                             rsi_trigger, bollinger_trigger)
 
 HERE = Path(__file__).resolve().parent
 OUT = HERE / "tier2_candidates.json"
@@ -80,34 +81,32 @@ def scan_symbol(bars: dict, don_n: int, fast: int, slow: int) -> list[dict]:
     lower = df["l"].rolling(don_n).min().shift(1)
     ef = df["c"].ewm(span=fast, adjust=False).mean()
     es = df["c"].ewm(span=slow, adjust=False).mean()
-    if not any(pd.isna(x) for x in (upper.iloc[i], lower.iloc[i], ef.iloc[i], es.iloc[i])):
-        u, lo = float(upper.iloc[i]), float(lower.iloc[i])
-        up_trend = bool(ef.iloc[i] > es.iloc[i])
+    u, lo = float(upper.iloc[i]), float(lower.iloc[i])
+    efv, esv = float(ef.iloc[i]), float(es.iloc[i])
+    side = donchian_trigger(c, u, lo, efv, esv)
+    if side:
         extra = {"donchian_upper": u, "donchian_lower": lo,
-                 "ema_fast": float(ef.iloc[i]), "ema_slow": float(es.iloc[i])}
-        if c > u and up_trend:
-            out.append(_sig("donchian", "long", (c - u) / atr_v, c, atr_v, extra))
-        elif c < lo and not up_trend:
-            out.append(_sig("donchian", "short", (lo - c) / atr_v, c, atr_v, extra))
+                 "ema_fast": efv, "ema_slow": esv}
+        strength = (c - u) / atr_v if side == "long" else (lo - c) / atr_v
+        out.append(_sig("donchian", side, strength, c, atr_v, extra))
 
     # B — RSI mean reversion: crossing INTO the zone, same rule as scan_rsi()
     r = md.rsi(c_all, 14)
-    if i >= 1 and not (math.isnan(r[i]) or math.isnan(r[i - 1])):
-        impulse = abs(c - float(c_all[i - 1])) / atr_v
-        if r[i - 1] >= 35.0 and r[i] < 35.0:
-            out.append(_sig("rsi", "long", impulse, c, atr_v, {"rsi": float(r[i])}))
-        elif r[i - 1] <= 65.0 and r[i] > 65.0:
-            out.append(_sig("rsi", "short", impulse, c, atr_v, {"rsi": float(r[i])}))
+    if i >= 1:
+        side = rsi_trigger(float(r[i - 1]), float(r[i]), 35.0, 65.0)
+        if side:
+            impulse = abs(c - float(c_all[i - 1])) / atr_v
+            out.append(_sig("rsi", side, impulse, c, atr_v, {"rsi": float(r[i])}))
 
     # C — Bollinger fade: a close outside the band is faded, not followed
     _m, bu, bl = md.bollinger(c_all, 20, 2.0)
-    if i >= 1 and not any(math.isnan(v) for v in (bu[i], bl[i], bu[i - 1], bl[i - 1])):
-        impulse = abs(c - float(c_all[i - 1])) / atr_v
-        extra = {"bb_upper": float(bu[i]), "bb_lower": float(bl[i])}
-        if c < float(bl[i]) and float(c_all[i - 1]) >= float(bl[i - 1]):
-            out.append(_sig("bollinger", "long", impulse, c, atr_v, extra))
-        elif c > float(bu[i]) and float(c_all[i - 1]) <= float(bu[i - 1]):
-            out.append(_sig("bollinger", "short", impulse, c, atr_v, extra))
+    if i >= 1:
+        side = bollinger_trigger(c, float(c_all[i - 1]), float(bu[i]), float(bl[i]),
+                                 float(bu[i - 1]), float(bl[i - 1]))
+        if side:
+            impulse = abs(c - float(c_all[i - 1])) / atr_v
+            extra = {"bb_upper": float(bu[i]), "bb_lower": float(bl[i])}
+            out.append(_sig("bollinger", side, impulse, c, atr_v, extra))
     return out
 
 
