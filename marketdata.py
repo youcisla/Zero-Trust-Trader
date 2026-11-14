@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 
 import MetaTrader5 as mt5
 import numpy as np
+import pandas as pd
 
 TIMEFRAMES = {
     "M15": mt5.TIMEFRAME_M15,
@@ -197,16 +198,18 @@ def span_days(bars: dict) -> float:
 
 
 def ema(x, n: int) -> np.ndarray:
+    """Seed with the mean of the first n, then the usual 2/(n+1) recurrence."""
     x = np.asarray(x, dtype=float)
     out = np.full(x.shape, np.nan)
     if len(x) < n:
         return out
-    k = 2.0 / (n + 1)
-    prev = x[:n].mean()
-    out[n - 1] = prev
-    for i in range(n, len(x)):
-        prev = x[i] * k + prev * (1 - k)
-        out[i] = prev
+    # pandas seeds ewm from the first value, so prepend the loop's own seed.
+    seeded = np.concatenate(([x[:n].mean()], x[n:]))
+    out[n - 1:] = pd.Series(seeded).ewm(span=n, adjust=False).mean().to_numpy()
+    # ewm resumes after a NaN; the loop's recurrence poisons every later value.
+    bad = np.isnan(seeded)
+    if bad.any():
+        out[n - 1 + int(np.argmax(bad)):] = np.nan
     return out
 
 
@@ -220,9 +223,10 @@ def atr(h, l, c, n: int = 14) -> np.ndarray:
     tr = np.maximum(h[1:] - l[1:], np.maximum(abs(h[1:] - pc), abs(l[1:] - pc)))
     # tr[j] corresponds to bar j+1
     pad = np.concatenate(([np.nan], tr))
-    for i in range(n, len(h)):
-        window = pad[i - n + 1:i + 1]
-        out[i] = np.mean(window)
+    # Stride windows, not rolling().mean(): pandas skips NaN, the loop's np.mean
+    # propagates it. Window j ends at bar j+n-1, so the first is bar n-1 (NaN).
+    windows = np.lib.stride_tricks.sliding_window_view(pad, n)
+    out[n - 1:] = windows.mean(axis=-1)
     return out
 
 
@@ -231,9 +235,12 @@ def donchian(h, l, n: int = 20) -> tuple[np.ndarray, np.ndarray]:
     h, l = np.asarray(h, float), np.asarray(l, float)
     upper = np.full(h.shape, np.nan)
     lower = np.full(l.shape, np.nan)
-    for i in range(n, len(h)):
-        upper[i] = h[i - n:i].max()
-        lower[i] = l[i - n:i].min()
+    if len(h) < n:
+        return upper, lower
+    # Window j is bars j..j+n-1 and drives bar j+n; the last window (bar len-1)
+    # would include bar i itself, so it is dropped.
+    upper[n:] = np.lib.stride_tricks.sliding_window_view(h, n).max(axis=-1)[:-1]
+    lower[n:] = np.lib.stride_tricks.sliding_window_view(l, n).min(axis=-1)[:-1]
     return upper, lower
 
 
@@ -248,18 +255,12 @@ def bollinger(c, n: int = 20, k: float = 2.0):
     mid = np.full(c.shape, np.nan)
     up = np.full(c.shape, np.nan)
     lo = np.full(c.shape, np.nan)
-    for i in range(n - 1, len(c)):
-        w = c[i - n + 1:i + 1]
-        m, sd = w.mean(), w.std()
-        mid[i], up[i], lo[i] = m, m + k * sd, m - k * sd
+    if len(c) < n:
+        return mid, up, lo
+    windows = np.lib.stride_tricks.sliding_window_view(c, n)
+    m, sd = windows.mean(axis=-1), windows.std(axis=-1)  # std default ddof=0
+    mid[n - 1:], up[n - 1:], lo[n - 1:] = m, m + k * sd, m - k * sd
     return mid, up, lo
-
-
-def _rsi_at(au: float, ad: float) -> float:
-    """Flat average => 50 (neutral). ad == 0 with movement => 100."""
-    if ad == 0:
-        return 50.0 if au == 0 else 100.0
-    return 100.0 - 100.0 / (1.0 + au / ad)
 
 
 def rsi(c, n: int = 14) -> np.ndarray:
@@ -270,12 +271,18 @@ def rsi(c, n: int = 14) -> np.ndarray:
         return out
     d = np.diff(c)
     up, dn = np.clip(d, 0, None), np.clip(-d, 0, None)
-    au, ad = up[:n].mean(), dn[:n].mean()
-    out[n] = _rsi_at(au, ad)
-    for i in range(n + 1, len(c)):
-        au = (au * (n - 1) + up[i - 1]) / n
-        ad = (ad * (n - 1) + dn[i - 1]) / n
-        out[i] = _rsi_at(au, ad)
+    # Seed as in the loop, then Wilder = ewm(alpha=1/n, adjust=False).
+    au = np.concatenate(([up[:n].mean()], up[n:]))
+    ad = np.concatenate(([dn[:n].mean()], dn[n:]))
+    bad = np.isnan(au) | np.isnan(ad)  # ewm resumes after NaN; the loop does not
+    au = pd.Series(au).ewm(alpha=1.0 / n, adjust=False).mean().to_numpy()
+    ad = pd.Series(ad).ewm(alpha=1.0 / n, adjust=False).mean().to_numpy()
+    # Zero denominator: flat averages are 50, all-gain is 100 (the old helper).
+    ratio = np.divide(au, ad, out=np.zeros_like(au), where=ad != 0)
+    out[n:] = np.where(ad == 0, np.where(au == 0, 50.0, 100.0),
+                       100.0 - 100.0 / (1.0 + ratio))
+    if bad.any():
+        out[n + int(np.argmax(bad)):] = np.nan
     return out
 
 
