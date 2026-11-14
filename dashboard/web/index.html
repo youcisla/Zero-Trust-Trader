@@ -774,7 +774,26 @@ function jevComparison(notes) {
   const choice = (((jev.answers || {}).attention) || {}).choice || null;
   if (!verdict || !choice) return null;
   const same = {stand_down: "stand_down", escalate: "escalate", propose: "show"};
-  return {verdict, choice, agree: same[verdict] === choice};
+  return {verdict, choice, agree: same[verdict] === choice,
+          juryModel: n.model || null, jevModel: jev.model || null};
+}
+
+/** The four-role chain, in order. Jev is a second model beside the verdict, not
+ *  a fifth link: a notes object carrying `jev` must not grow the chain. */
+function chainRoles(roles) {
+  const r = roles || {};
+  return [["scout", "scout"], ["skeptic", "skeptic"], ["chief", "chief"], ["jury", "jury"]]
+    .map(([key, label]) => [key, label, r[key] || {}]);
+}
+
+/** One History row's cells: the four roles, then Jev. A run stored before the
+ *  jev row existed renders as absent (`—`), never as "no candidate" or a zero. */
+function historyCells(run) {
+  const roles = (run || {}).roles || {};
+  const jev = roles.jev || {};
+  return ["scout", "skeptic", "chief", "jury"]
+    .map((k) => ({role: k, headline: (roles[k] || {}).headline || "—"}))
+    .concat([{role: "jev", headline: jev.headline || "—"}]);
 }
 
 /* The heatmap's ramp, in one place. A grid that hard-codes its own red is how two
@@ -1427,12 +1446,10 @@ function Positions({data}) {
 
 function Desk({agent, compact}) {
   if (!agent) return html`<${Empty} text="the desk has not run on this tree" cmd="python agent_brief.py" />`;
-  const roles = agent.roles || {};
-  const order = [["scout", "scout"], ["skeptic", "skeptic"], ["chief", "chief"], ["jury", "jury"]];
+  const order = chainRoles(agent.roles);
   const tone = (r) => (r.status === "ok" ? "ok" : r.status === "rejected" ? "warn" : "bad");
   return html`<div>
-    <div className="chain">${order.map(([key, label]) => {
-      const r = roles[key] || {};
+    <div className="chain">${order.map(([key, label, r]) => {
       const say = r.headline || r.summary || r.verdict || r.why || r.reason
         || (r.status === "no key" ? "no model key — nothing called" : "");
       const u = ((agent.role_metadata || {})[key] || {}).usage || {};
@@ -1459,10 +1476,10 @@ function History({h}) {
   if (!h || !h.runs || !h.runs.length) return html`<${Empty} text="no stored desk runs yet" cmd="python desk_store.py --history 20" />`;
   return html`<div>${h.runs.map((r, i) => html`<div key=${i} style=${{borderTop: i ? "1px solid #1c2430" : "0", paddingTop: "6px", marginTop: "6px"}}>
     <div className="l-faint mono" style=${{fontSize: "var(--t0)"}}>${localize(r.generated_utc)} · ${r.status}</div>
-    <div style=${{display: "grid", gridTemplateColumns: "repeat(4, minmax(0,1fr))", gap: "6px", marginTop: "4px"}}>
-      ${Object.keys(r.roles || {}).map((k) => html`<div key=${k} style=${{fontSize: "var(--t1)"}}>
-        <div className="l-faint" style=${{fontSize: "var(--t0)", textTransform: "uppercase", letterSpacing: ".06em"}}>${k}</div>
-        <div title=${String(r.roles[k].headline || "")}>${String(r.roles[k].headline || "—").slice(0, 70)}</div>
+    <div style=${{display: "grid", gridTemplateColumns: "repeat(5, minmax(0,1fr))", gap: "6px", marginTop: "4px"}}>
+      ${historyCells(r).map((c) => html`<div key=${c.role} style=${{fontSize: "var(--t1)"}}>
+        <div className="l-faint" style=${{fontSize: "var(--t0)", textTransform: "uppercase", letterSpacing: ".06em"}}>${c.role}</div>
+        <div title=${String(c.headline)}>${String(c.headline).slice(0, 70)}</div>
       </div>`)}
     </div>
   </div>`)}</div>`;
@@ -1554,8 +1571,9 @@ function DeskPage({d, data}) {
             <div className="why clamp2">${jev.reason || "no decision-model call has been recorded yet"}</div>
             <div className="l-faint" style=${{marginTop: "6px", fontSize: "var(--t0)"}}>
               It answers typed questions only — ${(jev.would_ask || ["attention", "grounded"]).join(", ")} — and nothing here is read back as a gate.</div>`}
-        ${cmp ? html`<div className="kv" style=${{marginTop: "8px"}}><span>jury vs jev</span>
-          <b>${cmp.verdict} / ${cmp.choice} · ${cmp.agree ? "agree" : "disagree"}</b></div>` : null}
+        ${cmp ? html`<div className="kv" style=${{marginTop: "8px"}}><span>JURY VS JEV</span>
+          <b title=${(cmp.juryModel || "deepseek") + " " + cmp.verdict + " / " + (cmp.jevModel || "jev") + " " + cmp.choice}>
+            jury ${cmp.verdict} / jev ${cmp.choice} · ${cmp.agree ? "agree" : "disagree"}</b></div>` : null}
       <//>
     </div>
     <${Card} title="History" note="every stored run, newest first">
