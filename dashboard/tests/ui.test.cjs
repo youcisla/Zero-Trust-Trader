@@ -17,7 +17,7 @@ const helpers = source.split('// BEGIN fixture-tested state helpers')[1]
 const EXPORTS = ['scanCurrent', 'scanRunState', 'transportFresh', 'protectionLabel', 'parseFunnel', 'lastFunnel',
   'ledgerRows', 'pipeline', 'edgeCounts', 'edgeStates', 'computeDrawdown', 'bonferroniMirror',
   'sessionState', 'derive', 'fmtDur', 'fmtTok', 'todayStats', 'num2', 'signed', 'backoffMs',
-  'heatFrac', 'heatRgb', 'HEAT_METRICS', 'esc'];
+  'heatFrac', 'heatRgb', 'HEAT_METRICS', 'esc', 'jevComparison'];
 
 function load() {
   return vm.runInNewContext(helpers + '\n({' + EXPORTS.join(',') + '})', {});
@@ -290,6 +290,29 @@ test('historical is a fact about the artifacts, not a guess', () => {
   const stale = h.derive({scan: {current: false}, tier3: {stood_down: true}}, true, 0);
   assert.equal(stale.historical, true);
   assert.equal(stale.verdict, null, 'a stale artifact is never shown as the verdict');
+});
+
+/* ---- the second opinion --------------------------------------------- */
+
+test('the jury and jev are compared only when both answered', () => {
+  const notes = (verdict, choice) => ({
+    roles: {jury: {status: 'ok', verdict}},
+    jev: {status: 'ok', answers: {attention: {choice}}},
+  });
+  // both present and agreeing; propose and "show" name the same outcome
+  const same = h.jevComparison(notes('propose', 'show'));
+  assert.equal(same.verdict, 'propose');
+  assert.equal(same.choice, 'show');
+  assert.equal(same.agree, true);
+  assert.equal(h.jevComparison(notes('stand_down', 'stand_down')).agree, true);
+  // both present and disagreeing
+  assert.equal(h.jevComparison(notes('stand_down', 'escalate')).agree, false);
+  assert.equal(h.jevComparison(notes('propose', 'stand_down')).agree, false);
+  // jev disabled: no answers, so no comparison
+  assert.equal(h.jevComparison({roles: {jury: {status: 'ok', verdict: 'stand_down'}}, jev: {status: 'disabled'}}), null);
+  // jury absent: nothing to compare against
+  assert.equal(h.jevComparison({jev: {status: 'ok', answers: {attention: {choice: 'show'}}}}), null);
+  assert.equal(h.jevComparison(null), null);
 });
 
 /* ---- the heatmap ramp ------------------------------------------------ */

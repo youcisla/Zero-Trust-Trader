@@ -762,6 +762,21 @@ function todayStats(rows, nowS) {
   };
 }
 
+/** The one comparison this page draws: the desk's jury verdict beside the
+ *  decision model's own `attention` choice. Null unless both were recorded — an
+ *  absent side is an absent comparison, never a fabricated "agree". The two
+ *  vocabularies name the same three outcomes (`propose` is Jev's `show`). */
+function jevComparison(notes) {
+  const n = notes || {};
+  const jury = (n.roles || {}).jury || {};
+  const jev = n.jev || {};
+  const verdict = jury.verdict || null;
+  const choice = (((jev.answers || {}).attention) || {}).choice || null;
+  if (!verdict || !choice) return null;
+  const same = {stand_down: "stand_down", escalate: "escalate", propose: "show"};
+  return {verdict, choice, agree: same[verdict] === choice};
+}
+
 /* The heatmap's ramp, in one place. A grid that hard-codes its own red is how two
    views end up disagreeing about which symbol is the expensive one. */
 const HEAT_METRICS = {
@@ -1509,6 +1524,7 @@ function DeskPage({d, data}) {
   const att = ((jev.answers || {}).attention || {});
   const grounded = ((jev.answers || {}).grounded || {});
   const hist = (data && data.desk_history) || null;
+  const cmp = jevComparison(agent);
   return html`<div className="contents">
     <div className="hero band">
       <span className="tag">advisory</span>
@@ -1527,7 +1543,10 @@ function DeskPage({d, data}) {
         <${Desk} agent=${agent} compact=${false} />
       <//>
       <${Card} title="Decision model" note=${jev.model || "typesafe/jev-1.14"}>
-        ${jev.status === "ok" ? html`
+        <div className="kv"><span>state</span><b>${jev.status === "disabled" ? "disabled" : jev.status ? "enabled" : "not run"}</b></div>
+        ${jev.status === "disabled"
+          ? html`<div className="why clamp2">Off by default. Turn it on with jev_enabled = true under [decisions] in desk.toml, or set ZTT_JEV=1.</div>`
+          : jev.status === "ok" ? html`
           <div className="kv"><span>attention</span><b>${att.choice || "—"} ${att.probability == null ? "" : num0(att.probability * 100) + "%"}</b></div>
           <div className="kv"><span>grounded</span><b>${grounded.choice == null ? "—" : String(grounded.choice)}</b></div>
           <div className="kv"><span>confidence</span><b>${att.confidence == null ? "—" : num0(att.confidence * 100) + "%"}</b></div>`
@@ -1535,6 +1554,8 @@ function DeskPage({d, data}) {
             <div className="why clamp2">${jev.reason || "no decision-model call has been recorded yet"}</div>
             <div className="l-faint" style=${{marginTop: "6px", fontSize: "var(--t0)"}}>
               It answers typed questions only — ${(jev.would_ask || ["attention", "grounded"]).join(", ")} — and nothing here is read back as a gate.</div>`}
+        ${cmp ? html`<div className="kv" style=${{marginTop: "8px"}}><span>jury vs jev</span>
+          <b>${cmp.verdict} / ${cmp.choice} · ${cmp.agree ? "agree" : "disagree"}</b></div>` : null}
       <//>
     </div>
     <${Card} title="History" note="every stored run, newest first">
@@ -2164,8 +2185,9 @@ function Layers({data}) {
           <div className="why clamp2">${jev.reason || "no decision-model call has been recorded yet"}</div>
           <div className="l-faint" style=${{fontSize: "var(--t1)", marginTop: "6px"}}>
             It would answer two typed questions — ${(jev.would_ask || ["attention", "grounded"]).join(", ")} —
-            with a label and probabilities, and no prose. Put OPENROUTER_API_KEY in .env; it is advisory and can never
-            gate, size or approve.</div>`}
+            with a label and probabilities, and no prose. Turn it on with jev_enabled = true under [decisions]
+            in desk.toml or ZTT_JEV=1, and put OPENROUTER_API_KEY in .env; it is advisory and can never gate, size
+            or approve.</div>`}
     <//>
   </div>`;
 }
