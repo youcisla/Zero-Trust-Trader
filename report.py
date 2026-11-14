@@ -143,7 +143,7 @@ border:1px solid var(--line);background:var(--card)}
 gap:10px;margin-bottom:28px}
 .prov div{background:var(--card);border:1px solid var(--line);border-radius:6px;
 padding:8px 10px}
-.prov span{display:block;color:var(--dim);font-size:10px;text-transform:uppercase;
+.prov span{display:block;color:var(--dim);font-size:11px;text-transform:uppercase;
 letter-spacing:.07em}
 .prov b{font:600 13px ui-monospace,Consolas,monospace}
 .card{background:var(--card);border:1px solid var(--line);border-radius:8px;
@@ -158,7 +158,7 @@ border:1px solid var(--line)}
 .rule{margin:0 0 12px;color:var(--dim);font-size:12.5px}
 .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-bottom:12px}
 .stats b{display:block;font:600 15px ui-monospace,Consolas,monospace}
-.stats span{color:var(--dim);font-size:10px;text-transform:uppercase;
+.stats span{color:var(--dim);font-size:11px;text-transform:uppercase;
 letter-spacing:.06em}
 table.gates{width:100%;border-collapse:collapse;font-size:12.5px}
 table.gates td{padding:7px 8px;border-top:1px solid var(--line);vertical-align:top}
@@ -166,7 +166,7 @@ td.g{color:var(--dim);white-space:nowrap;width:1%}
 td.ok{color:var(--ok)} td.no{color:var(--no)}
 td.d{color:var(--fg);font-size:12px}
 .why{margin:12px 0 0;font-size:12.5px;color:var(--dim)}
-.why span{color:var(--fg);text-transform:uppercase;font-size:10px;
+.why span{color:var(--fg);text-transform:uppercase;font-size:11px;
 letter-spacing:.07em;margin-right:6px}
 footer{margin-top:28px;color:var(--dim);font-size:11.5px;border-top:1px solid var(--line);
 padding-top:14px}
