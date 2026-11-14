@@ -371,7 +371,7 @@ strategy family that could never fire). Neither raised an exception.
 `tests/test_position_manager.py` asserts these as a property sweep over 3,000
 randomised positions. If your change breaks it, your change is wrong — not the test.
 
-`--only-comment PREFIX` (opt-in, inactive unless given) restricts the supervisor to
+`--only-comment PREFIX` (opt-in, off by default) restricts the supervisor to
 positions whose broker `comment` starts with the prefix: it trails, stops and
 closes only those, and reports every other position as `not managed: comment <c>`
 — still listed, so the published positions cannot read as flat. This exists
