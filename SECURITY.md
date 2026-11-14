@@ -64,8 +64,9 @@ See [incident and recovery procedure](docs/OPERATIONS.md) for evidence handling.
 
 The advisory desk is the only component that calls a third party. It sends the
 scan digest, the candidates and the notes to DeepSeek (`desk.py`, `agent_brief.py`),
-and — when `OPENROUTER_API_KEY` is set — two typed questions to the decision model
-(`desk.jev`). What goes out is artifact text: symbols, statistics, prices and the
+and — when the decision model is enabled (`desk.toml` `[decisions] jev_enabled`
+or `ZTT_JEV=1`) and `OPENROUTER_API_KEY` is set — two typed questions to the
+decision model (`desk.jev`). What goes out is artifact text: symbols, statistics, prices and the
 desk's own sentences. No account number, no key, no local path: `desk_store`
 redacts the login and rewrites machine paths before anything is written, and
 `tools/check_public.py` fails the build if one appears in a tracked file.

@@ -64,7 +64,8 @@ def main(argv=None) -> int:
         return 0
 
     feeds = [u.strip() for u in a.feeds.split(",") if u.strip()] or feeds_from_config(root)
-    notes = desk.run(root, feeds, a.model)
+    # The decision-model switch is read once, here; the desk itself never guesses.
+    notes = desk.run(root, feeds, a.model, jev_enabled=desk.jev_enabled(root))
     path = desk.write_notes(root, notes)
     journal = desk.append_journal(root, notes)
     # The JSON above is the current state; the database is the record. Both are

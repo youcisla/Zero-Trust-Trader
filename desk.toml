@@ -8,3 +8,9 @@ news_feeds = [
   "https://feeds.bbci.co.uk/news/business/rss.xml",
   "https://www.investing.com/rss/news_1.rss",
 ]
+
+# The opt-in decision model (typesafe/jev) is off unless this is turned on.
+# ZTT_JEV=1 in the environment or .env overrides this line. It stays advisory:
+# nothing here can gate, size, approve or veto.
+[decisions]
+jev_enabled = false

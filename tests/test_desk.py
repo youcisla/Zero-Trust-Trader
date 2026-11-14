@@ -629,6 +629,67 @@ class TheDecisionModelLayer(unittest.TestCase):
         self.assertTrue(all('notes["jev"] =' in l for l in lines), lines)
 
 
+class TestJevSwitch(unittest.TestCase):
+    """The decision-model switch: off unless asked, and never a crash to read."""
+
+    def setUp(self):
+        self.dir = TemporaryDirectory()
+        self.root = Path(self.dir.name)
+        self.addCleanup(self.dir.cleanup)
+        self._env = mock.patch.dict(os.environ, {}, clear=False)
+        self._env.start()
+        self.addCleanup(self._env.stop)
+        os.environ.pop("ZTT_JEV", None)   # a stray value must not decide this
+
+    def _toml(self, text):
+        (self.root / "desk.toml").write_text(text, encoding="utf-8")
+
+    def test_off_with_nothing_set(self):
+        self.assertFalse(desk.jev_enabled(self.root))
+
+    def test_the_environment_wins_over_the_file(self):
+        self._toml("[decisions]\njev_enabled = false\n")
+        with mock.patch.dict(os.environ, {"ZTT_JEV": "1"}):
+            self.assertTrue(desk.jev_enabled(self.root))
+        self._toml("[decisions]\njev_enabled = true\n")
+        with mock.patch.dict(os.environ, {"ZTT_JEV": "0"}):
+            self.assertFalse(desk.jev_enabled(self.root))
+
+    def test_the_file_is_the_fallback(self):
+        self._toml("[decisions]\njev_enabled = true\n")
+        self.assertTrue(desk.jev_enabled(self.root))
+
+    def test_a_present_but_unparseable_env_is_off(self):
+        # A broken "off" must not fall through to the file and switch it on.
+        self._toml("[decisions]\njev_enabled = true\n")
+        with mock.patch.dict(os.environ, {"ZTT_JEV": "maybe"}):
+            self.assertFalse(desk.jev_enabled(self.root))
+
+    def test_a_non_utf8_dotenv_does_not_crash(self):
+        # `.env` is untrusted bytes: a corrupt one reads as off, not a traceback.
+        (self.root / ".env").write_bytes(b"DEEPSEEK_API_KEY=sk\n\xff\xfe not utf8\n")
+        self.assertFalse(desk.jev_enabled(self.root))
+
+    def test_a_malformed_file_reads_as_off(self):
+        self._toml("[decisions\njev_enabled = true\n")   # broken TOML
+        self.assertFalse(desk.jev_enabled(self.root))
+
+    def test_a_missing_file_reads_as_off(self):
+        self.assertFalse(desk.jev_enabled(self.root / "no-such-dir"))
+
+    def test_disabled_makes_no_call(self):
+        with mock.patch.object(desk, "_post") as post:
+            out = desk.jev("x", {}, "test-key", enabled=False)
+        post.assert_not_called()
+        self.assertEqual(out["status"], "disabled")
+        self.assertEqual(out["would_ask"], ["attention", "grounded"])
+
+    def test_disabled_is_disabled_not_error(self):
+        out = desk.jev("x", {}, "test-key", enabled=False)
+        self.assertEqual(out["status"], "disabled")
+        self.assertNotEqual(out["status"], "error")
+
+
 class _Handler(BaseHTTPRequestHandler):
     def do_POST(self):  # noqa: N802 - the base class names it
         length = int(self.headers.get("Content-Length", 0))

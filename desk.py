@@ -31,6 +31,7 @@ import json
 import math
 import os
 import re
+import tomllib
 import urllib.error
 import urllib.request
 from urllib.parse import urlsplit
@@ -118,15 +119,62 @@ JEV_QUESTIONS = {
 }
 
 
+def _flag(value: str | None) -> bool | None:
+    """0/1, plus the obvious spellings. None means "say nothing"."""
+    v = (value or "").strip().lower()
+    if v in {"1", "true", "yes", "on"}:
+        return True
+    if v in {"0", "false", "no", "off"}:
+        return False
+    return None
+
+
+def jev_enabled(root: Path) -> bool:
+    """Whether the decision-model layer may be called. Off unless asked.
+
+    ZTT_JEV (environment, then `.env`) wins; otherwise desk.toml
+    `[decisions] jev_enabled`; otherwise False. A present but unparseable ZTT_JEV
+    is off, and unreadable or malformed config is False - a layer that cannot be
+    read is a layer that does not run.
+    """
+    raw = os.environ.get("ZTT_JEV", "").strip()
+    if not raw:
+        try:
+            for line in (root / ".env").read_text(encoding="utf-8").splitlines():
+                if line.strip().startswith("ZTT_JEV="):
+                    raw = line.split("=", 1)[1].strip().strip('"').strip("'")
+                    break
+        except (OSError, ValueError):
+            pass
+    if raw:
+        # Present wins, even unparseable: a broken "off" must not fall through to
+        # the file and quietly switch the layer on.
+        return bool(_flag(raw))
+    try:
+        data = tomllib.loads((root / "desk.toml").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return False
+    section = data.get("decisions")
+    value = section.get("jev_enabled") if isinstance(section, dict) else None
+    return value if isinstance(value, bool) else False
+
+
 def jev(facts: str, desk_view: dict, key: str | None, *, url: str = JEV_URL,
-        timeout: int = 30) -> dict:
+        timeout: int = 30, enabled: bool = True) -> dict:
     """A typed decision on the same evidence the jury saw.
 
     Advisory only: it returns a label and probabilities, never prose, and nothing in
     this file reads its answer back into a verdict, a size or a gate. `status` is
-    `ok`, `not configured` or `error` - a decision model that is not reachable is a
-    visible absence, not a silent zero.
+    `ok`, `disabled`, `not configured` or `error` - a decision model that is not
+    reachable is a visible absence, not a silent zero.
     """
+    if not enabled:
+        # A disabled layer costs zero network and zero tokens: this returns
+        # before `_post`, so "off" can never bill anyone.
+        return {"status": "disabled", "model": JEV_MODEL,
+                "reason": "the decision model is off (set [decisions] jev_enabled = true "
+                          "in desk.toml, or ZTT_JEV=1)",
+                "would_ask": sorted(JEV_QUESTIONS)}
     if not key:
         return {"status": "not configured", "model": JEV_MODEL,
                 "reason": "OPENROUTER_API_KEY is not set (env or .env)",
@@ -690,7 +738,8 @@ def headlines(feeds: list[str], limit: int = 20) -> list[dict]:
     return out
 
 
-def run(root: Path, feeds: list[str] | None = None, model: str | None = None) -> dict:
+def run(root: Path, feeds: list[str] | None = None, model: str | None = None,
+        jev_enabled: bool = False) -> dict:
     """Produce the desk's notes. Never raises on a model failure — it records it."""
     now = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
     facts = digest(root)
@@ -759,7 +808,7 @@ def run(root: Path, feeds: list[str] | None = None, model: str | None = None) ->
     try:
         notes["jev"] = jev(facts, {"verdict": verdict_note.get("verdict"),
                                    "why": verdict_note.get("why") or ""},
-                           openrouter_key(root))
+                           openrouter_key(root), enabled=jev_enabled)
     except Exception as e:  # a layer that fails must not take the desk with it
         notes["jev"] = {"status": "error", "model": JEV_MODEL, "reason": str(e)}
 
