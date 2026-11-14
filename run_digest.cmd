@@ -17,6 +17,13 @@ if errorlevel 1 (
     exit /b 1
 )
 
+REM DX-03: bound the appended digest at 5 MiB (one rotated .1 kept) and stamp
+REM each run with an ISO time. status_digest.out is truncated by `>` above, so
+REM only the append target needs rotating.
+if exist "digest.out" for %%A in ("digest.out") do if %%~zA GTR 5242880 move /y "digest.out" "digest.out.1" >nul 2>&1
+for /f %%I in ('powershell -NoProfile -Command "Get-Date -Format o" 2^>nul') do set "RUN_TS=%%I"
+if not defined RUN_TS set "RUN_TS=%DATE% %TIME%"
+echo ==== run %RUN_TS% ==== >> digest.out
 REM Numbers must already be in the file. A digest that invents a z-score is the
 REM one failure this project exists to prevent, so the prompt forbids inference
 REM and the tool list forbids action.
