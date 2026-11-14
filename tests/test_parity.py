@@ -139,6 +139,41 @@ class TestBacktestMatchesTier2(unittest.TestCase):
         self.assertGreater(len(calls), 0, "backtest must use the live exit function")
 
 
+class TestEveryFamilyMatchesTier2(unittest.TestCase):
+    """Every family's backtest entry must be a Tier 2 signal on the same side.
+
+    Only Donchian was covered, so RSI and Bollinger could have drifted to grade
+    a rule the scan never proposes and no test would have said so. Both share
+    the extracted trigger predicates now, and this is what holds them there.
+    """
+
+    def setUp(self):
+        self.bars = osc()
+
+    def _assert_entries_are_signals(self, trades, family):
+        checked = [t for t in trades if t["bar"] >= MIN_BARS]
+        self.assertGreater(len(checked), 0, f"{family}: fixture must produce trades")
+        for tr in checked:
+            i = tr["bar"]
+            view = {k: v[: i + 1] for k, v in self.bars.items()}
+            sigs = [s for s in t2.scan_symbol(view, 20, 50, 200)
+                    if s["strategy"] == family]
+            self.assertTrue(sigs, f"{family} bar {i}: backtest traded where tier2 signals nothing")
+            self.assertEqual(sigs[0]["side"], tr["side"], f"{family} bar {i}: side disagreement")
+
+    def test_donchian_entries_are_tier2_signals(self):
+        trades = tm.scan_donchian(self.bars, 20, 1.5, 1.5, 32, "both", 50, 200, 0.0, False)
+        self._assert_entries_are_signals(trades, "donchian")
+
+    def test_rsi_entries_are_tier2_signals(self):
+        trades = tm.scan_rsi(self.bars, 14, 35.0, 65.0, 1.5, 1.5, 32, "both", 0.0, False)
+        self._assert_entries_are_signals(trades, "rsi")
+
+    def test_bollinger_entries_are_tier2_signals(self):
+        trades = tm.scan_bollinger(self.bars, 20, 2.0, 1.5, 1.5, 32, "both", 0.0, False)
+        self._assert_entries_are_signals(trades, "bollinger")
+
+
 class TestLiveExitRules(unittest.TestCase):
     def _bars_around_close(self):
         """Flat bars every 15 min from 16:00 UTC, so only time can close a trade."""
