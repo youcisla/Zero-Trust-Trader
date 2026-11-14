@@ -95,6 +95,17 @@ def connect(root: Path) -> sqlite3.Connection:
 
 def headline(role: str, note: dict) -> str:
     """One line that is the answer, whatever shape the role returned."""
+    if role == "jev":
+        # The decision model is typed, not prose: its choice, the probability it
+        # gave that choice, and whether it found the desk's figures grounded.
+        answers = note.get("answers") or {}
+        attention = answers.get("attention") or {}
+        choice = attention.get("choice")
+        if isinstance(choice, str) and choice:
+            prob = (attention.get("probabilities") or {}).get(choice)
+            line = f"{choice} (p {prob:.2f})" if isinstance(prob, (int, float)) else choice
+            grounded = (answers.get("grounded") or {}).get("choice")
+            return f"{line} · grounded: {grounded}" if isinstance(grounded, str) and grounded else line
     items = note.get("items")
     if isinstance(items, list) and items:
         mapped = sum(1 for i in items if isinstance(i, dict) and i.get("symbols"))
@@ -124,7 +135,10 @@ def record(root: Path, notes: dict) -> Path:
             if cur.rowcount == 0:                     # this run is already stored
                 return root / DB
             run_id = cur.lastrowid
-            for role, note in (notes.get("roles") or {}).items():
+            stored = list((notes.get("roles") or {}).items())
+            if isinstance(notes.get("jev"), dict):
+                stored.append(("jev", notes["jev"]))   # a second model, one more answer
+            for role, note in stored:
                 if not isinstance(note, dict):
                     continue
                 payload = _redact(json.dumps(note, ensure_ascii=False, sort_keys=True), secrets)

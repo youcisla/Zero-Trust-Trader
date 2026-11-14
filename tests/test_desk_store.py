@@ -26,6 +26,18 @@ def notes(when="2026-11-10T09:00:00Z", **over):
     return base
 
 
+def jev():
+    """The shape desk.jev() returns on a live answer."""
+    return {"status": "ok", "model": "typesafe/jev-1.14-20261014",
+            "usage": {"input_tokens": 1200},
+            "answers": {
+                "attention": {"type": "choice", "choice": "stand_down", "confidence": 0.98,
+                              "probabilities": {"show": 0, "stand_down": 0.99, "escalate": 0.01}},
+                "grounded": {"type": "choice", "choice": "supported", "confidence": 0.92,
+                             "probabilities": {"supported": 0.96, "unsupported": 0.04}},
+            }}
+
+
 class RoundTripTests(unittest.TestCase):
     def test_a_run_is_one_row_and_each_role_one_answer(self):
         with TemporaryDirectory() as d:
@@ -75,6 +87,50 @@ class RoundTripTests(unittest.TestCase):
     def test_an_empty_tree_says_nothing_rather_than_zero(self):
         with TemporaryDirectory() as d:
             self.assertEqual(desk_store.history(Path(d)), [])
+
+
+class JevRowTests(unittest.TestCase):
+    """Jev is a second model beside the verdict: one stored row, never an input."""
+
+    def test_a_jev_answer_is_stored_as_its_own_row(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            desk_store.record(root, notes(jev=jev()))
+            rows = desk_store.history(root)
+        self.assertEqual(rows[0]["roles"]["jev"]["headline"],
+                         "stand_down (p 0.99) · grounded: supported")
+
+    def test_the_stored_row_is_the_headline_and_the_typed_note(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            note = jev()
+            desk_store.record(root, notes(jev=note))
+            got = desk_store.answers(root, "jev")
+        self.assertEqual(set(got[0]["payload"]), set(note))   # no key the note lacks
+
+    def test_the_export_carries_the_jev_answer(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            desk_store.record(root, notes(jev=jev()))
+            view = json.loads(desk_store.export(root).read_text(encoding="utf-8"))
+        self.assertEqual(view["runs"][0]["roles"]["jev"]["headline"],
+                         "stand_down (p 0.99) · grounded: supported")
+
+    def test_a_run_without_jev_stores_no_row(self):
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            desk_store.record(root, notes())
+            rows = desk_store.history(root)
+        self.assertNotIn("jev", rows[0]["roles"])
+
+    def test_a_disabled_layer_is_its_reason_not_a_label(self):
+        off = {"status": "disabled", "model": "typesafe/jev-1.14",
+               "reason": "the decision model is off"}
+        with TemporaryDirectory() as d:
+            root = Path(d)
+            desk_store.record(root, notes(jev=off))
+            rows = desk_store.history(root)
+        self.assertEqual(rows[0]["roles"]["jev"]["headline"], "the decision model is off")
 
 
 class NoSecretsTests(unittest.TestCase):

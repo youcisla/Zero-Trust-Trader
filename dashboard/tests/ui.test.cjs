@@ -17,7 +17,7 @@ const helpers = source.split('// BEGIN fixture-tested state helpers')[1]
 const EXPORTS = ['scanCurrent', 'scanRunState', 'transportFresh', 'protectionLabel', 'parseFunnel', 'lastFunnel',
   'ledgerRows', 'pipeline', 'edgeCounts', 'edgeStates', 'computeDrawdown', 'bonferroniMirror',
   'sessionState', 'derive', 'fmtDur', 'fmtTok', 'todayStats', 'num2', 'signed', 'backoffMs',
-  'heatFrac', 'heatRgb', 'HEAT_METRICS', 'esc', 'jevComparison'];
+  'heatFrac', 'heatRgb', 'HEAT_METRICS', 'esc', 'jevComparison', 'chainRoles', 'historyCells'];
 
 function load() {
   return vm.runInNewContext(helpers + '\n({' + EXPORTS.join(',') + '})', {});
@@ -313,6 +313,29 @@ test('the jury and jev are compared only when both answered', () => {
   // jury absent: nothing to compare against
   assert.equal(h.jevComparison({jev: {status: 'ok', answers: {attention: {choice: 'show'}}}}), null);
   assert.equal(h.jevComparison(null), null);
+  // both model names travel with the comparison, so the row can name its sides
+  const named = h.jevComparison({model: 'deepseek-flash', roles: {jury: {status: 'ok', verdict: 'stand_down'}},
+    jev: {status: 'ok', model: 'typesafe/jev-1.14', answers: {attention: {choice: 'stand_down'}}}});
+  assert.equal(named.juryModel, 'deepseek-flash');
+  assert.equal(named.jevModel, 'typesafe/jev-1.14');
+});
+
+test('a notes object carrying jev does not add a fifth role to the chain', () => {
+  const chain = h.chainRoles({scout: {status: 'ok'}, skeptic: {status: 'ok'}, chief: {status: 'ok'},
+    jury: {status: 'ok'}, jev: {status: 'ok'}});
+  assert.deepEqual(Array.from(chain, ([key]) => key), ['scout', 'skeptic', 'chief', 'jury']);
+  assert.deepEqual(Array.from(chain, ([, label]) => label), ['scout', 'skeptic', 'chief', 'jury']);
+});
+
+test('the history row shows jev, and an older run without it shows absent', () => {
+  const old = h.historyCells({roles: {scout: {headline: '2 items'}, skeptic: {headline: 'noise'},
+    chief: {headline: 'stand down'}, jury: {headline: 'stand_down'}}});
+  assert.deepEqual(Array.from(old, (c) => c.role), ['scout', 'skeptic', 'chief', 'jury', 'jev']);
+  assert.equal(old[4].headline, '—');            // absent, not "no candidate", not zero
+  const newer = h.historyCells({roles: {jury: {headline: 'stand_down'},
+    jev: {headline: 'stand_down (p 0.99) · grounded: supported'}}});
+  assert.equal(newer[4].headline, 'stand_down (p 0.99) · grounded: supported');
+  assert.equal(h.historyCells(null).length, 5);
 });
 
 /* ---- the heatmap ramp ------------------------------------------------ */
