@@ -350,3 +350,130 @@ new correction than a single holdout.
 | A noise-injection look-ahead audit as a gate | our look-ahead boundary is the forming bar dropped in `fetch`, true by construction and cheap; their M6 re-runs the strategy at every timestamp, which is minutes per symbol inside a scan that already takes tens of minutes. Worth a `tools/` audit one day, under §7's before/after rule |
 | A block bootstrap inside the live Monte Carlo | it changes the drawdown distribution `docs/SIZE-AND-RUIN.md` is built on; a silent change to a sizing input is the class of edit §4 exists to stop |
 | "Don't be afraid to overfit" | its own top reply is our gate: 10,000 backtests and one god-tier equity curve is selection bias, not a strategy. The thread's answer — control for data mining — is what gate 5 already does |
+
+---
+
+## 6. TradingAgents (`TauricResearch/TradingAgents`) — a firm of LLM analysts and a simulated exchange
+
+Read 2026-11-14. Apache-2.0, ~122.6k stars as `gh repo view` reported them, Python, created 2024-12-28, last push 2026-11-04. A LangGraph multi-agent framework: fundamentals, sentiment, news and technical analysts run in parallel, a bullish/bearish researcher debate follows, then a trader, a risk team and a portfolio manager drive `TradingAgentsGraph().propagate(ticker, date)` over any provider (OpenAI, Anthropic, DeepSeek, Qwen, GLM, Ollama, a ChatGPT plan). It reads SEC EDGAR fundamentals as filed, keeps a decision memory log, and scores a backtest grid on realized alpha against a regional benchmark. https://github.com/TauricResearch/TradingAgents
+
+Its own README says it is "not a strategy with a fixed, replicable return" and that two runs of the same ticker and date can differ.
+
+### What we already do
+
+| Their component | Ours | Verdict |
+| --- | --- | --- |
+| Portfolio Manager approves and sends to a **simulated exchange** | no code path places an order; human `APPROVED` + single-use bridge token; demo-only pre-flight | ours refuses execution structurally, not by a flag |
+| Sentiment / News / Fundamentals / Technical analysts, four roles | `desk.py` scout / skeptic / chief / jury, four roles, post-scan and advisory | same shape; ours cannot gate or size (the jury's `size_lots` is forced to 0.01) |
+| "Grounds exact price and indicator claims in a verified data snapshot" | `desk._guard()` rejects a note containing any number absent from its source artifact | ours is enforced (whole note rejected), theirs is a grounding step |
+| Memory log settles each past decision and reflects | `desk_history.sqlite` + `docs/desk-history.jsonl`, and `tools/desk_scorecard.py` measures a role's firing rate | ours is queryable history, theirs is per-ticker prose |
+| Technical analyst uses MACD and RSI | MACD was removed as duplicate trend exposure (`AGENTS.md` §7); RSI kept with a flat-series fix | ours carries the degenerate-case test |
+| Point-in-time SEC EDGAR fundamentals | the broker's own bars, forming bar dropped in `fetch` | different data, the same look-ahead concern |
+| Backtest scores realized alpha vs a regional benchmark | gate 5 cumulative Bonferroni + gate 6 random-entry permutation | ours corrects for the number of hypotheses; theirs reports |
+
+### What we took
+
+A page number for the desk's own structure, and one question to test under §7 rather than adopt here. Their separation of an analyst team from a risk team, with one portfolio manager as the single approver, is the boundary `desk.py` already draws between the advisory three and the jury — so this evaluation confirms the shape instead of changing it. The one thing the README states that ours does not yet act on is passing the **actual portfolio** to the risk roles so the analysis is written against the real book; our desk reads the snapshot, and whether the risk roles should receive an explicit position context is a desk question, not an execution one. Nothing lands in code: this is a read-only ticket.
+
+### What we refused
+
+| Idea | Why not |
+| --- | --- |
+| The portfolio manager's authority to send an approved order | `AGENTS.md` §1: the agent may research and change the system, it may not trade. "Approved by a model" is not gate 8, the human `APPROVED` + one-time bridge consent |
+| A framework of eight LLM roles around one decision | a scan must not block on a model call or a provider's latency; `agent_brief.py` runs after the scan and writes one derived file. More roles is more prose, not more gate |
+| Its backtest grid as evidence of an edge | scored by realized alpha with no multiple-testing correction over a ticker x date grid; our permutation null exists because a p of 0.015 is expected ~8 times in a 568-symbol scan (`AGENTS.md` §3) |
+| Reproducibility by temperature | the README concedes sampling is non-deterministic and reasoning models ignore temperature; a gate's resolution may not vary between runs (§4.10, the same reason the permutation count is fixed) |
+
+---
+
+## 7. Vibe-Trading (`HKUDS/Vibe-Trading`) — a personal agent with live broker connectors
+
+Read 2026-11-14. MIT, ~38.2k stars as reported, Python 3.11+ with FastAPI and React 19, created 2026-04-01, last push on the day this was read. CLI, Web, HTTP API and an MCP server around one agent: market research, an "Alpha Zoo" of 478 signals across five libraries (Qlib, Alpha101, GTJA, and the academic and fundamental libraries), backtest engines for A-share, crypto and futures, an options lab, paper trading, and **19 broker connectors** of which alpaca, binance, etoro, futu, **mt5**, okx, robinhood and tiger are marked live. https://github.com/HKUDS/Vibe-Trading
+
+Its disclaimer says the broker-trading capability is "experimental and not verified by us against a real broker account".
+
+### What we already do
+
+| Their feature | Ours | Verdict |
+| --- | --- | --- |
+| Live trading under a "mandate", halted by a kill switch | `KILL_SWITCH` freezes scan and supervisor, but no connector can place an order — human + bridge token only | ours refuses by construction; theirs refuses by configuration |
+| Alpha Zoo, 478 factors, "check whether the result survives a walk-forward test" | `trials_total` counts every hypothesis; gate 5 corrects against the cumulative count, never the zoo's best | 478 uncounted tests is 478 ways to look significant |
+| Research Lab: select on train, freeze, test out of sample, separate final holdout | tier 3 on 15,000 bars, both gates, one window (§5 already notes no rolling split) | theirs has the split we lack; we have the correction it does not show |
+| 28 market-data sources with smart fallback | the broker's own bars, live spread charged per symbol | one measured source beats a fallback chain for a gate |
+| `lookahead-analysis`, run records, dated research artifacts | `fetch` drops the forming bar; the ledger is the record; `desk_history` is the advisory record | same concern, different mechanism |
+| Web + API + MCP + CLI, several write surfaces | the dashboard has exactly one write (`POST /api/scan`) and no order route | ours is a monitor; theirs is a control surface |
+
+### What we took
+
+The Research Lab's stated protocol — choose parameters on training results only, then freeze them for an out-of-sample test and a separate final holdout — is the one discipline here worth naming for §7. It is the split our single 15,000-bar window does not make (already noted beside the r/quant list in §5), and naming it changes no gate. Nothing lands in code.
+
+### What we refused
+
+| Idea | Why not |
+| --- | --- |
+| The live-broker execution path, MT5 included, however gated | `AGENTS.md` §1 and gate 8: an in-app mandate is not a human `APPROVED` plus a single-use bridge token, and their own README calls it unverified against a real account |
+| The 478-alpha zoo as a shortcut to a candidate | every factor is a hypothesis; the bar is cumulative `bonferroni_z(trials_total)` plus a permutation null, neither of which a zoo clears by being large |
+| A 28-source data fallback chain | a backtest on a scraped unofficial endpoint with an inferred market is not the broker's market; our spread is charged from the live terminal |
+| A second and third write surface (Web, MCP, HTTP) | this process has one write by design (`AGENTS.md` §9); `POST /api/scan` runs exactly what the scheduler runs and places nothing |
+
+---
+
+## 8. Kronos (`shiyu-coder/Kronos`) — a foundation model for K-line sequences
+
+Read 2026-11-14. MIT, ~47.8k stars as reported, Python 3.10+, created 2025-07-01, last push 2026-04-13; accepted at AAAI 2026. A decoder-only, autoregressive transformer over discrete tokens: a tokenizer quantizes multi-dimensional OHLCV K-lines into hierarchical tokens, and the model is pretrained on data from "over 45 global exchanges". Four sizes, 4.1M to 499.2M parameters (the 499.2M large model is not open-sourced); context 512 for small/base, 2048 for mini. `KronosPredictor.predict(...)` returns a sampled OHLCV forecast (`T`, `top_p`, `sample_count`), and a Qlib finetune pipeline ends in a "simple top-K" backtest. https://github.com/shiyu-coder/Kronos
+
+Its README calls that pipeline "a simplified example and not a production-ready quantitative trading system", and says raw signals need portfolio optimization and risk-factor neutralization before they are alpha.
+
+### What we already do
+
+| Their component | Ours | Verdict |
+| --- | --- | --- |
+| A forecast of the next K bars | a measured trade — entry, stop, target — scored over 10,000 Monte-Carlo replays (seed 19) | ours is scored against a null; a forecast is not |
+| `sample_count` averaged probabilistic paths | `simulate()` resamples real bars by slot of day ±2 from a 1,500-bar pool | both are distributions; ours is gated |
+| Simple top-K A-share backtest on daily bars | tier 3 deep test on 15,000 bars, both gates, live spread charged | one backtest, no correction, vs cumulative Bonferroni + permutation |
+| A 100M–500M-parameter model | indicators with a degenerate-case test (flat series, zero range, short series), `AGENTS.md` §6 | ours is auditable line by line; a foundation model is not |
+| Tokens quantized from OHLCV | the broker's bars via `marketdata.py`, forming bar dropped | no modeling of the data, just the data |
+
+### What we took
+
+A page number and a negative result. A frozen, reproducible forecaster is the opposite of the desk's citation rule: `desk._guard()` requires every number to already exist in the source artifact, and a sampled K-line path is a number that exists nowhere. If a Kronos-family model is ever probed it belongs in `tools/` under §7 — measured on the same bars and costs, counted as a hypothesis — never in the scan or the order path. Nothing lands in code.
+
+### What we refused
+
+| Idea | Why not |
+| --- | --- |
+| Using Kronos forecasts as a signal | a sampled forecast has no Bonferroni bar and no permutation null; the same candidate could pass one run and miss the next, which §4.10 forbids for a gate |
+| A GPU model on the scan path | one terminal, one IPC channel, a scan that already takes tens of minutes (`AGENTS.md` §10); inference latency inside the run window is a new failure mode |
+| Its top-K backtest as evidence | a single split, none of the cost modeling the pipeline itself says is missing, no correction; the README disclaims production readiness |
+| Folding a 500M-parameter checkpoint into the advisory desk | nothing a model emits can enter `agent_notes.json` without passing `_guard`; an unlisted model input is a way to put an uncited number in front of the jury |
+
+---
+
+## 9. freqtrade (+ FreqAI) (`freqtrade/freqtrade`) — a crypto bot with two bias analysers
+
+Read 2026-11-14. GPL-3.0, ~56.9k stars as reported, Python 3.12+, TA-Lib, sqlite persistence, created 2017-05-17, last push 2026-11-12. A long-lived crypto trading bot: backtesting, `hyperopt` parameter search, a webUI and Telegram control, spot and futures on Binance, Bybit, OKX, Kraken, Gate, Bitget, HTX and Hyperliquid among others, dry-run by default. **FreqAI** is its "adaptive prediction modeling" layer — a model that self-trains to the market and feeds a strategy. Two CLI commands matter here: `lookahead-analysis`, "check for potential look ahead bias", and `recursive-analysis`, "check for potential recursive formula issue". https://github.com/freqtrade/freqtrade
+
+### What we already do
+
+| Their component | Ours | Verdict |
+| --- | --- | --- |
+| `lookahead-analysis` re-runs a strategy to detect look-ahead | `fetch` drops the forming bar; signals are confirmed at bar close | ours is structural and cheap; theirs is a check you run |
+| `recursive-analysis` finds an indicator whose value depends on its own prior value | every indicator is closed-form over a fixed lookback, and the degenerate cases are tested (`AGENTS.md` §6) | no recursive formula to find |
+| `hyperopt` searches a parameter space for a passing set | every parameter set is a hypothesis; `trials_total` counts it and gate 5 corrects against the cumulative N | theirs finds a winner; ours pays for the search |
+| FreqAI: a model that self-trains beside the strategy | the desk is advisory, runs after the scan, and can place nothing; `agent_brief.py` writes one derived file and one audit row | ours has no model in the order path |
+| Dry-run as the default mode | demo-only pre-flight refuses a server whose name lacks `demo`, structurally (gate 1) | theirs is a mode a user leaves; ours is a gate |
+| A webUI and Telegram that start, stop and `/forceexit` trades | the dashboard is read-only, one write (`POST /api/scan`), no order route | ours cannot be a control surface |
+
+### What we took
+
+Nothing new lands from freqtrade, and that is the finding. The two analyses it names are the two silent-bug classes `AGENTS.md` §6 already records as having happened here — RSI returning 100 on a flat series, MACD's signal line all-NaN — and this evaluation is the external confirmation that both are worth a named command. If a look-ahead audit is ever wanted in `tools/`, `lookahead-analysis` is the reference design. Nothing lands in code.
+
+### What we refused
+
+| Idea | Why not |
+| --- | --- |
+| The bot itself — live orders on a dozen-plus exchanges | `AGENTS.md` §1; it exists to trade, and trading is the one thing this repository's agent may not do |
+| `hyperopt` as an edge generator | a search over parameters without a lifetime cumulative correction is gate 5 bypassed by construction, the same trap `AGENTS.md` §3 warns about when widening a session |
+| FreqAI's self-training model in the scan or order path | a model whose weights move with the market between runs changes the gate's resolution; §4.10's fixed permutation count exists to stop exactly that |
+| Pasting any of its code | GPL-3.0 is copyleft; we cite the design, not the source, because copying it would carry obligations this tree has not taken on |
+| A webUI or Telegram channel that can start or stop trading | `AGENTS.md` §9: never add an endpoint that places, modifies or closes an order |
