@@ -82,7 +82,7 @@ The first matrix run shortlisted three `rsi` candidates whose samples were
 | RSI 30/70 → 35/65 on H1 | 134 → 204 trades (still short) |
 | RSI 30/70 → 40/60 on H1 | 134 → 273 (still short, and 40/60 is a weak signal) |
 | Move to M15 | **no help** — 133 vs 134, because the scanner advances to the exit bar, so entries are horizon-limited, not bar-limited |
-| **Extend history 5k → 15k M15 bars** | **134 → 616** |
+| **Extend history 5k → 15k M15 bars** | **134 → 566** |
 
 The binding constraint was how many bars the scanner could see, not how loose
 the threshold was. Tier 3 therefore fetches **15,000 M15 bars** while Tier 2 keeps
@@ -96,7 +96,7 @@ but it does bias the funnel toward instruments with long histories.
 
 **Conclusion: this was a history-length constraint, not a threshold constraint.**
 Loosening 30/70 to 35/65 bought +70 trades; extending 5,000 to 15,000 bars
-bought +480. Thresholds only trade signal quality for volume — history *is* the
+bought +432. Thresholds only trade signal quality for volume — history *is* the
 sample. **15,000 M15 bars is now the standard deep-test window.** Tier 2 keeps
 4,000 on purpose, because it reads only the last closed bar.
 

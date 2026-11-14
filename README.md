@@ -177,7 +177,7 @@ Two details that took measurement to find:
   Donchian's exposure instead of diversifying it. Adding a family raises the
   multiple-comparisons bar; it must also add a genuinely different bet.
 - **RSI sparsity was a history-length problem, not a threshold problem.** Moving
-  30/70 → 35/65 bought +70 trades. Moving 5,000 → 15,000 bars bought **+480**.
+  30/70 → 35/65 bought +70 trades. Moving 5,000 → 15,000 bars bought **+432**.
   Thresholds trade signal quality for volume; history *is* the sample.
 
 **The matrix narrows with the session.** Scanning all three families for twelve
