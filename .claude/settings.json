@@ -21,7 +21,17 @@
           {
             "type": "command",
             "command": "python",
-            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/gate_guard.py"]
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/gate_guard.py"
+            ]
+          },
+          {
+            "type": "command",
+            "command": "python",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/workspace_guard.py",
+              "pre"
+            ]
           }
         ]
       },
@@ -31,7 +41,32 @@
           {
             "type": "command",
             "command": "python",
-            "args": ["${CLAUDE_PROJECT_DIR}/.claude/hooks/gate_guard.py"]
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/gate_guard.py"
+            ]
+          },
+          {
+            "type": "command",
+            "command": "python",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/workspace_guard.py",
+              "bash"
+            ]
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "python",
+            "args": [
+              "${CLAUDE_PROJECT_DIR}/.claude/hooks/workspace_guard.py",
+              "post"
+            ]
           }
         ]
       }
