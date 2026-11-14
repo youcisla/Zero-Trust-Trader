@@ -9,8 +9,9 @@ news_feeds = [
   "https://www.investing.com/rss/news_1.rss",
 ]
 
-# The opt-in decision model (typesafe/jev) is off unless this is turned on.
-# ZTT_JEV=1 in the environment or .env overrides this line. It stays advisory:
-# nothing here can gate, size, approve or veto.
+# The decision model (typesafe/jev) is on in this tree: it runs unless
+# jev_enabled is false here or ZTT_JEV=0 is set in the environment or .env
+# (ZTT_JEV wins either way). It stays advisory: nothing here can gate, size,
+# approve or veto.
 [decisions]
-jev_enabled = false
+jev_enabled = true

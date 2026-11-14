@@ -466,7 +466,7 @@ trails, stops and closes only positions whose broker `comment` starts with the
 prefix, and leaves every other position untouched (reported as
 `not managed: comment <c>`). It is needed because the opener stamps `magic: 0`, so
 no magic filter can tell a manual trade from one the funnel opened. It is opt-in
-and off by default — but the caveat is real: once enabled, a system position that
+and inactive unless the prefix is passed — but the caveat is real: once enabled, a system position that
 was **not** tagged is left unmanaged, so turn it on only when every approved order
 carries the tag.
 
