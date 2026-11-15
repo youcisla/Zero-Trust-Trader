@@ -29,6 +29,8 @@
     --magenta:#c264d6; --magenta-dim:rgba(194,100,214,.12);
     --amber:#e6a545; --amber-dim:rgba(230,165,69,.12);
     --red:#e5484d; --red-dim:rgba(229,72,77,.12);
+    /* An unmeasured state is neutral; only a measured refusal is red. */
+    --unknown:var(--faint);
     --focus:#3fb8a6;
     /* legacy names the components already speak */
     --good:var(--neon); --warn:var(--amber); --bad:var(--red); --accent:var(--cyan);
@@ -186,9 +188,11 @@
 
   /* The gate gauge: the bar as a dashed line, the best candidate as a marker. */
   .gauge{position:relative;height:74px;margin:6px 0 0}
-  .gauge .track{position:absolute;left:0;right:0;top:26px;height:8px;border-radius:2px;
-    background:linear-gradient(90deg,color-mix(in srgb,var(--cyan) 10%,transparent),color-mix(in srgb,var(--cyan) 22%,transparent))}
-  .gauge .fill{height:100%;border-radius:2px;background:linear-gradient(90deg,color-mix(in srgb,var(--cyan) 35%,transparent),color-mix(in srgb,var(--cyan) 75%,transparent))}
+  /* The track is the axis, drawn as a hairline. Only `.fill` is a data mark:
+     it stops at the best candidate and is empty when nothing was tested. */
+  .gauge .track{position:absolute;left:0;right:0;top:29px;height:2px;border-radius:1px;
+    background:var(--line2)}
+  .gauge .fill{height:100%;border-radius:1px;background:var(--cyan)}
   .gauge .barline{position:absolute;top:12px;bottom:18px;width:0;border-left:2px dashed var(--amber)}
   .gauge .barline span{position:absolute;top:-12px;left:4px;font:600 var(--t0) var(--font-mono);color:var(--amber)}
   .gauge .marker{position:absolute;top:16px}
@@ -345,8 +349,8 @@
     padding:10px 14px;border-bottom:1px solid var(--line)}
   .zone-label{font-family:var(--font-mono);font-size:var(--t0);color:var(--faint);
     letter-spacing:.1em;text-transform:uppercase}
-  .obs-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--gap);
-    padding:var(--s4);align-items:stretch}
+  .obs-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:var(--gap);
+    padding:var(--s4);align-items:start}
   .dnode{position:relative;text-align:left;min-width:0;padding:10px 11px 9px;cursor:pointer;
     border:1px solid var(--line);border-radius:9px;
     background:linear-gradient(180deg,var(--surface2),var(--surface));
@@ -359,10 +363,11 @@
   .dnode[data-status="partial"]{border-color:var(--amber-line)}
   .dnode[data-status="partial"] .st-dot{background:var(--amber)}
   .dnode[data-status="idle"]{border-style:dashed;opacity:.72}
-  .dnode.linked::before{content:"";position:absolute;left:calc(-1 * var(--gap));top:50%;
-    width:var(--gap);height:1px;background:var(--line)}
-  .dnode.linkedv::before{content:"";position:absolute;left:50%;top:calc(-1 * var(--gap));
-    width:1px;height:var(--gap);background:var(--line)}
+  /* The wire between two nodes: 2px at the reference's weight, dashed when the
+     edge is idle. A 1px --line hairline read as a drawing bug. */
+  .wire::before{content:"";position:absolute;left:calc(-1 * var(--gap));top:50%;
+    width:var(--gap);height:2px;margin-top:-1px;
+    background:repeating-linear-gradient(90deg,var(--faint) 0 5px,transparent 5px 9px)}
   .dtop{display:flex;align-items:center;gap:6px;margin-bottom:6px}
   .role-chip{display:flex;align-items:center;gap:5px;font-family:var(--font-mono);
     font-size:var(--t0);letter-spacing:.05em;text-transform:uppercase;color:var(--dim)}
@@ -378,7 +383,8 @@
   .dmodel{font-family:var(--font-mono);font-size:var(--t0);color:var(--faint);font-weight:400;
     overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
   .dstep{margin-top:5px;font-family:var(--font-mono);font-size:var(--t0);color:var(--dim);
-    line-height:1.4;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+    line-height:1.4;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;
+    overflow:hidden;overflow-wrap:anywhere;word-break:break-word;text-overflow:ellipsis}
   .dfoot{display:flex;align-items:center;gap:8px;margin-top:8px}
   .status{display:flex;align-items:center;gap:5px;font-family:var(--font-mono);
     font-size:var(--t0);color:var(--dim)}
@@ -463,6 +469,7 @@
   .node.hot rect{stroke:var(--neon);filter:drop-shadow(0 0 6px color-mix(in srgb,var(--neon) 35%,transparent))}
   .node.bad rect{stroke:var(--red)}
   .node.warn rect{stroke:var(--amber)}
+  .node.unknown rect{stroke:var(--unknown)}
   .node.sel rect{stroke:var(--cyan);stroke-width:2}
   .node text{fill:var(--ink);font-family:var(--font-ui)}
   .node .t{font-size:var(--t1);font-weight:600;letter-spacing:.05em;text-transform:uppercase;fill:var(--dim)}
@@ -803,6 +810,24 @@ function computeDrawdown(points) {
     peak = Math.max(peak, v);
     return [ts, peak > 0 ? ((v - peak) / peak) * 100 : 0];
   });
+}
+
+/** The drawdown axis exists only when the series has a range. A flat series
+ *  (all zero) has no axis to label: a degenerate min=0/max=0 axis prints the
+ *  same tick six times ("1, 0, 0, 0, 0, 0") as if it were data. */
+function drawdownAxis(dd) {
+  const vals = (Array.isArray(dd) ? dd : []).map((p) => p[1]).filter((v) => Number.isFinite(v));
+  if (!vals.length) return null;
+  const lo = Math.min.apply(null, vals), hi = Math.max.apply(null, vals);
+  if (hi === lo) return null;
+  return {min: Math.min(0, lo) * 1.15, max: 0};
+}
+
+/** A pipeline node the page cannot measure is `unknown` (neutral). Only a node
+ *  that measured a refusal is `bad`. Unknown is never red. */
+function nodeTone(measured, refused) {
+  if (refused) return "bad";
+  return measured ? "" : "unknown";
 }
 
 /** Mirror of timemachine_mt5.bonferroni_z — Φ⁻¹(1 − 0.05/(2n)), two-sided, α=0.05.
@@ -1275,28 +1300,33 @@ function equityOption(points, bar) {
   // line stays a line instead of filling the card.
   const pad = hi === lo ? Math.max(0.5, Math.abs(hi) * 0.002) : (hi - lo) * 0.15;
   const dd = computeDrawdown(points);
-  const ddLo = Math.min(0, Math.min.apply(null, dd.map((p) => p[1])));
-  return baseOption({
-    xAxis: timeAxis(points),
-    yAxis: [
-      {type: "value", min: lo - pad, max: hi + pad, splitLine: {lineStyle: {color: C.line}},
-       axisLabel: {color: C.faint, fontSize: 11}},
-      {type: "value", min: ddLo * 1.15, max: 0, position: "right", splitLine: {show: false},
-       axisLabel: {color: "rgba(255,77,94,.65)", fontSize: 11, formatter: "{value}%"}},
-    ],
-    series: [
-      {name: "equity", type: "line", showSymbol: points.length < 60, symbolSize: 3,
-       // seconds -> milliseconds: a time axis given seconds places 2026 in 1970.
-       data: points.map((p) => [p[0] * 1000, p[1]]), yAxisIndex: 0,
-       lineStyle: {color: C.neon, width: 1.6},
-       areaStyle: {color: {type: "linear", x: 0, y: 0, x2: 0, y2: 1,
-         colorStops: [{offset: 0, color: "rgba(0,255,163,.18)"}, {offset: 1, color: "rgba(0,255,163,0)"}]}},
-       itemStyle: {color: C.neon}},
+  // A flat or absent drawdown has no axis and no line: drawing either would be
+  // a mark the chart cannot attribute.
+  const ddAxis = drawdownAxis(dd);
+  const yAxis = [{type: "value", min: lo - pad, max: hi + pad, splitLine: {lineStyle: {color: C.line}},
+                  axisLabel: {color: C.faint, fontSize: 11}}];
+  const series = [
+    {name: "equity", type: "line", showSymbol: points.length < 60, symbolSize: 3,
+     // seconds -> milliseconds: a time axis given seconds places 2026 in 1970.
+     data: points.map((p) => [p[0] * 1000, p[1]]), yAxisIndex: 0,
+     lineStyle: {color: C.neon, width: 1.6},
+     areaStyle: {color: {type: "linear", x: 0, y: 0, x2: 0, y2: 1,
+       colorStops: [{offset: 0, color: "rgba(0,255,163,.18)"}, {offset: 1, color: "rgba(0,255,163,0)"}]}},
+     itemStyle: {color: C.neon}},
+  ];
+  if (ddAxis) {
+    yAxis.push({type: "value", min: ddAxis.min, max: ddAxis.max, position: "right", splitLine: {show: false},
+      axisLabel: {color: "rgba(255,77,94,.65)", fontSize: 11, formatter: "{value}%"}});
+    series.push(
       {name: "drawdown %", type: "line", showSymbol: false,
        data: dd.map((p) => [p[0] * 1000, p[1]]), yAxisIndex: 1,
        lineStyle: {color: "rgba(255,77,94,.6)", width: 1}, itemStyle: {color: C.red},
-       areaStyle: {color: "rgba(255,77,94,.07)"}},
-    ],
+       areaStyle: {color: "rgba(255,77,94,.07)"}});
+  }
+  return baseOption({
+    xAxis: timeAxis(points),
+    yAxis: yAxis,
+    series: series,
     legend: {show: false},
     tooltip: Object.assign({}, baseOption().tooltip, {
       formatter: (ps) => {
@@ -1412,7 +1442,7 @@ function nodeStats(id, d, x) {
       return {s: u.present ? num0(u.count) + " symbols" : "no universe",
               c: u.present ? "top by M15 turnover · " + (u.generated_utc ? fmtDur(Math.max(0, (Date.now() - Date.parse(u.generated_utc)) / 1000)) + " old" : "—")
                            : "run --rebuild",
-              tone: u.present ? "" : "bad"};
+              tone: nodeTone(!!u.present, false)};
     case "tier2":
       return {s: x.tests == null ? "—" : x.tests + " tests",
               c: x.tested == null ? "no scan yet" : x.tested + " tested · " + (x.triggering ?? "—") + " fired",
@@ -1431,7 +1461,7 @@ function nodeStats(id, d, x) {
     case "supervisor":
       return {s: eng ? (eng.positions || []).length + " open" : "unknown",
               c: d.engine_age_s == null ? "no engine state" : "state " + fmtDur(d.engine_age_s) + " old",
-              tone: d.engine_age_s == null ? "bad" : d.engine_age_s > 120 ? "warn" : "live"};
+              tone: d.engine_age_s == null ? nodeTone(false, false) : d.engine_age_s > 120 ? "warn" : "live"};
     default: return {s: "", c: ""};
   }
 }
@@ -1808,13 +1838,12 @@ function DeskPage({d, data, up}) {
   const open = (id) => { setSel(id); setTab("inspector"); };
 
   const nodeCard = (n) => {
-    const has = (col) => graph.nodes.some((x) => x.kind === "chain" && x.col === col);
-    const linked = n.kind === "chain" && n.col > 0 && has(n.col - 1);
-    const linkedv = n.kind === "model" && graph.nodes.some((x) => x.id === "jury");
+    // Every node after the first connects to the one before it on the same row;
+    // JEV sits beside the jury, not on a row of its own below.
+    const idx = graph.nodes.findIndex((x) => x.id === n.id);
     return html`<div key=${n.id} role="button" tabIndex="0"
-        className=${"dnode" + (linked ? " linked" : "") + (linkedv ? " linkedv" : "")}
+        className=${"dnode" + (idx > 0 ? " wire" : "")}
         data-status=${deskTone(n.status)}
-        style=${{gridColumn: (n.col + 1) + " / " + (n.col + 2), gridRow: n.kind === "model" ? "2" : "1"}}
         onClick=${() => open(n.id)}
         onKeyDown=${(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(n.id); } }}
         aria-label=${n.label + ", " + (n.status || "status absent") + ", " + (n.headline || "headline absent")}>
@@ -1954,11 +1983,7 @@ function DeskPage({d, data, up}) {
       ${tab === "timeline" ? timeline : null}
       ${tab === "states" ? states : null}
     </div>
-    <div className="grid g21">
-      <${Card} title="The four-role chain" note="scout frames, skeptic attacks, chief decides, jury reports">
-        <${Desk} agent=${agent} compact=${false} />
-      <//>
-      <${Card} title="Decision model" note=${jev.model || "typesafe/jev-1.14"}>
+    <${Card} title="Decision model" note=${jev.model || "typesafe/jev-1.14"}>
         <div className="kv"><span>state</span><b>${jev.status === "disabled" ? "disabled" : jev.status ? "enabled" : "not run"}</b></div>
         ${jev.status === "disabled"
           ? html`<div className="why clamp2">Off because ZTT_JEV=0 or jev_enabled = false under [decisions] in desk.toml. Set it back to run the layer.</div>`
@@ -1973,8 +1998,7 @@ function DeskPage({d, data, up}) {
         ${cmp ? html`<div className="kv" style=${{marginTop: "8px"}}><span>JURY VS JEV</span>
           <b title=${(cmp.juryModel || "deepseek") + " " + cmp.verdict + " / " + (cmp.jevModel || "jev") + " " + cmp.choice}>
             jury ${cmp.verdict} / jev ${cmp.choice} · ${cmp.agree ? "agree" : "disagree"}</b></div>` : null}
-      <//>
-    </div>
+    <//>
     <${Card} title="History" note="every stored run, newest first">
       <${History} h=${hist} />
     <//>

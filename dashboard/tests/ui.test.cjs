@@ -15,7 +15,8 @@ const helpers = source.split('// BEGIN fixture-tested state helpers')[1]
   .split('// END fixture-tested state helpers')[0];
 
 const EXPORTS = ['scanCurrent', 'scanRunState', 'transportFresh', 'protectionLabel', 'parseFunnel', 'lastFunnel',
-  'ledgerRows', 'pipeline', 'edgeCounts', 'edgeStates', 'computeDrawdown', 'bonferroniMirror',
+  'ledgerRows', 'pipeline', 'edgeCounts', 'edgeStates', 'computeDrawdown', 'drawdownAxis',
+  'nodeTone', 'bonferroniMirror',
   'sessionState', 'derive', 'fmtDur', 'fmtTok', 'todayStats', 'num2', 'signed', 'backoffMs',
   'heatFrac', 'heatRgb', 'HEAT_METRICS', 'esc', 'jevComparison', 'chainRoles', 'historyCells',
   'deskGraph', 'inspectorFields', 'deskAdapters'];
@@ -223,6 +224,24 @@ test('drawdown is measured from the running peak', () => {
   assert.ok(Math.abs(dd[2][1] - (-25)) < 1e-9);
   assert.equal(dd[3][1], 0);
   assert.equal(h.computeDrawdown([]).length, 0);
+});
+
+test('a flat drawdown series yields no axis marks', () => {
+  // Equity at its peak: every drawdown is 0, so a degenerate min=0/max=0 axis
+  // printed the same tick six times. No range means no axis.
+  assert.equal(h.drawdownAxis([[1, 0], [2, 0], [3, 0]]), null);
+  assert.equal(h.drawdownAxis([]), null);
+  assert.equal(h.drawdownAxis(null), null);
+  const axis = h.drawdownAxis([[1, 0], [2, -3], [3, -1]]);
+  assert.ok(axis && axis.max === 0 && axis.min < 0, 'a real drawdown keeps its axis');
+});
+
+test('an unknown node is neutral, never the red FAILED tone', () => {
+  // A node the page could not measure is unknown; only a measured refusal is bad.
+  assert.equal(h.nodeTone(false, false), 'unknown');
+  assert.notEqual(h.nodeTone(false, false), 'bad');
+  assert.equal(h.nodeTone(true, true), 'bad');
+  assert.equal(h.nodeTone(true, false), '');
 });
 
 test('the Bonferroni mirror matches the engine table', () => {
