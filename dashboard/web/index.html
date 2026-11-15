@@ -156,7 +156,7 @@
   .card{border:1px solid var(--line);border-radius:var(--r);background:var(--surface);
     overflow:hidden;min-width:0}
   .card>header{display:flex;align-items:center;gap:var(--s2);padding:9px var(--s3);
-    border-bottom:1px solid var(--line);background:var(--surface2);min-height:38px}
+    border-bottom:1px solid var(--line);background:transparent;min-height:38px}
   .card>header h2{margin:0;font-size:var(--t1);font-weight:600;letter-spacing:.06em;
     text-transform:uppercase;color:var(--dim)}
   .card>header .note{color:var(--faint);font-size:var(--t0);margin-left:auto;
@@ -333,6 +333,120 @@
   .step .say{font-size:var(--t1);color:var(--ink);margin-top:3px;line-height:1.35;
     display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
 
+  /* ---- desk · the Observatory views ----------------------------------- */
+  .tabs{display:flex;gap:2px;border-bottom:1px solid var(--line);overflow-x:auto;scrollbar-width:none}
+  .tabs::-webkit-scrollbar{display:none}
+  .tabs button{padding:6px 10px;border-radius:6px 6px 0 0;font-size:var(--t1);color:var(--faint);
+    border-bottom:2px solid transparent;white-space:nowrap}
+  .tabs button:hover{color:var(--dim)}
+  .tabs button[aria-selected="true"]{color:var(--ink);border-bottom-color:var(--neon)}
+
+  .stage-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;
+    padding:10px 14px;border-bottom:1px solid var(--line)}
+  .zone-label{font-family:var(--font-mono);font-size:var(--t0);color:var(--faint);
+    letter-spacing:.1em;text-transform:uppercase}
+  .obs-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:var(--gap);
+    padding:var(--s4);align-items:stretch}
+  .dnode{position:relative;text-align:left;min-width:0;padding:10px 11px 9px;cursor:pointer;
+    border:1px solid var(--line);border-radius:9px;
+    background:linear-gradient(180deg,var(--surface2),var(--surface));
+    transition:border-color .2s,opacity .2s}
+  .dnode:hover{border-color:var(--dim)}
+  .dnode[data-status="ok"]{border-color:var(--neon-line)}
+  .dnode[data-status="ok"] .st-dot{background:var(--neon)}
+  .dnode[data-status="rejected"],.dnode[data-status="error"]{border-color:var(--red-line)}
+  .dnode[data-status="rejected"] .st-dot,.dnode[data-status="error"] .st-dot{background:var(--red)}
+  .dnode[data-status="partial"]{border-color:var(--amber-line)}
+  .dnode[data-status="partial"] .st-dot{background:var(--amber)}
+  .dnode[data-status="idle"]{border-style:dashed;opacity:.72}
+  .dnode.linked::before{content:"";position:absolute;left:calc(-1 * var(--gap));top:50%;
+    width:var(--gap);height:1px;background:var(--line)}
+  .dnode.linkedv::before{content:"";position:absolute;left:50%;top:calc(-1 * var(--gap));
+    width:1px;height:var(--gap);background:var(--line)}
+  .dtop{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+  .role-chip{display:flex;align-items:center;gap:5px;font-family:var(--font-mono);
+    font-size:var(--t0);letter-spacing:.05em;text-transform:uppercase;color:var(--dim)}
+  .role-chip .rd{width:7px;height:7px;border-radius:2px;background:var(--dim)}
+  .dnode[data-status="ok"] .rd{background:var(--neon)}
+  .dnode[data-status="rejected"] .rd,.dnode[data-status="error"] .rd{background:var(--red)}
+  .dnode[data-status="partial"] .rd{background:var(--amber)}
+  .prov{margin-left:auto;font-family:var(--font-mono);font-size:var(--t0);padding:1px 6px;
+    border-radius:20px;border:1px solid var(--line);color:var(--dim);white-space:nowrap}
+  .prov[data-p="jev"]{border-color:var(--magenta-dim);background:var(--magenta-dim);color:var(--magenta)}
+  .prov[data-p="deepseek"]{border-color:var(--neon-line);background:var(--neon-dim);color:var(--neon-ink)}
+  .dname{font-size:var(--t2);font-weight:600;display:flex;align-items:baseline;gap:5px;min-width:0}
+  .dmodel{font-family:var(--font-mono);font-size:var(--t0);color:var(--faint);font-weight:400;
+    overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .dstep{margin-top:5px;font-family:var(--font-mono);font-size:var(--t0);color:var(--dim);
+    line-height:1.4;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;overflow:hidden}
+  .dfoot{display:flex;align-items:center;gap:8px;margin-top:8px}
+  .status{display:flex;align-items:center;gap:5px;font-family:var(--font-mono);
+    font-size:var(--t0);color:var(--dim)}
+  .st-dot{width:7px;height:7px;border-radius:50%;background:var(--faint);flex-shrink:0}
+  .tokens{margin-left:auto;font-family:var(--font-mono);font-size:var(--t0);
+    color:var(--faint);white-space:nowrap}
+
+  /* ---- desk · inspector, adapters, timeline, quiet states -------------- */
+  .insp-head{display:flex;align-items:center;gap:8px;padding:11px 13px;border-bottom:1px solid var(--line)}
+  .insp-head .t{font-family:var(--font-mono);font-size:var(--t0);letter-spacing:.1em;
+    text-transform:uppercase;color:var(--faint)}
+  .insp-agent{margin-left:auto;font-size:var(--t1);font-weight:600}
+  .insp-select{display:flex;gap:4px;padding:9px 11px;border-bottom:1px solid var(--line);flex-wrap:wrap}
+  .insp-select button{padding:4px 8px;border-radius:5px;border:1px solid var(--line);
+    background:var(--surface2);font-family:var(--font-mono);font-size:var(--t0);color:var(--faint)}
+  .insp-select button:hover{color:var(--dim);border-color:var(--dim)}
+  .insp-select button[aria-pressed="true"]{color:var(--ink);border-color:var(--dim);background:var(--surface3)}
+  .insp-body{padding:12px 13px}
+  .kvgrid{display:grid;grid-template-columns:110px 1fr;gap:6px 10px;font-size:var(--t2)}
+  .kvgrid dt{font-family:var(--font-mono);font-size:var(--t0);color:var(--faint);
+    text-transform:uppercase;letter-spacing:.05em}
+  .kvgrid dd{margin:0;color:var(--dim);word-break:break-word}
+  .kvgrid dd.mono{color:var(--ink)}
+
+  .adapters{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--gap)}
+  @media (max-width:980px){.adapters{grid-template-columns:minmax(0,1fr)}}
+  .adapter{border:1px solid var(--line);border-radius:var(--r);background:var(--surface);padding:14px}
+  .adapter .ah{display:flex;align-items:center;gap:8px;margin-bottom:6px}
+  .adapter h4{margin:0;font-size:var(--t2);font-weight:600}
+  .adapter .ad-prov{font-family:var(--font-mono);font-size:var(--t0);padding:1px 7px;
+    border-radius:20px;border:1px solid var(--line);color:var(--dim)}
+  .adapter .ad-prov[data-p="jev"]{color:var(--magenta);border-color:var(--magenta-dim);background:var(--magenta-dim)}
+  .adapter .ad-prov[data-p="deepseek"]{color:var(--neon-ink);border-color:var(--neon-line);background:var(--neon-dim)}
+
+  .ribbon{border:1px solid var(--line);border-radius:var(--r);background:var(--surface);overflow:hidden}
+  .rib-head{display:flex;align-items:center;gap:12px;flex-wrap:wrap;
+    padding:10px 14px;border-bottom:1px solid var(--line)}
+  .rib-head .t{font-family:var(--font-mono);font-size:var(--t0);letter-spacing:.1em;
+    text-transform:uppercase;color:var(--faint)}
+  .rib-body{padding:16px 18px 10px}
+  .tl-track{position:relative;height:34px;border-bottom:1px solid var(--line)}
+  .pip{position:absolute;bottom:-5px;width:11px;height:11px;border-radius:50%;
+    transform:translateX(-50%);border:2px solid var(--surface);background:var(--faint)}
+  .pip[data-k="ok"]{background:var(--neon)}
+  .pip[data-k="partial"]{background:var(--amber)}
+  .pip[data-k="rejected"],.pip[data-k="error"]{background:var(--red)}
+
+  .states-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:var(--gap)}
+  @media (max-width:900px){.states-grid{grid-template-columns:minmax(0,1fr)}}
+  .state-panel{border:1px solid var(--line);border-radius:var(--r);background:var(--surface);overflow:hidden}
+  .state-panel .sp-head{padding:10px 14px;border-bottom:1px solid var(--line);display:flex;align-items:center;gap:8px}
+  .state-panel .sp-head .t{font-size:var(--t2);font-weight:600}
+  .state-panel .sp-head .w{margin-left:auto;font-family:var(--font-mono);font-size:var(--t0);color:var(--faint)}
+  .state-body{padding:var(--s4)}
+  .center-state{max-width:38ch;margin:0 auto;padding:var(--s4);text-align:center}
+  .center-state h3{margin:0 0 5px;font-size:var(--t2);font-weight:600}
+  .center-state p{margin:0;font-size:var(--t1);color:var(--faint);line-height:1.5}
+  .empty-note{font-size:var(--t1);color:var(--faint);font-style:italic;padding:6px 0}
+  .errbox{border:1px solid var(--red-line);background:var(--red-dim);
+    border-radius:var(--r-sm);padding:10px 12px}
+  .errbox .eh{font-family:var(--font-mono);font-size:var(--t0);text-transform:uppercase;
+    letter-spacing:.08em;color:var(--red-ink);margin-bottom:4px}
+  .errbox p{margin:0;font-size:var(--t1);color:var(--dim);font-family:var(--font-mono);line-height:1.5}
+  .offline-banner{display:flex;align-items:center;gap:9px;padding:9px 14px;border-radius:var(--r-sm);
+    border:1px solid var(--amber-line);background:var(--amber-dim);
+    font-family:var(--font-mono);font-size:var(--t0);color:var(--dim)}
+  .offline-banner .pd{width:8px;height:8px;border-radius:50%;background:var(--amber);flex-shrink:0}
+
   /* ---- flow canvas ---------------------------------------------------- */
   .flowwrap{position:relative;border:1px solid var(--line);border-radius:var(--r);
     background:radial-gradient(1200px 400px at 20% 0%,color-mix(in srgb,var(--neon) 4%,transparent),transparent 70%),var(--surface);
@@ -354,9 +468,9 @@
   .node .t{font-size:var(--t1);font-weight:600;letter-spacing:.05em;text-transform:uppercase;fill:var(--dim)}
   .node .s{font-size:var(--t4);font-family:var(--font-mono);font-weight:600}
   .node .c{font-size:var(--t0);fill:var(--faint)}
-  .edge{fill:none;stroke:var(--line2);stroke-width:1.4}
-  .edge.hot{stroke:var(--neon);stroke-width:1.8;stroke-dasharray:5 5;animation:dash 1.1s linear infinite}
-  .edge.blocked{stroke:var(--red);stroke-dasharray:4 4}
+  .edge{fill:none;stroke:var(--line2);stroke-width:1.4;stroke-dasharray:4 5}
+  .edge.hot{stroke:var(--neon);stroke-width:1.8;stroke-dasharray:7 6;animation:dash 1.1s linear infinite}
+  .edge.blocked{stroke:var(--red);stroke-dasharray:3 4}
   .edge.dim{stroke:var(--line2);opacity:.5}
   .edge.replay{stroke:var(--cyan);stroke-width:2}
   @keyframes dash{to{stroke-dashoffset:-20}}
@@ -411,7 +525,7 @@
   table td,table th{padding:4px var(--s2);font-variant-numeric:tabular-nums}
   .num,.money,.mono{font-variant-numeric:tabular-nums}
   .legend{display:flex;gap:var(--s3);flex-wrap:wrap;color:var(--faint);font-size:var(--t0);align-items:center}
-  .legend i{width:8px;height:8px;border-radius:2px;display:inline-block;margin-right:4px}
+  .legend i{width:8px;height:8px;border-radius:50%;display:inline-block;margin-right:4px}
 
   /* ---- log panes ------------------------------------------------------ */
   .log{font-family:var(--font-mono);font-size:var(--t1);line-height:1.5;max-height:220px;
@@ -812,6 +926,123 @@ function historyCells(run) {
     .concat([{role: "jev", headline: jev.headline || "—"}]);
 }
 
+/** One line per agent, mirroring desk_store.headline so a graph node, the
+ *  inspector and the stored history cannot disagree about what a role said. */
+function deskSay(role, note) {
+  const n = note || {};
+  if (role === "jev") {
+    const answers = n.answers || {};
+    const attention = answers.attention || {};
+    const choice = attention.choice;
+    if (typeof choice === "string" && choice) {
+      const prob = (attention.probabilities || {})[choice];
+      const line = typeof prob === "number" ? choice + " (p " + prob.toFixed(2) + ")" : choice;
+      const grounded = (answers.grounded || {}).choice;
+      return typeof grounded === "string" && grounded ? line + " · grounded: " + grounded : line;
+    }
+  }
+  const items = n.items;
+  if (Array.isArray(items) && items.length) {
+    const mapped = items.filter((i) => i && Array.isArray(i.symbols) && i.symbols.length).length;
+    return items.length + " items" + (mapped ? ", " + mapped + " mapped" : "");
+  }
+  for (const key of ["verdict", "summary", "reason", "status"]) {
+    const v = n[key];
+    if (typeof v === "string" && v.trim()) return v.trim();
+  }
+  return null;
+}
+
+/** The desk's five agents as graph nodes, with the chain edges between them.
+ *  A role the notes do not carry is a node that is not there: absence draws
+ *  nothing, never an empty box or a zero. Jev stays a model node beside the
+ *  verdict, never a fifth link in the chain. */
+function deskGraph(notes) {
+  const n = notes || {};
+  const roles = n.roles || {};
+  const meta = n.role_metadata || {};
+  const nodes = [];
+  ["scout", "skeptic", "chief", "jury"].forEach((key, i) => {
+    const role = roles[key];
+    if (!role) return;
+    const m = meta[key] || {};
+    const u = m.usage || null;
+    nodes.push({
+      id: key, label: key, provider: "deepseek", kind: "chain", col: i,
+      model: m.model || null,
+      status: role.status || null,
+      headline: deskSay(key, role),
+      tokens: u ? {in: u.prompt_tokens == null ? null : u.prompt_tokens,
+                   out: u.completion_tokens == null ? null : u.completion_tokens} : null,
+      verdict: role.verdict || null,
+      items: Array.isArray(role.items) ? role.items.length : null,
+    });
+  });
+  if (n.jev) {
+    nodes.push({
+      id: "jev", label: "jev", provider: "jev", kind: "model", col: 3,
+      model: n.jev.model || null,
+      status: n.jev.status || null,
+      headline: deskSay("jev", n.jev),
+      tokens: null, verdict: null, items: null,
+    });
+  }
+  const edges = [["scout", "skeptic"], ["skeptic", "chief"], ["chief", "jury"], ["jury", "jev"]]
+    .filter(([a, b]) => nodes.some((x) => x.id === a) && nodes.some((x) => x.id === b));
+  return {nodes: nodes, edges: edges};
+}
+
+/** The inspector's rows for one selected node. A value the node does not carry
+ *  stays null and the panel renders it absent - never a zero in its place. */
+function inspectorFields(node) {
+  const n = node || {};
+  const t = n.tokens || null;
+  return [
+    ["agent", n.label || null],
+    ["provider", n.provider || null],
+    ["model", n.model || null],
+    ["status", n.status || null],
+    ["headline", n.headline || null],
+    ["tokens in", t && t.in != null ? fmtTok(t.in) : null],
+    ["tokens out", t && t.out != null ? fmtTok(t.out) : null],
+    ["verdict", n.verdict || null],
+    ["items", n.items == null ? null : String(n.items)],
+  ];
+}
+
+/** The providers the desk called, as cards. A provider the notes do not carry
+ *  is an absent card; an unrecorded token count stays null, never 0. */
+function deskAdapters(notes) {
+  const n = notes || {};
+  const roles = n.roles || {};
+  const meta = n.role_metadata || {};
+  const cost = (key) => {
+    const u = (meta[key] || {}).usage || null;
+    if (!u || (u.prompt_tokens == null && u.completion_tokens == null)) return null;
+    return {in: u.prompt_tokens == null ? null : u.prompt_tokens,
+            out: u.completion_tokens == null ? null : u.completion_tokens};
+  };
+  const cards = [];
+  const chain = ["scout", "skeptic", "chief", "jury"].filter((k) => roles[k]);
+  if (chain.length || n.model_returned != null) {
+    cards.push({
+      id: "deepseek", label: "DeepSeek",
+      model: n.model_returned || null,
+      status: n.status || null,
+      roles: chain.map((k) => ({role: k, status: (roles[k] || {}).status || null, tokens: cost(k)})),
+    });
+  }
+  if (n.jev) {
+    cards.push({
+      id: "jev", label: "Jev",
+      model: n.jev.model || null,
+      status: n.jev.status || null,
+      roles: [{role: "jev", status: n.jev.status || null, tokens: cost("jev")}],
+    });
+  }
+  return cards;
+}
+
 /* The heatmap's ramp, in one place. A grid that hard-codes its own red is how two
    views end up disagreeing about which symbol is the expensive one. */
 const HEAT_METRICS = {
@@ -878,7 +1109,7 @@ function CmdStrip({d, data, up, lastRun}) {
     {k: "killed", v: "ALL AUTOMATION FROZEN", tone: "bad", h: data.kill_switch},
   ] : [];
   cells.push(
-    {k: "verdict", v: d.verdict || "—", tone: d.verdict === "PROPOSAL" ? "good" : d.verdict ? "mute" : "",
+    {k: "verdict", v: d.verdict || "—", tone: d.verdict === "PROPOSAL" ? "warn" : d.verdict ? "good" : "",
      h: d.verdict === "PROPOSAL" ? "both gates cleared" : d.verdict ? "refused" : "no scan on disk"},
     {k: "bar", v: bar == null ? "—" : num2(bar), h: best ? best.barName : "Bonferroni z"},
     {k: "best", v: best ? signed(best.v) : "—", h: best ? best.symbol : "no candidate"},
@@ -1427,7 +1658,9 @@ function Inspector({id, d, onClose}) {
    ====================================================================== */
 
 function VerdictHero({d}) {
-  const tone = d.stoodDown === false ? "up" : d.stoodDown === true ? "" : "pending";
+  // STAND_DOWN is the system working (teal), PROPOSAL wants a human (amber),
+  // and no verdict at all is unknown (the neutral base), never a colour alone.
+  const tone = d.stoodDown === false ? "pending" : d.stoodDown === true ? "up" : "";
   const title = d.stoodDown === false ? "PROPOSAL — " + (d.survivors.join(", ") || "unnamed survivor")
     : d.stoodDown === true ? "STANDING DOWN — no edge found"
     : "SCAN UNVERIFIED — no current verdict";
@@ -1551,13 +1784,152 @@ function Palette({mode, onClose}) {
  * first thing a reader should learn about a model's opinion here is that it is
  * only an opinion.
  */
-function DeskPage({d, data}) {
+const DESK_TABS = [["observatory", "Observatory"], ["inspector", "Inspector"], ["adapters", "Adapters"],
+                   ["timeline", "Timeline"], ["states", "Empty & error"]];
+const deskTone = (s) => !s ? "idle" : s === "ok" ? "ok" : s === "rejected" ? "rejected"
+  : s === "error" ? "error" : s === "partial" ? "partial" : "idle";
+
+function DeskPage({d, data, up}) {
   const agent = (data && data.agent) || null;
   const jev = (agent && agent.jev) || {};
   const att = ((jev.answers || {}).attention || {});
   const grounded = ((jev.answers || {}).grounded || {});
   const hist = (data && data.desk_history) || null;
   const cmp = jevComparison(agent);
+  const [tab, setTab] = useState("observatory");
+  const [sel, setSel] = useState(null);
+  const graph = useMemo(() => deskGraph(agent), [agent]);
+  const cards = useMemo(() => deskAdapters(agent), [agent]);
+  const node = graph.nodes.find((n) => n.id === sel) || null;
+  const runs = (hist && hist.runs) || [];
+  const roles = (agent && agent.roles) || {};
+  const noKey = Object.keys(roles).filter((k) => ["no key", "not configured"].includes((roles[k] || {}).status));
+  const rejected = Object.keys(roles).filter((k) => (roles[k] || {}).status === "rejected");
+  const open = (id) => { setSel(id); setTab("inspector"); };
+
+  const nodeCard = (n) => {
+    const has = (col) => graph.nodes.some((x) => x.kind === "chain" && x.col === col);
+    const linked = n.kind === "chain" && n.col > 0 && has(n.col - 1);
+    const linkedv = n.kind === "model" && graph.nodes.some((x) => x.id === "jury");
+    return html`<div key=${n.id} role="button" tabIndex="0"
+        className=${"dnode" + (linked ? " linked" : "") + (linkedv ? " linkedv" : "")}
+        data-status=${deskTone(n.status)}
+        style=${{gridColumn: (n.col + 1) + " / " + (n.col + 2), gridRow: n.kind === "model" ? "2" : "1"}}
+        onClick=${() => open(n.id)}
+        onKeyDown=${(e) => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); open(n.id); } }}
+        aria-label=${n.label + ", " + (n.status || "status absent") + ", " + (n.headline || "headline absent")}>
+      <div className="dtop"><span className="role-chip"><span className="rd"></span>${n.label}</span>
+        <span className="prov" data-p=${n.provider}>${n.provider}</span></div>
+      <div className="dname">${n.label}<span className="dmodel">${n.model || ""}</span></div>
+      <div className="dstep" title=${n.headline || "headline absent"}>${n.headline || "—"}</div>
+      <div className="dfoot">
+        <span className="status"><span className="st-dot"></span>${n.status || "absent"}</span>
+        <span className="tokens">${n.tokens ? fmtTok(n.tokens.in) + " in · " + fmtTok(n.tokens.out) + " out" : "—"}</span>
+      </div>
+    </div>`;
+  };
+
+  const observatory = html`<div>
+    <div className="stage-top"><span className="zone-label">Agent mesh</span>
+      <span className="l-faint" style=${{marginLeft: "auto", fontSize: "var(--t0)"}}>
+        ${graph.nodes.length + " agents · " + cards.length + " providers · click a node to inspect"}</span></div>
+    ${graph.nodes.length ? html`<div className="obs-grid">${graph.nodes.map(nodeCard)}</div>`
+      : html`<div className="center-state"><h3>No agents in the mesh</h3>
+          <p>Nothing is running right now. Run the desk and the graph fills; the panel stays empty until then.</p></div>`}
+  </div>`;
+
+  const inspector = html`<div className="body">
+    <div className="insp-head"><span className="t">Inspector</span>
+      <span className="insp-agent">${node ? node.label + " · " + (node.provider || "—") : "no node selected"}</span></div>
+    <div className="insp-select">
+      ${graph.nodes.map((n) => html`<button key=${n.id} aria-pressed=${n.id === sel}
+        onClick=${() => setSel(n.id)}>${n.label}</button>`)}
+    </div>
+    <div className="insp-body">
+      ${node ? html`<dl className="kvgrid">${inspectorFields(node).map(([k, v]) => html`<${React.Fragment} key=${k}>
+        <dt>${k}</dt><dd className="mono">${v == null ? "—" : String(v)}</dd><//>`)}</dl>`
+        : html`<div className="empty-note">${graph.nodes.length
+            ? "no node selected — pick one above, or click a node in the Observatory"
+            : "no agents to inspect — the notes file carries none"}</div>`}
+    </div>
+  </div>`;
+
+  const adapters = html`<div className="body">
+    ${cards.length ? html`<div className="adapters">${cards.map((c) => html`<div key=${c.id} className="adapter">
+      <div className="ah"><span className="ad-prov" data-p=${c.id}>${c.id}</span><h4>${c.label} adapter</h4></div>
+      <dl className="kvgrid">
+        <dt>model served</dt><dd className="mono">${c.model || "—"}</dd>
+        <dt>status</dt><dd className="mono">${c.status || "—"}</dd>
+      </dl>
+      <table style=${{marginTop: "10px"}}>
+        <thead><tr><th>role</th><th>status</th><th className="num">in</th><th className="num">out</th></tr></thead>
+        <tbody>${c.roles.map((r) => html`<tr key=${r.role}>
+          <td className="mono">${r.role}</td><td>${r.status || "—"}</td>
+          <td className="num">${r.tokens && r.tokens.in != null ? fmtTok(r.tokens.in) : "—"}</td>
+          <td className="num">${r.tokens && r.tokens.out != null ? fmtTok(r.tokens.out) : "—"}</td></tr>`)}
+        </tbody>
+      </table>
+    </div>`)}</div>`
+      : html`<div className="center-state"><h3>No provider recorded</h3>
+          <p>The notes file carries no adapter's answer, so there is no card — not a card of zeros.</p></div>`}
+  </div>`;
+
+  const timeline = runs.length ? html`<div className="ribbon">
+      <div className="rib-head"><span className="t">Desk runs</span>
+        <span className="mono l-faint" style=${{fontSize: "var(--t0)"}}>
+          ${runs.length + " stored · newest first · absence is not a run"}</span></div>
+      <div className="rib-body"><div className="tl-track">
+        ${runs.map((r, i) => html`<span key=${i} className="pip" data-k=${r.status || "unknown"}
+          style=${{left: (runs.length > 1 ? (i / (runs.length - 1)) * 100 : 0) + "%"}}
+          title=${localize(r.generated_utc) + " · " + (r.status || "status absent")}></span>`)}
+      </div></div>
+      <table>
+        <thead><tr><th>when</th><th>status</th><th>scout</th><th>skeptic</th><th>chief</th><th>jury</th><th>jev</th></tr></thead>
+        <tbody>${runs.map((r, i) => html`<tr key=${i}>
+          <td className="mono">${localize(r.generated_utc)}</td><td>${r.status || "—"}</td>
+          ${historyCells(r).map((c) => html`<td key=${c.role} title=${String(c.headline)}>${String(c.headline)}</td>`)}
+        </tr>`)}</tbody>
+      </table>
+    </div>`
+    : html`<div className="body"><div className="center-state"><h3>No stored runs</h3>
+        <p>${hist ? "The history file exists and carries no run." : "No history on disk — the store exports one after a run."}</p>
+      </div></div>`;
+
+  const states = html`<div className="body"><div className="states-grid">
+    <div className="state-panel"><div className="sp-head"><span className="t">No notes</span>
+      <span className="w">${agent ? "notes present" : "waiting"}</span></div>
+      <div className="state-body">${agent
+        ? html`<div className="empty-note">the desk has written a notes file; this panel stays quiet.</div>`
+        : html`<div className="center-state"><h3>The desk has not run</h3>
+            <p>No notes file on this tree. Nothing here is filled with a zero to look complete.</p></div>`}</div></div>
+    <div className="state-panel"><div className="sp-head"><span className="t">No model key</span>
+      <span className="w">${noKey.length ? noKey.length + " role(s)" : "none"}</span></div>
+      <div className="state-body">${noKey.length
+        ? html`<div className="errbox"><div className="eh">nothing was called</div>
+            <p>${noKey.join(", ") + ": " + ((roles[noKey[0]] || {}).reason || "no model key — nothing called")}</p></div>`
+        : html`<div className="empty-note">every role the desk called held its key.</div>`}</div></div>
+    <div className="state-panel"><div className="sp-head"><span className="t">Rejected note</span>
+      <span className="w">${rejected.length ? rejected.length + " rejected" : "none"}</span></div>
+      <div className="state-body">${rejected.length
+        ? html`<div className="errbox"><div className="eh">${rejected.join(", ")}</div>
+            <p>${(roles[rejected[0]] || {}).reason || "a figure in the note was not in the artifact it was given"}</p></div>`
+        : html`<div className="empty-note">no note was rejected on the stored run.</div>`}</div></div>
+    <div className="state-panel"><div className="sp-head"><span className="t">Unreachable endpoint</span>
+      <span className="w">${up ? "live" : "reconnecting"}</span></div>
+      <div className="state-body">${up
+        ? html`<div className="empty-note">the transport is live; figures are what the server last read.</div>`
+        : html`<div className="offline-banner"><span className="pd"></span>
+            stream disconnected · the last snapshot is shown frozen, never as zero</div>`}</div></div>
+    <div className="state-panel"><div className="sp-head"><span className="t">Disabled decision model</span>
+      <span className="w">${jev.status || "not run"}</span></div>
+      <div className="state-body">${jev.status === "disabled"
+        ? html`<div className="errbox"><div className="eh">jev off</div>
+            <p>${jev.reason || "the decision model is disabled under [decisions] in desk.toml"}</p></div>`
+        : html`<div className="empty-note">${jev.status === "ok"
+            ? "the decision model answered on the stored run."
+            : "no decision-model call is recorded — the layer was " + (jev.status || "not run") + "."}</div>`}</div></div>
+  </div></div>`;
+
   return html`<div className="contents">
     <div className="hero band">
       <span className="tag">advisory</span>
@@ -1570,6 +1942,17 @@ function DeskPage({d, data}) {
         <div><span>status</span><b className="mono">${(agent && agent.status) || "not run"}</b></div>
         <div><span>jev</span><b className="mono">${jev.status || "not run"}</b></div>
       </div>
+    </div>
+    <div className="card">
+      <div className="tabs" role="tablist" aria-label="desk views">
+        ${DESK_TABS.map(([k, label]) => html`<button key=${k} role="tab" aria-selected=${tab === k}
+          onClick=${() => setTab(k)}>${label}</button>`)}
+      </div>
+      ${tab === "observatory" ? observatory : null}
+      ${tab === "inspector" ? inspector : null}
+      ${tab === "adapters" ? adapters : null}
+      ${tab === "timeline" ? timeline : null}
+      ${tab === "states" ? states : null}
     </div>
     <div className="grid g21">
       <${Card} title="The four-role chain" note="scout frames, skeptic attacks, chief decides, jury reports">
@@ -2648,7 +3031,7 @@ function App() {
         ${route === "trials" ? html`<${Trials} d=${d} data=${data} />` : null}
         ${route === "ops" ? html`<${Ops} d=${d} data=${data} />` : null}
         ${route === "universe" ? html`<${Heatmap} d=${d} data=${data} />` : null}
-        ${route === "desk" ? html`<${DeskPage} d=${d} data=${data} />` : null}
+        ${route === "desk" ? html`<${DeskPage} d=${d} data=${data} up=${up} />` : null}
       </main>
       ${palette ? html`<${Palette} mode=${palette} onClose=${() => setPalette(null)} />` : null}
       <footer className="foot">
