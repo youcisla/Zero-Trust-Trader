@@ -17,7 +17,8 @@ const helpers = source.split('// BEGIN fixture-tested state helpers')[1]
 const EXPORTS = ['scanCurrent', 'scanRunState', 'transportFresh', 'protectionLabel', 'parseFunnel', 'lastFunnel',
   'ledgerRows', 'pipeline', 'edgeCounts', 'edgeStates', 'computeDrawdown', 'bonferroniMirror',
   'sessionState', 'derive', 'fmtDur', 'fmtTok', 'todayStats', 'num2', 'signed', 'backoffMs',
-  'heatFrac', 'heatRgb', 'HEAT_METRICS', 'esc', 'jevComparison', 'chainRoles', 'historyCells'];
+  'heatFrac', 'heatRgb', 'HEAT_METRICS', 'esc', 'jevComparison', 'chainRoles', 'historyCells',
+  'deskGraph', 'inspectorFields', 'deskAdapters'];
 
 function load() {
   return vm.runInNewContext(helpers + '\n({' + EXPORTS.join(',') + '})', {});
@@ -336,6 +337,81 @@ test('the history row shows jev, and an older run without it shows absent', () =
     jev: {headline: 'stand_down (p 0.99) · grounded: supported'}}});
   assert.equal(newer[4].headline, 'stand_down (p 0.99) · grounded: supported');
   assert.equal(h.historyCells(null).length, 5);
+});
+
+/* ---- the Observatory views ------------------------------------------ */
+
+const NOTES = {
+  generated_utc: '2026-11-15T10:00:00Z', model: 'deepseek-chat', model_returned: 'deepseek-flash', status: 'ok',
+  roles: {
+    scout: {status: 'ok', items: [{headline: 'a', symbols: ['EURUSD']}, {headline: 'b', symbols: []}]},
+    skeptic: {status: 'no candidate', headline: 'no candidate'},
+    chief: {status: 'ok', summary: 'stood down, nothing triggered'},
+    jury: {status: 'ok', verdict: 'stand_down', why: 'nothing cleared the bar'},
+  },
+  jev: {status: 'ok', model: 'typesafe/jev-1.14', answers: {
+    attention: {choice: 'stand_down', probabilities: {stand_down: 0.91, show: 0.05, escalate: 0.04}, confidence: 0.8},
+    grounded: {choice: 'supported'},
+  }},
+  role_metadata: {
+    scout: {model: 'deepseek-flash', usage: {prompt_tokens: 18432, completion_tokens: 801}},
+    skeptic: {model: 'deepseek-flash', usage: {prompt_tokens: 900, completion_tokens: 120}},
+    chief: {model: 'deepseek-flash', usage: {prompt_tokens: 2200, completion_tokens: 300}},
+    jury: {model: 'deepseek-flash', usage: {prompt_tokens: 2650, completion_tokens: 229}},
+  },
+};
+
+test('the graph carries the five agents the notes carry, and only those', () => {
+  const g = h.deskGraph(NOTES);
+  assert.deepEqual(Array.from(g.nodes, (n) => n.id), ['scout', 'skeptic', 'chief', 'jury', 'jev']);
+  assert.deepEqual(Array.from(g.edges, (e) => e.join('>')).join(','),
+    'scout>skeptic,skeptic>chief,chief>jury,jury>jev');
+  assert.equal(g.nodes[0].headline, '2 items, 1 mapped');       // mirrors desk_store.headline
+  assert.equal(g.nodes[1].headline, 'no candidate');
+  assert.equal(g.nodes[4].headline, 'stand_down (p 0.91) · grounded: supported');
+  assert.equal(g.nodes[4].provider, 'jev', 'jev is a model node, not a fifth chain link');
+  assert.equal(g.nodes[4].kind, 'model');
+  // a missing agent leaves a gap, not an empty node
+  const noJev = h.deskGraph({...NOTES, jev: undefined});
+  assert.deepEqual(Array.from(noJev.nodes, (n) => n.id), ['scout', 'skeptic', 'chief', 'jury']);
+  assert.equal(noJev.edges.some(([a, b]) => a === 'jury' && b === 'jev'), false);
+  const partial = h.deskGraph({roles: {jury: {status: 'ok', verdict: 'stand_down'}}});
+  assert.deepEqual(Array.from(partial.nodes, (n) => n.id), ['jury']);
+  assert.equal(h.deskGraph(null).nodes.length, 0);
+});
+
+test('the inspector reads one node and invents nothing', () => {
+  const g = h.deskGraph(NOTES);
+  const rows = h.inspectorFields(g.nodes[0]);
+  const get = (k) => (rows.find(([key]) => key === k) || [])[1];
+  assert.equal(get('status'), 'ok');
+  assert.equal(get('model'), 'deepseek-flash');
+  assert.equal(get('tokens in'), '18.4k');
+  assert.equal(get('tokens out'), '801');
+  // a node the notes carry without a headline keeps it absent - no "—" invented in
+  // the mapper, no zero, no plausible-sounding sentence
+  const bare = h.inspectorFields({label: 'skeptic', status: 'no key'});
+  assert.equal(bare.find(([k]) => k === 'headline')[1], null);
+  assert.equal(bare.find(([k]) => k === 'tokens in')[1], null);
+  assert.equal(bare.find(([k]) => k === 'verdict')[1], null);
+  // the jev node's typed answer is the headline the stored history shows
+  assert.equal(h.inspectorFields(g.nodes[4]).find(([k]) => k === 'headline')[1],
+    'stand_down (p 0.91) · grounded: supported');
+});
+
+test('the adapters name the model each provider served, and absence is no card', () => {
+  const cards = h.deskAdapters(NOTES);
+  assert.deepEqual(Array.from(cards, (c) => c.id), ['deepseek', 'jev']);
+  assert.equal(cards[0].model, 'deepseek-flash');      // model_returned
+  assert.equal(cards[1].model, 'typesafe/jev-1.14');   // jev.model
+  assert.equal(cards[0].roles.length, 4);
+  assert.equal(cards[0].roles[0].tokens.in, 18432, 'per-role token cost travels');
+  // a provider the notes do not carry is an absent card, never a card of zeros
+  const noJev = h.deskAdapters({roles: {scout: {status: 'ok'}}});
+  assert.deepEqual(Array.from(noJev, (c) => c.id), ['deepseek']);
+  assert.equal(noJev[0].model, null, 'no model_returned -> absent, not a guess');
+  assert.equal(noJev[0].roles[0].tokens, null, 'unrecorded usage stays null, not 0');
+  assert.equal(h.deskAdapters(null).length, 0);
 });
 
 /* ---- the heatmap ramp ------------------------------------------------ */
