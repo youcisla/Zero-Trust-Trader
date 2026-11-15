@@ -14,91 +14,101 @@
   POST /api/scan, which starts the research pipeline and cannot place an order.
 -->
 <style>
-  /* ---- design tokens: neon terminal ---------------------------------- */
+  /* ---- design tokens: Observatory (Open Design reference) ------------- */
   :root{
-    --bg:#050608; --bg-grid:rgba(0,255,170,.025);
-    --surface:#0b0e12; --surface2:#10151b; --surface3:#161d26;
-    --line:#1c2430; --line2:#28323f;
-    --ink:#e8f0f2; --dim:#8b9bab; --faint:#5b6a79;
-    --neon:#00ffa3; --neon-dim:rgba(0,255,163,.12);
+    --bg:#0a0c0e;
+    --surface:#101317; --surface2:#14181d; --surface3:#191e24;
+    --line:#242b32; --line2:var(--line);
+    --ink:#e6eaee; --dim:#a3adb8; --faint:#6c7782;
+    --neon:#3fb8a6; --neon-dim:rgba(63,184,166,.12);
     /* text on a dim wash, and the line around it: three pairs, not seven hexes */
     --neon-ink:#c8ffe8; --neon-line:#155a44;
     --red-ink:#ffd9dd; --red-line:#5c2026;
     --amber-ink:#ffe6c2; --amber-line:#5a4218;
-    --cyan:#22d3ee; --cyan-dim:rgba(34,211,238,.12);
-    --magenta:#f472b6; --magenta-dim:rgba(244,114,182,.12);
-    --amber:#ffb454; --amber-dim:rgba(255,180,84,.12);
-    --red:#ff4d5e; --red-dim:rgba(255,77,94,.12);
+    --cyan:#3b82f6; --cyan-dim:rgba(59,130,246,.12);
+    --magenta:#c264d6; --magenta-dim:rgba(194,100,214,.12);
+    --amber:#e6a545; --amber-dim:rgba(230,165,69,.12);
+    --red:#e5484d; --red-dim:rgba(229,72,77,.12);
+    --focus:#3fb8a6;
     /* legacy names the components already speak */
     --good:var(--neon); --warn:var(--amber); --bad:var(--red); --accent:var(--cyan);
     --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:24px; --s6:32px; --s7:48px;
-    --font-ui:ui-sans-serif,-apple-system,"Segoe UI",Inter,system-ui,sans-serif;
-    --font-mono:ui-monospace,"SF Mono","Cascadia Mono",Menlo,Consolas,monospace;
-    /* Eight steps, 10 to 28, nothing between them: 9.5 / 10.5 / 11.5 / 12.5 were
-       four half-steps doing the work of two. */
-    --t0:10px; --t1:11px; --t2:12px; --t3:13px; --t4:15px; --t5:18px; --t6:22px; --t7:28px;
+    --font-ui:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    --font-mono:ui-monospace,"SF Mono","Cascadia Mono","Segoe UI Mono",Menlo,Consolas,monospace;
+    /* Eight steps, 11 to 28: the floor is the reference's fs-11, so nothing on
+       this page renders below it, and the steps above keep their spacing. */
+    --t0:11px; --t1:12px; --t2:13px; --t3:14px; --t4:15px; --t5:18px; --t6:22px; --t7:28px;
+    /* Air, not type size: the compact switch re-points these four and nothing else. */
+    --pad:20px; --gap:16px; --row:11px; --radius:10px;
     --chip-y:3px; --chip-x:9px;
     --r:10px; --r-sm:7px;
-    --glow:0 0 12px var(--neon-dim),0 0 2px rgba(0,255,163,.4);
-    --glow-cyan:0 0 12px var(--cyan-dim);
     --shadow:0 8px 24px rgba(0,0,0,.45);
   }
   *{box-sizing:border-box}
   html,body{height:100%;margin:0}
-  body{background:var(--bg);color:var(--ink);font:13px/1.55 var(--font-ui);
+  body{background:var(--bg);color:var(--ink);font:13px/1.5 var(--font-ui);
     -webkit-font-smoothing:antialiased;overflow-x:hidden}
-  body:before{content:"";position:fixed;inset:0;pointer-events:none;z-index:0;
-    background-image:linear-gradient(var(--bg-grid) 1px,transparent 1px),
-                     linear-gradient(90deg,var(--bg-grid) 1px,transparent 1px);
-    background-size:36px 36px}
   .mono{font-family:var(--font-mono);font-variant-numeric:tabular-nums;letter-spacing:-.01em}
   button{font:inherit;color:inherit;background:none;border:0;cursor:pointer}
   a{color:inherit}
-  :focus-visible{outline:2px solid var(--cyan);outline-offset:2px;border-radius:var(--r-sm)}
+  :focus-visible{outline:2px solid var(--focus);outline-offset:2px;border-radius:var(--r-sm)}
+  .visually-hidden{position:absolute;width:1px;height:1px;overflow:hidden;
+    clip:rect(0 0 0 0);white-space:nowrap}
   ::-webkit-scrollbar{width:10px;height:10px}
-  ::-webkit-scrollbar-thumb{background:#1d2530;border-radius:99px;border:2px solid var(--bg)}
-  @media (prefers-reduced-motion: reduce){*{animation:none!important;transition:none!important}}
+  ::-webkit-scrollbar-thumb{background:var(--line);border-radius:99px;border:2px solid var(--bg)}
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;
+      transition-duration:.001ms!important}
+  }
 
   /* ---- shell ---------------------------------------------------------- */
-  .app{position:relative;z-index:1;display:grid;grid-template-columns:206px minmax(0,1fr);min-height:100vh}
-  .side{position:sticky;top:0;height:100vh;display:flex;flex-direction:column;
-    background:linear-gradient(180deg,#080b0f,#06080b);border-right:1px solid var(--line);
-    padding:var(--s4) var(--s3)}
-  .brand{display:flex;align-items:center;gap:10px;padding:0 var(--s2) var(--s5)}
-  .mark{width:26px;height:26px;border-radius:7px;display:grid;place-items:center;
-    background:linear-gradient(160deg,#0b2b22,#071a15);border:1px solid #14453a;
-    color:var(--neon);font-size:var(--t1);font-weight:700;letter-spacing:.02em;
-    box-shadow:inset 0 0 12px rgba(0,255,163,.12)}
-  .brand h1{font-size:var(--t3);margin:0;font-weight:600;letter-spacing:-.01em}
-  .brand .sub{color:var(--faint);font-size:var(--t0);letter-spacing:.08em;text-transform:uppercase}
-  .nav{display:flex;flex-direction:column;gap:2px}
-  .navitem{display:flex;align-items:center;gap:9px;padding:var(--s2) var(--s3);border-radius:7px;
-    color:var(--dim);font-size:var(--t2);text-align:left;transition:background .12s,color .12s}
-  .navitem svg{width:14px;height:14px;flex:0 0 14px;opacity:.75}
-  .navitem:hover{background:var(--surface2);color:var(--ink)}
-  .navitem.on{background:var(--neon-dim);color:var(--neon-ink);box-shadow:inset 0 0 0 1px var(--neon-line)}
-  .navitem.on svg{opacity:1;color:var(--neon)}
-  .navitem .kbd{margin-left:auto;font-family:var(--font-mono);font-size:var(--t0);color:var(--faint);
-    border:1px solid var(--line2);border-radius:4px;padding:0 4px}
-  .grow{flex:1}
-  .sidenote{color:var(--faint);font-size:var(--t1);line-height:1.5;padding:var(--s2);border-top:1px solid var(--line)}
-  .sidenote b{display:block;color:var(--dim);font-weight:500;font-size:var(--t1)}
-  .sidelink{display:flex;align-items:center;gap:7px;color:var(--dim);font-size:var(--t1);
-    padding:5px var(--s2);border-radius:6px;text-decoration:none}
-  .sidelink:hover{background:var(--surface2);color:var(--ink)}
+  .app{position:relative;z-index:1;max-width:1420px;margin:0 auto;padding:0 24px 28px;
+    min-height:100vh;display:flex;flex-direction:column}
+  :root[data-density="compact"] .app{padding:0 16px 20px}
+  .topbar{position:sticky;top:0;z-index:60;display:flex;align-items:center;gap:14px;
+    min-height:54px;padding:6px 0;flex-wrap:wrap;
+    background:color-mix(in srgb,var(--bg) 88%,transparent);
+    -webkit-backdrop-filter:saturate(1.2) blur(12px);backdrop-filter:saturate(1.2) blur(12px);
+    border-bottom:1px solid var(--line)}
+  .brand{display:flex;align-items:center;gap:9px;flex-shrink:0}
+  .brand-mark{width:26px;height:26px;border-radius:6px;display:grid;place-items:center;
+    font-family:var(--font-mono);font-size:var(--t1);font-weight:700;
+    color:var(--bg);background:var(--neon)}
+  .brand-name{font-size:var(--t1);font-weight:600;letter-spacing:.06em;text-transform:uppercase}
+  .brand-sub{font-family:var(--font-mono);font-size:var(--t0);color:var(--faint);letter-spacing:.03em}
+  .mode-chip{font-family:var(--font-mono);font-size:var(--t0);letter-spacing:.1em;
+    text-transform:uppercase;color:var(--dim);border:1px solid var(--line);border-radius:4px;
+    padding:2px 6px;white-space:nowrap}
+  .right{margin-left:auto;display:flex;align-items:center;gap:7px;flex-wrap:wrap;justify-content:flex-end}
 
-  /* ---- topbar --------------------------------------------------------- */
-  .main{min-width:0;display:flex;flex-direction:column}
-  .topbar{display:flex;align-items:center;gap:var(--s2);padding:var(--s3) var(--s4);
-    border-bottom:1px solid var(--line);background:rgba(8,11,15,.86);backdrop-filter:blur(8px);
-    position:sticky;top:0;z-index:20;flex-wrap:wrap}
-  .pagetitle{font-size:var(--t4);font-weight:600;letter-spacing:-.01em}
-  .pagesub{color:var(--faint);font-size:var(--t1)}
+  /* ---- route bar ------------------------------------------------------ */
+  .compbar{display:flex;align-items:center;gap:4px;flex-wrap:wrap;padding:12px 0 0;margin-bottom:2px}
+  .compbar a{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:6px;
+    border:1px solid transparent;font-size:var(--t2);font-weight:500;color:var(--faint);
+    text-decoration:none;transition:color .12s,background .12s,border-color .12s}
+  .compbar a:hover{color:var(--dim);background:var(--surface2)}
+  .compbar a[aria-current="page"]{color:var(--ink);background:var(--surface);border-color:var(--line)}
+  .compbar a svg{width:14px;height:14px}
+  .compbar .kbd{font-family:var(--font-mono);font-size:var(--t0);color:var(--faint);
+    border:1px solid var(--line2);border-radius:4px;padding:0 4px}
+  .compbar .tagline{margin-left:auto;font-family:var(--font-mono);font-size:var(--t0);
+    color:var(--faint);letter-spacing:.03em}
+  .sechead{display:flex;align-items:flex-end;justify-content:space-between;gap:var(--gap);
+    margin:18px 0 12px;flex-wrap:wrap}
+  .sechead h2{margin:0;font-size:var(--t5);font-weight:600;letter-spacing:-.01em}
+  .sechead p{margin:3px 0 0;font-size:var(--t2);color:var(--faint);max-width:64ch}
+  .sidelink{display:inline-flex;align-items:center;gap:5px;color:var(--dim);font-size:var(--t0);
+    padding:4px 8px;border:1px solid var(--line);border-radius:6px;background:var(--surface);
+    text-decoration:none;transition:color .12s,border-color .12s}
+  .sidelink:hover{color:var(--ink);border-color:var(--dim)}
+
+  /* ---- topbar controls ------------------------------------------------ */
+  .main{min-width:0;display:flex;flex-direction:column;flex:1}
   .spacer{flex:1}
   .pill{display:inline-flex;align-items:center;gap:6px;font-size:var(--t1);padding:var(--chip-y) var(--chip-x);
     border-radius:99px;border:1px solid var(--line2);background:var(--surface2);color:var(--dim)}
   .pill .dot{width:6px;height:6px;border-radius:50%;background:var(--faint)}
-  .pill.live{border-color:var(--neon-line);color:#9dffd4;background:rgba(0,255,163,.07)}
+  .pill.live{border-color:var(--neon-line);color:var(--neon-ink);background:var(--neon-dim)}
   .pill.live .dot{background:var(--neon);box-shadow:0 0 8px var(--neon);animation:pulse 2s infinite}
   .pill.stale{color:var(--amber);border-color:var(--amber-line);background:var(--amber-dim)}
   .pill.down{color:var(--red);border-color:var(--red-line);background:var(--red-dim)}
@@ -120,7 +130,7 @@
   /* ---- scan bar ------------------------------------------------------- */
   .progress{display:flex;align-items:center;gap:var(--s2);flex-wrap:wrap;font-size:var(--t1);
     color:var(--dim);padding:7px var(--s4);border-bottom:1px solid var(--line);
-    background:linear-gradient(180deg,var(--surface2),rgba(11,14,18,.6))}
+    background:linear-gradient(180deg,var(--surface2),var(--bg))}
   .progress .stage{display:inline-flex;align-items:center;gap:5px}
   .progress .stage.done{color:var(--neon)}
   .progress .stage.now{color:var(--ink);font-weight:600}
@@ -130,14 +140,14 @@
   .runbtn{display:inline-flex;align-items:center;gap:6px;font-size:var(--t2);font-weight:600;
     padding:6px 11px;border-radius:var(--r-sm);border:1px solid var(--line2);
     background:var(--surface3);color:var(--ink)}
-  .runbtn:hover{border-color:var(--neon);box-shadow:var(--glow)}
+  .runbtn:hover{border-color:var(--neon)}
   .runbtn:disabled{opacity:.55;cursor:progress}
   .runbtn.armed{border-color:var(--neon);color:var(--neon);background:var(--neon-dim)}
 
   /* ---- page & cards --------------------------------------------------- */
-  .page{padding:var(--s4);display:flex;flex-direction:column;gap:var(--s4);min-width:0}
-  .contents{display:flex;flex-direction:column;gap:var(--s4);min-width:0}
-  .grid{display:grid;gap:var(--s4);min-width:0}
+  .page{padding:var(--pad) 0;display:flex;flex-direction:column;gap:var(--gap);min-width:0}
+  .contents{display:flex;flex-direction:column;gap:var(--gap);min-width:0}
+  .grid{display:grid;gap:var(--gap);min-width:0}
   .g2{grid-template-columns:repeat(2,minmax(0,1fr))}
   .g3{grid-template-columns:repeat(3,minmax(0,1fr))}
   .g4{grid-template-columns:repeat(4,minmax(0,1fr))}
@@ -163,38 +173,38 @@
   /* The command strip: one row, nine cells, tabular figures. It replaces the
      habit of putting the same four numbers in a card on every page. */
   .cmdstrip{display:flex;align-items:stretch;flex-wrap:wrap;gap:0;border-bottom:1px solid var(--line);
-    background:linear-gradient(180deg,rgba(0,255,163,.03),transparent)}
+    background:linear-gradient(180deg,color-mix(in srgb,var(--neon) 3%,transparent),transparent)}
   .cmdstrip .dot{width:7px;height:7px;border-radius:50%;background:var(--red);margin:0 var(--s3)}
   .cmdstrip .dot.live{background:var(--neon);box-shadow:0 0 8px var(--neon)}
-  .cmdstrip .cell{display:flex;align-items:baseline;gap:6px;padding:6px var(--s2);
+  .cmdstrip .cell{display:flex;align-items:baseline;gap:6px;padding:calc(var(--row)/2) var(--s2);
     border-right:1px solid var(--line);white-space:nowrap;flex:0 0 auto}
   .cmdstrip .cell:last-child{border-right:0}
-  .cmdstrip .k{font:600 9px/1 var(--font-ui);letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
-  .cmdstrip .v{font:600 13px/1 var(--font-mono);font-variant-numeric:tabular-nums;color:var(--ink)}
+  .cmdstrip .k{font:600 var(--t0)/1 var(--font-ui);letter-spacing:.1em;text-transform:uppercase;color:var(--faint)}
+  .cmdstrip .v{font:600 var(--t3)/1 var(--font-mono);font-variant-numeric:tabular-nums;color:var(--ink)}
   .cmdstrip .good .v{color:var(--neon)} .cmdstrip .bad .v{color:var(--red)}
   .cmdstrip .warn .v{color:var(--amber)} .cmdstrip .mute .v{color:var(--dim)}
 
   /* The gate gauge: the bar as a dashed line, the best candidate as a marker. */
   .gauge{position:relative;height:74px;margin:6px 0 0}
   .gauge .track{position:absolute;left:0;right:0;top:26px;height:8px;border-radius:2px;
-    background:linear-gradient(90deg,rgba(34,211,238,.10),rgba(34,211,238,.22))}
-  .gauge .fill{height:100%;border-radius:2px;background:linear-gradient(90deg,rgba(34,211,238,.35),rgba(34,211,238,.75))}
+    background:linear-gradient(90deg,color-mix(in srgb,var(--cyan) 10%,transparent),color-mix(in srgb,var(--cyan) 22%,transparent))}
+  .gauge .fill{height:100%;border-radius:2px;background:linear-gradient(90deg,color-mix(in srgb,var(--cyan) 35%,transparent),color-mix(in srgb,var(--cyan) 75%,transparent))}
   .gauge .barline{position:absolute;top:12px;bottom:18px;width:0;border-left:2px dashed var(--amber)}
-  .gauge .barline span{position:absolute;top:-12px;left:4px;font:600 10px var(--font-mono);color:var(--amber)}
+  .gauge .barline span{position:absolute;top:-12px;left:4px;font:600 var(--t0) var(--font-mono);color:var(--amber)}
   .gauge .marker{position:absolute;top:16px}
   .gauge .marker i{display:block;width:12px;height:12px;margin-left:-6px;border-radius:50%;
-    background:var(--ink);box-shadow:0 0 0 3px rgba(232,240,242,.12)}
+    background:var(--ink);box-shadow:0 0 0 3px color-mix(in srgb,var(--ink) 12%,transparent)}
   .gauge .marker span{position:absolute;top:16px;left:-28px;width:96px;text-align:center;
-    font:600 10px var(--font-mono);color:var(--ink);white-space:nowrap}
+    font:600 var(--t0) var(--font-mono);color:var(--ink);white-space:nowrap}
   .gauge .axis{position:absolute;left:0;right:0;bottom:0;display:flex;justify-content:space-between;
-    font:10px var(--font-mono);color:var(--faint)}
+    font:var(--t0) var(--font-mono);color:var(--faint)}
   .gate-trend{display:flex;flex-direction:column;gap:2px;border-top:1px solid var(--line);
     margin-top:var(--s2);padding-top:var(--s2)}
   .gate-trend svg{width:100%;height:34px;display:block}
-  .gate-trend .k{font:600 9px var(--font-ui);letter-spacing:.09em;text-transform:uppercase;color:var(--faint)}
+  .gate-trend .k{font:600 var(--t0) var(--font-ui);letter-spacing:.09em;text-transform:uppercase;color:var(--faint)}
   .gate-note{display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap;
     border-top:1px solid var(--line);margin-top:var(--s2);padding-top:var(--s2)}
-  .gate-note .need{font:11px var(--font-mono);color:var(--dim)}
+  .gate-note .need{font:var(--t0) var(--font-mono);color:var(--dim)}
   .gate-note .need b{color:var(--ink);font-size:var(--t3)}
   .gate-note .need i{color:var(--faint)}
 
@@ -212,7 +222,7 @@
   .scrim{position:fixed;inset:0;background:rgba(2,4,7,.62);backdrop-filter:blur(2px);
     display:flex;align-items:flex-start;justify-content:center;padding-top:12vh;z-index:80}
   .palette{width:min(560px,92vw);background:var(--surface2);border:1px solid var(--line2);
-    border-radius:var(--r);box-shadow:0 24px 64px rgba(0,0,0,.55);overflow:hidden}
+    border-radius:var(--radius);box-shadow:0 24px 64px rgba(0,0,0,.55);overflow:hidden}
   .pinput{width:100%;background:transparent;border:0;border-bottom:1px solid var(--line);
     color:var(--ink);font:var(--t3) var(--font-ui);padding:var(--s3) var(--s4);outline:none}
   .plist{max-height:46vh;overflow:auto;padding:var(--s1)}
@@ -222,26 +232,30 @@
   .pitem.on{background:var(--surface3);box-shadow:inset 0 0 0 1px var(--line2)}
   .pitem .phint{color:var(--faint);font:var(--t0) var(--font-mono)}
   .pfoot{border-top:1px solid var(--line);padding:var(--s2) var(--s4);color:var(--faint);font-size:var(--t0)}
-  /* Light is for glances, dark is for duration: the same tokens, re-pointed.
-     Contrast targets AA against --surface, not against the page. */
+  /* Light is for glances, dark is for duration: the same colour names, re-pointed
+     with the reference's light values. Sizes and air are theme-independent. */
   :root[data-theme="light"]{
-    --bg:#f6f7f9; --bg-grid:rgba(17,24,32,.03);
-    --surface:#ffffff; --surface2:#f1f3f6; --surface3:#e9edf2;
-    --line:#dfe4ea; --line2:#c2ccd8;
-    --ink:#111820; --dim:#4a5765; --faint:#66727f;
-    --neon:#0a7d5a; --neon-dim:rgba(10,125,90,.10); --neon-ink:#065f46; --neon-line:#a7d9c6;
-    --cyan:#0e7490; --cyan-dim:rgba(14,116,144,.10);
-    --magenta:#a21caf; --magenta-dim:rgba(162,28,175,.10);
-    --amber:#9a5b00; --amber-dim:rgba(154,91,0,.10); --amber-ink:#7a4700; --amber-line:#e6c89a;
-    --red:#b42318; --red-dim:rgba(180,35,24,.10); --red-ink:#8f1c14; --red-line:#f0b4ae;
+    --bg:#f5f6f7;
+    --surface:#ffffff; --surface2:#f0f2f4; --surface3:#e9ecef;
+    --line:#dce0e4; --line2:var(--line);
+    --ink:#15191d; --dim:#4a545e; --faint:#7b858f;
+    --neon:#0e8c7e; --neon-dim:rgba(14,140,126,.10);
+    --neon-ink:var(--neon); --neon-line:var(--neon-dim);
+    --cyan:#2563eb; --cyan-dim:rgba(37,99,235,.10);
+    --magenta:#83379a; --magenta-dim:rgba(131,55,154,.09);
+    --amber:#9a6210; --amber-dim:rgba(154,98,16,.10);
+    --amber-ink:var(--amber); --amber-line:var(--amber-dim);
+    --red:#c0272d; --red-dim:rgba(192,39,45,.09);
+    --red-ink:var(--red); --red-line:var(--red-dim);
+    --focus:#0e8c7e;
   }
-  /* Compact is for scanning many rows; it never changes type size, only air. */
-  :root[data-density="compact"] .card .body{padding:var(--s2)}
-  :root[data-density="compact"] .card header{padding:6px var(--s2)}
-  :root[data-density="compact"] table td,:root[data-density="compact"] table th{padding:2px var(--s2)}
-  :root[data-density="compact"] .cmdstrip .cell{padding:4px var(--s2)}
-  .foot{display:flex;align-items:center;gap:var(--s3);padding:6px var(--s4);
-    border-top:1px solid var(--line);color:var(--faint);font-size:var(--t0);flex:0 0 auto}
+  /* Compact is for scanning many rows; it re-points air, never type size. */
+  :root[data-density="compact"]{
+    --pad:12px; --gap:9px; --row:6px; --radius:8px;
+  }
+  .foot{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-top:26px;padding-top:14px;
+    border-top:1px solid var(--line);font-family:var(--font-mono);font-size:var(--t0);
+    color:var(--faint);flex:0 0 auto}
   .foot .foot-rule{color:var(--dim)}
   .foot .spacer{flex:1}
   .kpi{display:flex;flex-direction:column;gap:2px}
@@ -301,7 +315,7 @@
   .hero .stats{margin-left:auto;display:flex;gap:var(--s5);text-align:right}
   .hero .stats div span{display:block;font-size:var(--t0);letter-spacing:.08em;text-transform:uppercase;color:var(--faint)}
 
-  .step .tok { margin-top:2px; font-family:var(--mono,ui-monospace,monospace); font-size:var(--t0);
+  .step .tok { margin-top:2px; font-family:var(--font-mono); font-size:var(--t0);
     color:var(--faint); letter-spacing:.02em }
 
   /* ---- desk chain ----------------------------------------------------- */
@@ -321,7 +335,7 @@
 
   /* ---- flow canvas ---------------------------------------------------- */
   .flowwrap{position:relative;border:1px solid var(--line);border-radius:var(--r);
-    background:radial-gradient(1200px 400px at 20% 0%,rgba(0,255,163,.04),transparent 70%),var(--surface);
+    background:radial-gradient(1200px 400px at 20% 0%,color-mix(in srgb,var(--neon) 4%,transparent),transparent 70%),var(--surface);
     overflow:hidden}
   .flowtop{display:flex;align-items:center;gap:var(--s2);padding:8px var(--s3);
     border-bottom:1px solid var(--line);background:var(--surface2);flex-wrap:wrap}
@@ -332,7 +346,7 @@
   .node{cursor:pointer}
   .node rect{fill:var(--surface2);stroke:var(--line2);stroke-width:1;rx:9}
   .node.live rect{stroke:#1a6b52}
-  .node.hot rect{stroke:var(--neon);filter:drop-shadow(0 0 6px rgba(0,255,163,.35))}
+  .node.hot rect{stroke:var(--neon);filter:drop-shadow(0 0 6px color-mix(in srgb,var(--neon) 35%,transparent))}
   .node.bad rect{stroke:var(--red)}
   .node.warn rect{stroke:var(--amber)}
   .node.sel rect{stroke:var(--cyan);stroke-width:2}
@@ -383,8 +397,8 @@
   .heatgrid .tile{width:22px;height:22px;border-radius:4px}
   .tile.hit{outline:1px solid rgba(232,237,243,.8);outline-offset:1px}
   .bar{height:4px;border-radius:2px;background:rgba(139,155,171,.2);margin-top:10px;overflow:hidden}
-  .bar i{display:block;height:100%;background:var(--green, #00ffa3)}
-  .why{font-size:var(--t1);line-height:1.4;color:var(--dim,#b6c2cf);margin-top:6px}
+  .bar i{display:block;height:100%;background:var(--neon)}
+  .why{font-size:var(--t1);line-height:1.4;color:var(--dim);margin-top:6px}
   .clamp2{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
   .g3 .card .body{padding:var(--s3)}
   .g3 .card h2{font-size:var(--t1)}
@@ -414,16 +428,18 @@
     .g21,.g12{grid-template-columns:minmax(0,1fr)}
   }
   @media (max-width:900px){
-    .app{grid-template-columns:64px minmax(0,1fr)}
-    .brand h1,.brand .sub,.navitem .lbl,.sidenote,.sidelink span{display:none}
-    .navitem{justify-content:center}
     .drawer{top:auto;left:0;width:auto;height:62vh;border-left:0;border-top:1px solid var(--line2)}
     .g2{grid-template-columns:minmax(0,1fr)}
     .flowsvg{height:calc(100vh - 300px);min-height:360px}
   }
+  @media (max-width:760px){
+    .brand-sub{display:none}
+    .topbar{gap:8px}
+    .compbar .tagline{display:none}
+  }
   @media (max-width:640px){
     .g4,.g3{grid-template-columns:minmax(0,1fr)}
-    .page{padding:var(--s3)}
+    .page{padding:var(--pad) 0}
     .hero .stats{margin-left:0}
   }
 </style>
@@ -982,8 +998,8 @@ function Chart({option, height, empty}) {
 
 /* ---- chart helpers --------------------------------------------------- */
 
-const C = {neon: "#00ffa3", cyan: "#22d3ee", magenta: "#f472b6", amber: "#ffb454",
-           red: "#ff4d5e", dim: "#8b9bab", faint: "#5b6a79", line: "#1c2430"};
+const C = {neon: "#3fb8a6", cyan: "#3b82f6", magenta: "#c264d6", amber: "#e6a545",
+           red: "#e5484d", dim: "#a3adb8", faint: "#6c7782", line: "#242b32"};
 
 /** Time-axis formatting that follows the span: seconds under an hour, clock
  *  under a day, dates beyond. A flat 40-second capture must not read "19:25"
@@ -998,7 +1014,7 @@ function timeAxis(points) {
     return d.toLocaleDateString(undefined, {day: "2-digit", month: "short"});
   };
   const axis = {type: "time", axisLine: {lineStyle: {color: C.line}},
-                axisLabel: {color: C.faint, fontSize: 10, formatter: fmt}, splitNumber: 5};
+                axisLabel: {color: C.faint, fontSize: 11, formatter: fmt}, splitNumber: 5};
   // A single observation would otherwise stretch the axis over ±12 hours and look
   // like a day of silence. One point means one minute of evidence.
   // Callers hand this milliseconds; one point means one minute of evidence.
@@ -1033,9 +1049,9 @@ function equityOption(points, bar) {
     xAxis: timeAxis(points),
     yAxis: [
       {type: "value", min: lo - pad, max: hi + pad, splitLine: {lineStyle: {color: C.line}},
-       axisLabel: {color: C.faint, fontSize: 10}},
+       axisLabel: {color: C.faint, fontSize: 11}},
       {type: "value", min: ddLo * 1.15, max: 0, position: "right", splitLine: {show: false},
-       axisLabel: {color: "rgba(255,77,94,.65)", fontSize: 10, formatter: "{value}%"}},
+       axisLabel: {color: "rgba(255,77,94,.65)", fontSize: 11, formatter: "{value}%"}},
     ],
     series: [
       {name: "equity", type: "line", showSymbol: points.length < 60, symbolSize: 3,
@@ -1073,7 +1089,7 @@ function burnupOption(rows) {
     .filter((p) => Number.isFinite(p[0]));
   return baseOption({
     xAxis: timeAxis(pts),
-    yAxis: {type: "value", splitLine: {lineStyle: {color: C.line}}, axisLabel: {color: C.faint, fontSize: 10}},
+    yAxis: {type: "value", splitLine: {lineStyle: {color: C.line}}, axisLabel: {color: C.faint, fontSize: 11}},
     series: [{type: "line", step: "end", showSymbol: pts.length < 60, symbolSize: 3,
               data: pts,
               lineStyle: {color: C.cyan, width: 1.8},
@@ -1917,7 +1933,7 @@ function Performance({d, data}) {
     .filter((p) => Number.isFinite(p[0]));
   const cadOpt = cadence.length ? baseOption({
     xAxis: timeAxis(cadence),
-    yAxis: {type: "value", splitLine: {lineStyle: {color: C.line}}, axisLabel: {color: C.faint, fontSize: 10}},
+    yAxis: {type: "value", splitLine: {lineStyle: {color: C.line}}, axisLabel: {color: C.faint, fontSize: 11}},
     series: [{type: "scatter", symbolSize: 7,
       data: cadence.map(([ts, v], i) => ({value: [ts, v],
         itemStyle: {color: d.rows[i].verdict === "WINNER" ? C.magenta : d.rows[i].verdict === "FAILED" ? C.red : C.cyan}}))}],
@@ -2255,7 +2271,7 @@ function Heatmap({d, data}) {
         dir: h ? (h.side === "short" ? "S" : "L") : "",
         itemStyle: {
           color: heatRgb(heatFrac(s[metric], scale.lo, scale.hi, meta.worse)),
-          borderColor: h ? (h.side === "short" ? "#ff4d5e" : "#00ffa3") : "rgba(5,6,8,.9)",
+          borderColor: h ? (h.side === "short" ? C.red : C.neon) : "rgba(10,12,14,.9)",
           borderWidth: h ? 1.5 : 1,
         },
       });
@@ -2279,7 +2295,7 @@ function Heatmap({d, data}) {
             ["history", num2(s.h1_days) + " d"],
             ["tick volume", num0(s.mean_tick_volume)],
           ];
-          const hit = h ? `<div style="color:${h.side === "short" ? "#ff4d5e" : "#00ffa3"};margin-top:4px">
+          const hit = h ? `<div style="color:${h.side === "short" ? C.red : C.neon};margin-top:4px">
             ${h.side === "short" ? "▼ short" : "▲ long"} · ${esc(h.strategy)} · strength ${num2(h.strength)}</div>`
             : `<div style="color:#5b6a79;margin-top:4px">tested, no hit this scan</div>`;
           return `<div style="font:600 12px var(--font-mono,monospace);margin-bottom:4px">${esc(s.symbol)}</div>`
@@ -2296,7 +2312,7 @@ function Heatmap({d, data}) {
         width: "100%",
         height: "100%",
         label: {
-          show: true, position: "inside", color: "#e8f0f2", fontSize: 10, lineHeight: 12,
+          show: true, position: "inside", color: "#e8f0f2", fontSize: 11, lineHeight: 12,
           // A dark outline keeps the symbol readable on the pale end of the ramp.
           textBorderColor: "rgba(5,6,8,.85)", textBorderWidth: 2,
           formatter: (p) => p.data && p.data.sym
@@ -2307,7 +2323,7 @@ function Heatmap({d, data}) {
         itemStyle: {borderColor: "#050608", borderWidth: 1, gapWidth: 1},
         levels: [
           {itemStyle: {borderWidth: 2, gapWidth: 2, borderColor: "#050608"},
-           upperLabel: {show: true, height: 15, color: "#5b6a79", fontSize: 10}},
+           upperLabel: {show: true, height: 15, color: "#5b6a79", fontSize: 11}},
         ],
         data,
       }],
@@ -2332,8 +2348,8 @@ function Heatmap({d, data}) {
           <span><i style=${{background: heatRgb(0)}}></i>cheap</span>
           <span><i style=${{background: heatRgb(0.5)}}></i></span>
           <span><i style=${{background: heatRgb(1)}}></i>expensive</span>
-          <span><i style=${{background: "transparent", boxShadow: "inset 0 0 0 1.5px #00ffa3"}}></i>▲ long</span>
-          <span><i style=${{background: "transparent", boxShadow: "inset 0 0 0 1.5px #ff4d5e"}}></i>▼ short</span>
+          <span><i style=${{background: "transparent", boxShadow: "inset 0 0 0 1.5px " + C.neon}}></i>▲ long</span>
+          <span><i style=${{background: "transparent", boxShadow: "inset 0 0 0 1.5px " + C.red}}></i>▼ short</span>
           <span><i style=${{background: "rgba(139,155,171,.22)"}}></i>not measured</span>
         </span>
       </div>
@@ -2548,39 +2564,16 @@ function App() {
   const runState = scanRunState(lastRun);
 
   return html`<div className="app">
-    <aside className="side">
+    <header className="topbar">
       <div className="brand">
-        <div className="mark">ZT</div>
-        <div><h1>Zero-Trust</h1><div className="sub">demo · monitor</div></div>
-      </div>
-      <nav className="nav" aria-label="pages">
-        ${ROUTES.map(([k, label, key]) => html`<a key=${k} href=${"#/" + k}
-          className=${"navitem" + (route === k ? " on" : "")} aria-current=${route === k ? "page" : "false"}>
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
-            strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d=${ICONS[k]} /></svg>
-          <span className="lbl">${label}</span><span className="kbd">${key}</span>
-        </a>`)}
-      </nav>
-      <div className="grow"></div>
-      <div className="sidenote">
-        <b>${d.x.last ? "last scan " + (d.x.last.ts || "").slice(11, 16) + "Z" : "no scan yet"}</b>
-        ${d.x.in == null ? "no universe on disk" : d.x.in + " symbols · " + (d.x.tests ?? 0) + " tests"}
-      </div>
-      <a className="sidelink" href="/architecture" target="_blank" rel="noopener">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-          <path d="M4 20V8l8-4 8 4v12M4 20h16" /></svg><span>Architecture ↗</span></a>
-      <a className="sidelink" href="/api/report/latest" target="_blank" rel="noopener">
-        <svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
-          <path d="M6 3h9l4 4v14H6z" /><path d="M9 12h7M9 16h5" /></svg><span>Last report ↗</span></a>
-    </aside>
-
-    <div className="main">
-      <div className="topbar">
+        <div className="brand-mark" aria-hidden="true">ZT</div>
         <div>
-          <div className="pagetitle">${(ROUTES.find((r) => r[0] === route) || ROUTES[0])[1]}</div>
-          <div className="pagesub">${SUBS[route] || SUBS.flow}</div>
+          <div className="brand-name">Zero-Trust Trader</div>
+          <div className="brand-sub">demo · read-only</div>
         </div>
-        <span className="spacer"></span>
+        <span className="mode-chip">monitor</span>
+      </div>
+      <div className="right">
         <button className=${"pill bell" + (alerts.length ? " has" : "")} onClick=${() => { location.hash = "#/ops"; }}
           aria-label=${alerts.length + " alerts"}>◔ ${alerts.length}</button>
         ${data && !data.engine ? html`<span className="pill down">engine state missing</span>` : null}
@@ -2593,6 +2586,31 @@ function App() {
           aria-label="toggle density">${density === "compact" ? "⇕ comfy" : "⇕ compact"}</button>
         <button className=${"copy " + allState} onClick=${copyAll} aria-live="polite">
           ${allState === "done" ? "copied ✓" : allState === "fail" ? "copy failed" : "copy recent logs"}</button>
+        <a className="sidelink" href="/architecture" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+            <path d="M4 20V8l8-4 8 4v12M4 20h16" /></svg><span>architecture ↗</span></a>
+        <a className="sidelink" href="/api/report/latest" target="_blank" rel="noopener">
+          <svg viewBox="0 0 24 24" width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true">
+            <path d="M6 3h9l4 4v14H6z" /><path d="M9 12h7M9 16h5" /></svg><span>report ↗</span></a>
+      </div>
+    </header>
+
+    <nav className="compbar" aria-label="pages">
+      ${ROUTES.map(([k, label, key]) => html`<a key=${k} href=${"#/" + k}
+        aria-current=${route === k ? "page" : "false"}>
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"
+          strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d=${ICONS[k]} /></svg>
+        ${label}<span className="kbd">${key}</span></a>`)}
+      <span className="tagline">
+        ${d.x.last ? "last scan " + (d.x.last.ts || "").slice(11, 16) + "Z" : "no scan yet"} ·
+        ${d.x.in == null ? " no universe on disk" : " " + d.x.in + " symbols · " + (d.x.tests ?? 0) + " tests"}
+      </span>
+    </nav>
+
+    <div className="main">
+      <div className="sechead">
+        <h2>${(ROUTES.find((r) => r[0] === route) || ROUTES[0])[1]}</h2>
+        <p>${SUBS[route] || SUBS.flow}</p>
       </div>
 
       <${CmdStrip} d=${d} data=${data} up=${up} lastRun=${lastRun} />
@@ -2666,10 +2684,10 @@ class Boundary extends React.Component {
   static getDerivedStateFromError(err) { return {err: err}; }
   render() {
     if (!this.state.err) return this.props.children;
-    return html`<div style=${{padding: "24px", color: "#ff4d5e", fontFamily: "ui-monospace, monospace"}}>
+    return html`<div style=${{padding: "24px", color: "#e5484d", fontFamily: "ui-monospace, monospace"}}>
       <b>the dashboard failed to render</b>
-      <pre style=${{whiteSpace: "pre-wrap", color: "#e8f0f2", marginTop: "8px"}}>${String(this.state.err && this.state.err.stack || this.state.err)}</pre>
-      <div style=${{color: "#8b9bab", marginTop: "8px"}}>The engine is unaffected — this is the viewer only.</div>
+      <pre style=${{whiteSpace: "pre-wrap", color: "#e6eaee", marginTop: "8px"}}>${String(this.state.err && this.state.err.stack || this.state.err)}</pre>
+      <div style=${{color: "#a3adb8", marginTop: "8px"}}>The engine is unaffected — this is the viewer only.</div>
     </div>`;
   }
 }
